@@ -1,0 +1,35 @@
+{
+  "name": "mcp-browser-analyzer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "server": "pnpm -F server start",
+    "extension": "pnpm -F chrome-extension dev",
+    "extension:build": "pnpm -F chrome-extension build",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky",
+    "clean": "rimraf node_modules **/node_modules **/dist",
+    "build": "pnpm -r build"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs}": [
+      "eslint --fix"
+    ],
+    "*.{js,mjs,cjs,json,md,vue,html,css}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "prettier": "^3.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "rimraf": "^6.0.0"
+  }
+}
