@@ -15,17 +15,17 @@ AI 可直接调用 Chrome 插件实现：截图、页面信息、控制台日志
 
 ## 技术栈
 
-| 分类 | 技术 |
-|------|------|
-| 包管理器 | pnpm |
-| Monorepo | pnpm workspace |
-| Chrome 插件 | Vue 3 + Vite + MV3 |
-| MCP 服务 | Node.js |
-| 通信 | WebSocket |
-| 性能分析 | Lighthouse |
-| 代码规范 | ESLint + Prettier |
-| Git Hooks | husky + lint-staged |
-| CI/CD | GitHub Actions |
+| 分类        | 技术                |
+| ----------- | ------------------- |
+| 包管理器    | pnpm                |
+| Monorepo    | pnpm workspace      |
+| Chrome 插件 | Vue 3 + Vite + MV3  |
+| MCP 服务    | Node.js             |
+| 通信        | WebSocket           |
+| 性能分析    | Lighthouse          |
+| 代码规范    | ESLint + Prettier   |
+| Git Hooks   | husky + lint-staged |
+| CI/CD       | GitHub Actions      |
 
 ## 项目结构
 
@@ -86,17 +86,17 @@ pnpm extension
 
 ### 常用命令
 
-| 命令 | 说明 |
-|------|------|
-| `pnpm server` | 启动 MCP 服务 |
-| `pnpm extension` | 启动 Chrome 插件开发模式 |
-| `pnpm extension:build` | 构建 Chrome 插件 |
-| `pnpm build` | 构建所有子项目 |
-| `pnpm lint` | 检查代码 |
-| `pnpm lint:fix` | 自动修复代码问题 |
-| `pnpm format` | 格式化代码 |
-| `pnpm format:check` | 检查代码格式 |
-| `pnpm clean` | 清理依赖和构建产物 |
+| 命令                   | 说明                     |
+| ---------------------- | ------------------------ |
+| `pnpm server`          | 启动 MCP 服务            |
+| `pnpm extension`       | 启动 Chrome 插件开发模式 |
+| `pnpm extension:build` | 构建 Chrome 插件         |
+| `pnpm build`           | 构建所有子项目           |
+| `pnpm lint`            | 检查代码                 |
+| `pnpm lint:fix`        | 自动修复代码问题         |
+| `pnpm format`          | 格式化代码               |
+| `pnpm format:check`    | 检查代码格式             |
+| `pnpm clean`           | 清理依赖和构建产物       |
 
 ### 分支策略
 

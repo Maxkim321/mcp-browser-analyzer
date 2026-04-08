@@ -99,24 +99,33 @@ pnpm lint
 
 ## 开发流程
 
-### 日常开发工作流
+### 角色说明
 
-1. **切换到 develop 分支**
+- **开发者**：项目维护者，拥有仓库的直接推送权限
+- **参与者**：项目贡献者，通过 Fork + Pull Request 方式贡献代码
+
+---
+
+### 开发者流程（项目维护者）
+
+如果你是项目维护者，直接在仓库中开发：
+
+#### 1. 日常开发工作流
 
 ```bash
+# 1. 切换到 develop 分支
 git checkout develop
 git pull origin develop
-```
 
-2. **创建功能分支**
-
-```bash
+# 2. 创建功能分支
 git checkout -b feature/your-feature-name
+# 例如：git checkout -b feature/screenshot
 ```
 
-3. **启动开发服务**
+#### 2. 开发功能
 
 ```bash
+# 启动开发服务
 # 终端 1：启动 MCP 服务
 pnpm server
 
@@ -124,42 +133,160 @@ pnpm server
 pnpm extension
 ```
 
-4. **开发功能**
-
-- 修改代码
-- 保存后自动热重载
-- 在浏览器中测试
-
-5. **提交代码**
+#### 3. 提交代码
 
 ```bash
+# 修改代码后提交
 git add .
 git commit -m "feat: add your feature description"
-```
 
-6. **推送到远程**
-
-```bash
+# 推送到远程
 git push origin feature/your-feature-name
 ```
 
-7. **创建 Pull Request**
+#### 4. 合并到 develop
 
-在 GitHub 上创建 PR，目标分支为 `develop`
+```bash
+# 切换回 develop
+git checkout develop
+git pull origin develop
+
+# 合并功能分支
+git merge feature/your-feature-name
+
+# 推送 develop
+git push origin develop
+
+# 删除功能分支（可选）
+git branch -d feature/your-feature-name
+git push origin --delete feature/your-feature-name
+```
+
+#### 5. 发布到 main
+
+```bash
+# 切换到 main
+git checkout main
+git pull origin main
+
+# 合并 develop
+git merge develop
+
+# 推送 main
+git push origin main
+
+# 切换回 develop 继续开发
+git checkout develop
+```
+
+---
+
+### 参与者流程（项目贡献者）
+
+如果你是外部贡献者，请使用 Fork + Pull Request 方式：
+
+#### 1. Fork 项目
+
+1. 访问项目仓库
+2. 点击右上角的「Fork」按钮
+3. 选择你的账号作为目标
+
+#### 2. 克隆你的 Fork
+
+```bash
+git clone https://github.com/你的用户名/mcp-browser-analyzer.git
+cd mcp-browser-analyzer
+```
+
+#### 3. 添加上游仓库
+
+```bash
+# 添加原始仓库为上游
+git remote add upstream https://github.com/Maxkim321/mcp-browser-analyzer.git
+
+# 查看远程仓库
+git remote -v
+```
+
+#### 4. 同步上游代码
+
+```bash
+# 切换到 develop 分支
+git checkout develop
+
+# 获取上游最新代码
+git fetch upstream
+
+# 合并上游代码
+git merge upstream/develop
+
+# 推送到你的 Fork
+git push origin develop
+```
+
+#### 5. 创建功能分支
+
+```bash
+# 从 develop 创建功能分支
+git checkout -b feature/your-feature-name
+```
+
+#### 6. 开发功能
+
+```bash
+# 修改代码...
+
+# 提交更改
+git add .
+git commit -m "feat: add your feature description"
+
+# 推送到你的 Fork
+git push origin feature/your-feature-name
+```
+
+#### 7. 创建 Pull Request
+
+1. 访问你的 Fork 仓库
+2. 点击「Compare & pull request」
+3. 填写 PR 信息：
+   - 标题：清晰描述你的变更
+   - 描述：详细说明做了什么、为什么这么做
+4. 选择目标分支：`develop`
+5. 点击「Create pull request」
+
+#### 8. 等待 Code Review
+
+- 维护者会审查你的代码
+- 可能会要求一些修改
+- 审核通过后会合并到 develop
+
+---
+
+### 分支策略示意图
+
+```
+main (稳定分支)
+  ↑
+  └─ develop (开发分支) ← 日常开发在这里
+       ↑
+       ├─ feature/screenshot (开发者直接合并)
+       ├─ feature/page-info (开发者直接合并)
+       └─ feature/... (参与者通过 PR 合并)
+```
 
 ### 命令速查
 
-| 命令 | 说明 |
-|------|------|
-| `pnpm server` | 启动 MCP 服务 |
-| `pnpm extension` | 启动 Chrome 插件开发模式 |
-| `pnpm extension:build` | 构建 Chrome 插件 |
-| `pnpm build` | 构建所有子项目 |
-| `pnpm lint` | 检查代码问题 |
-| `pnpm lint:fix` | 自动修复代码问题 |
-| `pnpm format` | 格式化所有代码 |
-| `pnpm format:check` | 检查代码格式 |
-| `pnpm clean` | 清理所有依赖和构建产物 |
+| 命令                   | 说明                     |
+| ---------------------- | ------------------------ |
+| `pnpm server`          | 启动 MCP 服务            |
+| `pnpm extension`       | 启动 Chrome 插件开发模式 |
+| `pnpm extension:build` | 构建 Chrome 插件         |
+| `pnpm build`           | 构建所有子项目           |
+| `pnpm lint`            | 检查代码问题             |
+| `pnpm lint:fix`        | 自动修复代码问题         |
+| `pnpm format`          | 格式化所有代码           |
+| `pnpm format:check`    | 检查代码格式             |
+| `pnpm clean`           | 清理所有依赖和构建产物   |
 
 ## 代码规范
 
@@ -173,15 +300,15 @@ git push origin feature/your-feature-name
 
 ```json
 {
-  "semi": false,              // 不使用分号
-  "singleQuote": true,         // 使用单引号
-  "printWidth": 100,           // 每行最大 100 字符
-  "tabWidth": 2,               // 缩进 2 个空格
-  "useTabs": false,            // 使用空格而不是 tab
-  "trailingComma": "es5",      // ES5 风格的尾随逗号
-  "bracketSpacing": true,      // 对象大括号内添加空格
-  "arrowParens": "always",     // 箭头函数参数总是加括号
-  "endOfLine": "lf"            // 统一使用 LF 换行符
+  "semi": false, // 不使用分号
+  "singleQuote": true, // 使用单引号
+  "printWidth": 100, // 每行最大 100 字符
+  "tabWidth": 2, // 缩进 2 个空格
+  "useTabs": false, // 使用空格而不是 tab
+  "trailingComma": "es5", // ES5 风格的尾随逗号
+  "bracketSpacing": true, // 对象大括号内添加空格
+  "arrowParens": "always", // 箭头函数参数总是加括号
+  "endOfLine": "lf" // 统一使用 LF 换行符
 }
 ```
 

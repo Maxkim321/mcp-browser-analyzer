@@ -16,6 +16,6 @@ export default [
     },
   },
   {
-    ignores: ['**/node_modules/**', '**/dist/**', 'chrome-extension/**'],
+    ignores: ['**/node_modules/**', '**/dist/**', 'chrome-extension/**', 'server/**'],
   },
 ]
