@@ -22,17 +22,36 @@ alwaysApply: false
 mcp-browser-analyzer/
 ├── package.json              # 根目录配置
 ├── pnpm-workspace.yaml        # monorepo 配置
-├── server/                    # MCP 服务
+├── server/                    # 纯 MCP Server（给 AI 助手用）
 │   ├── index.js             # MCP 服务器入口
-│   ├── ws-server.js         # WebSocket 服务器
+│   ├── ws-server.js         # WebSocket 服务器（简化版）
 │   ├── tools.js             # MCP 工具定义
+│   └── tool-handler.js      # 工具处理器和追踪
+├── agent-server/             # Agent Server（集成大模型，给 Chrome 插件用）
+│   ├── index.js             # Agent 服务器入口
+│   ├── ws-server.js         # WebSocket 服务器（含 Agent）
+│   ├── tools.js             # 工具定义
 │   ├── tool-handler.js      # 工具处理器和追踪
-│   ├── llm.js               # 大模型集成
 │   ├── agent.js             # AI Agent 编排器
+│   ├── llm.js               # 大模型集成
 │   ├── config.js            # 服务端配置
 │   └── .env.example         # 环境变量示例
 └── chrome-extension/          # Chrome 插件
 ```
+
+## 两种运行模式
+
+### MCP Server 模式（server/）
+
+- **用途**：给 Cursor、Claude Desktop 等 AI 助手用
+- **启动**：`pnpm server`
+- **特点**：只提供 MCP 协议，AI 助手自己决定调用工具
+
+### Agent Server 模式（agent-server/）
+
+- **用途**：给 Chrome 插件用
+- **启动**：`pnpm agent-server`
+- **特点**：集成大模型，自动调用工具，返回自然语言结果
 
 ## 服务端实现状态
 
@@ -86,12 +105,14 @@ WebSocket 返回 agent_response 给插件
 ### 📡 WebSocket 消息协议
 
 **客户端 → 服务端：**
+
 - `user_prompt` - 用户提示词 `{ type: 'user_prompt', prompt: '...' }`
 - `clear_history` - 清空对话历史 `{ type: 'clear_history' }`
 - `ping` - 心跳 `{ type: 'ping' }`
 - `performance_data` - 性能数据 `{ type: 'performance_data', requestId: '...', payload: {...} }`
 
 **服务端 → 客户端：**
+
 - `thinking` - 正在思考 `{ type: 'thinking' }`
 - `agent_response` - Agent 响应 `{ type: 'agent_response', success: true, content: '...' }`
 - `history_cleared` - 历史已清空 `{ type: 'history_cleared' }`
@@ -101,7 +122,8 @@ WebSocket 返回 agent_response 给插件
 
 ### 🔧 环境配置
 
-复制 `server/.env.example` 为 `server/.env` 并配置：
+复制 `agent-server/.env.example` 为 `agent-server/.env` 并配置：
+
 ```
 OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://api.openai.com/v1
@@ -110,7 +132,8 @@ OPENAI_MODEL=gpt-4o
 
 ### ⚙️ Agent 配置
 
-在 `server/config.js` 中可以调整：
+在 `agent-server/config.js` 中可以调整：
+
 ```javascript
 agent: {
   maxIterations: 5,        // 最大迭代步骤
@@ -175,6 +198,7 @@ agent: {
 ### 2. 命令规范
 
 - 启动 MCP 服务: `pnpm server`
+- 启动 Agent 服务: `pnpm agent-server`
 - 启动 Chrome 插件: `pnpm extension`
 - 安装依赖到指定子项目: `pnpm add &lt;package&gt; -F &lt;project-name&gt;`
 

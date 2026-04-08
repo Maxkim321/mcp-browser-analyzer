@@ -1,3 +1,4 @@
 packages:
   - 'server'
+  - 'agent-server'
   - 'chrome-extension'

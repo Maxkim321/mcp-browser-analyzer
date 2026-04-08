@@ -1,5 +1,8 @@
 const WebSocket = require('ws')
 const { handlePluginResponse } = require('./tool-handler.js')
+const { Agent } = require('./agent.js')
+
+const connectionAgents = new Map()
 
 /**
  * 连接管理器 - 管理所有 WebSocket 客户端连接
@@ -93,6 +96,8 @@ console.log('[WebSocket] Server started on port 9999')
  */
 wss.on('connection', (ws) => {
   const connectionId = manager.add(ws)
+  const agent = new Agent()
+  connectionAgents.set(connectionId, agent)
 
   /**
    * 接收并处理客户端消息
@@ -101,7 +106,7 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(data.toString())
       console.log(`[Receive] From ${connectionId}:`, msg)
-      await handleMessage(connectionId, msg)
+      await handleMessage(connectionId, msg, agent)
     } catch (err) {
       console.error('[Error] Parse message:', err)
     }
@@ -112,6 +117,7 @@ wss.on('connection', (ws) => {
    */
   ws.on('close', () => {
     manager.remove(connectionId)
+    connectionAgents.delete(connectionId)
   })
 
   /**
@@ -120,6 +126,7 @@ wss.on('connection', (ws) => {
   ws.on('error', (err) => {
     console.error('[Error] Connection:', err)
     manager.remove(connectionId)
+    connectionAgents.delete(connectionId)
   })
 })
 
@@ -128,8 +135,9 @@ wss.on('connection', (ws) => {
  * 根据消息类型分发到不同的处理逻辑
  * @param {number} id - 连接 ID
  * @param {object} msg - 消息对象
+ * @param {Agent} agent - 该连接的 Agent 实例
  */
-async function handleMessage(id, msg) {
+async function handleMessage(id, msg, agent) {
   switch (msg.type) {
     case 'performance_data':
       console.log('[Data] Performance:', msg.payload)
@@ -137,6 +145,31 @@ async function handleMessage(id, msg) {
       break
     case 'ping':
       manager.send(id, { type: 'pong' })
+      break
+    case 'user_prompt':
+      console.log('[Agent] Processing prompt:', msg.prompt)
+      try {
+        manager.send(id, { type: 'thinking' })
+        const result = await agent.process(msg.prompt)
+        manager.send(id, {
+          type: 'agent_response',
+          success: result.success,
+          content: result.content,
+          error: result.error,
+        })
+      } catch (error) {
+        console.error('[Agent] Error:', error)
+        manager.send(id, {
+          type: 'agent_response',
+          success: false,
+          content: '抱歉，处理你的请求时出错了。',
+          error: error.message,
+        })
+      }
+      break
+    case 'clear_history':
+      agent.clearHistory()
+      manager.send(id, { type: 'history_cleared' })
       break
   }
 }
