@@ -1,0 +1,225 @@
+const { v4: uuidv4 } = require('uuid')
+const ws = require('./ws-server.js')
+
+/**
+ * 待处理请求映射
+ * 用于存储等待插件响应的 MCP 工具调用请求
+ * key: requestId, value: { resolve, reject, timeout, traceId }
+ */
+const pendingRequests = new Map()
+
+/**
+ * 追踪管理器
+ * 用于记录和管理 MCP 工具调用的完整执行链路
+ */
+class TraceManager {
+  constructor() {
+    this.traces = new Map()
+  }
+
+  /**
+   * 创建一个新的追踪记录
+   * @param {string} [traceId] - 可选的追踪ID，不提供则自动生成
+   * @param {string} [parentId] - 父追踪ID，用于嵌套调用
+   * @param {string} name - 追踪名称，描述此次操作
+   * @returns {object} 追踪对象
+   */
+  create(traceId, parentId, name) {
+    const trace = {
+      id: traceId || uuidv4(),
+      parentId,
+      name,
+      startTime: Date.now(),
+      endTime: null,
+      status: 'pending',
+      events: [],
+    }
+    this.traces.set(trace.id, trace)
+    return trace
+  }
+
+  /**
+   * 添加事件到追踪记录
+   * @param {string} traceId - 追踪ID
+   * @param {string} eventType - 事件类型
+   * @param {object} data - 事件数据
+   */
+  addEvent(traceId, eventType, data) {
+    const trace = this.traces.get(traceId)
+    if (trace) {
+      trace.events.push({
+        type: eventType,
+        timestamp: Date.now(),
+        data,
+      })
+    }
+  }
+
+  /**
+   * 完成追踪记录
+   * @param {string} traceId - 追踪ID
+   * @param {string} [status='success'] - 最终状态
+   * @returns {object} 完成的追踪对象
+   */
+  complete(traceId, status = 'success') {
+    const trace = this.traces.get(traceId)
+    if (trace) {
+      trace.endTime = Date.now()
+      trace.status = status
+    }
+    return trace
+  }
+
+  /**
+   * 获取追踪记录
+   * @param {string} traceId - 追踪ID
+   * @returns {object|null} 追踪对象
+   */
+  get(traceId) {
+    return this.traces.get(traceId)
+  }
+}
+
+const traceManager = new TraceManager()
+
+/**
+ * 处理 list_connections 工具
+ * 列出当前所有连接的浏览器插件
+ * @param {object} args - 工具参数
+ * @param {string} traceId - 追踪ID
+ * @returns {object} MCP 响应格式
+ */
+function handleListConnections(args, traceId) {
+  const ids = ws.manager.getIds()
+  const count = ws.manager.getCount()
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({ count, connectionIds: ids }, null, 2),
+      },
+    ],
+  }
+}
+
+/**
+ * 处理 get_browser_performance 工具
+ * 向指定浏览器插件发送获取性能数据的指令，并等待响应
+ * @param {object} args - 工具参数
+ * @param {number} args.connectionId - 浏览器插件连接ID
+ * @param {string} traceId - 追踪ID
+ * @returns {Promise<object>} MCP 响应格式
+ */
+async function handleGetPerformance(args, traceId) {
+  const { connectionId } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('Request timeout'))
+    }, 10000)
+
+    pendingRequests.set(requestId, {
+      resolve,
+      reject,
+      timeout,
+      traceId,
+    })
+
+    traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'get_performance' })
+    ws.send(connectionId, { type: 'get_performance', requestId })
+  })
+}
+
+/**
+ * 处理 broadcast_message 工具
+ * 向所有连接的浏览器插件广播消息
+ * @param {object} args - 工具参数
+ * @param {string} args.message - 要广播的消息内容
+ * @param {string} traceId - 追踪ID
+ * @returns {object} MCP 响应格式
+ */
+function handleBroadcastMessage(args, traceId) {
+  const { message } = args
+  traceManager.addEvent(traceId, 'broadcast', { message })
+  ws.broadcast({ type: 'broadcast', message })
+  return {
+    content: [
+      {
+        type: 'text',
+        text: 'Message broadcasted successfully',
+      },
+    ],
+  }
+}
+
+/**
+ * 工具处理器映射表
+ * 将工具名称映射到对应的处理函数
+ */
+const toolHandlers = {
+  list_connections: handleListConnections,
+  get_browser_performance: handleGetPerformance,
+  broadcast_message: handleBroadcastMessage,
+}
+
+/**
+ * 处理 MCP 工具调用
+ * @param {string} name - 工具名称
+ * @param {object} args - 工具参数
+ * @returns {Promise<object>} MCP 响应格式
+ */
+async function handleToolCall(name, args) {
+  const traceId = uuidv4()
+  const trace = traceManager.create(traceId, null, `tool:${name}`)
+  traceManager.addEvent(traceId, 'tool_call', { name, args })
+
+  try {
+    const handler = toolHandlers[name]
+    if (!handler) {
+      throw new Error(`Unknown tool: ${name}`)
+    }
+
+    const result = await handler(args, traceId)
+    traceManager.complete(traceId, 'success')
+    return result
+  } catch (error) {
+    traceManager.addEvent(traceId, 'error', { message: error.message })
+    traceManager.complete(traceId, 'error')
+    throw error
+  }
+}
+
+/**
+ * 处理来自浏览器插件的响应消息
+ * 将插件返回的数据匹配到对应的待处理请求并完成
+ * @param {number} connectionId - 连接ID
+ * @param {object} msg - 插件消息对象
+ */
+function handlePluginResponse(connectionId, msg) {
+  if (msg.type === 'performance_data' && msg.requestId) {
+    const pending = pendingRequests.get(msg.requestId)
+    if (pending) {
+      clearTimeout(pending.timeout)
+      pendingRequests.delete(msg.requestId)
+      traceManager.addEvent(pending.traceId, 'receive_data', msg.payload)
+      pending.resolve({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(msg.payload, null, 2),
+          },
+        ],
+      })
+      traceManager.complete(pending.traceId, 'success')
+    }
+  }
+}
+
+module.exports = {
+  handleToolCall,
+  handlePluginResponse,
+  traceManager,
+}
