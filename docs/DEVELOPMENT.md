@@ -149,17 +149,17 @@ git push origin feature/your-feature-name
 
 ### 命令速查
 
-| 命令 | 说明 |
-|------|------|
-| `pnpm server` | 启动 MCP 服务 |
-| `pnpm extension` | 启动 Chrome 插件开发模式 |
-| `pnpm extension:build` | 构建 Chrome 插件 |
-| `pnpm build` | 构建所有子项目 |
-| `pnpm lint` | 检查代码问题 |
-| `pnpm lint:fix` | 自动修复代码问题 |
-| `pnpm format` | 格式化所有代码 |
-| `pnpm format:check` | 检查代码格式 |
-| `pnpm clean` | 清理所有依赖和构建产物 |
+| 命令                   | 说明                     |
+| ---------------------- | ------------------------ |
+| `pnpm server`          | 启动 MCP 服务            |
+| `pnpm extension`       | 启动 Chrome 插件开发模式 |
+| `pnpm extension:build` | 构建 Chrome 插件         |
+| `pnpm build`           | 构建所有子项目           |
+| `pnpm lint`            | 检查代码问题             |
+| `pnpm lint:fix`        | 自动修复代码问题         |
+| `pnpm format`          | 格式化所有代码           |
+| `pnpm format:check`    | 检查代码格式             |
+| `pnpm clean`           | 清理所有依赖和构建产物   |
 
 ## 代码规范
 
@@ -173,15 +173,15 @@ git push origin feature/your-feature-name
 
 ```json
 {
-  "semi": false,              // 不使用分号
-  "singleQuote": true,         // 使用单引号
-  "printWidth": 100,           // 每行最大 100 字符
-  "tabWidth": 2,               // 缩进 2 个空格
-  "useTabs": false,            // 使用空格而不是 tab
-  "trailingComma": "es5",      // ES5 风格的尾随逗号
-  "bracketSpacing": true,      // 对象大括号内添加空格
-  "arrowParens": "always",     // 箭头函数参数总是加括号
-  "endOfLine": "lf"            // 统一使用 LF 换行符
+  "semi": false, // 不使用分号
+  "singleQuote": true, // 使用单引号
+  "printWidth": 100, // 每行最大 100 字符
+  "tabWidth": 2, // 缩进 2 个空格
+  "useTabs": false, // 使用空格而不是 tab
+  "trailingComma": "es5", // ES5 风格的尾随逗号
+  "bracketSpacing": true, // 对象大括号内添加空格
+  "arrowParens": "always", // 箭头函数参数总是加括号
+  "endOfLine": "lf" // 统一使用 LF 换行符
 }
 ```
 
