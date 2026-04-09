@@ -19,16 +19,28 @@
     "default_path": "dist/src/ui/sidepanel/index.html"
   },
   "options_page": "dist/src/ui/options/index.html",
-  "permissions": ["storage", "sidePanel"],
-  "host_permissions": [],
+  "permissions": [
+    "storage",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*"
+  ],
   "background": {
-    "service_worker": "dist/script/background.js",
+    "service_worker": "dist/script/dev-hmr.js",
     "type": "module"
   },
   "web_accessible_resources": [
     {
-      "resources": ["dist/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "dist/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' http://localhost:3000; object-src 'self'; connect-src 'self' ws://localhost:3000 http://localhost:3000"
+  }
 }

@@ -6,6 +6,7 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "server": "pnpm -F server start",
+    "agent-server": "pnpm -F agent-server start",
     "extension": "pnpm -F chrome-extension dev",
     "extension:build": "pnpm -F chrome-extension build",
     "lint": "eslint .",
