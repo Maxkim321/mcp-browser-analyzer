@@ -1,5 +1,4 @@
 const { v4: uuidv4 } = require('uuid')
-const ws = require('./ws-server.js')
 
 /**
  * 待处理请求映射
@@ -7,6 +6,19 @@ const ws = require('./ws-server.js')
  * key: requestId, value: { resolve, reject, timeout, traceId }
  */
 const pendingRequests = new Map()
+
+let ws = null
+
+/**
+ * 初始化 WebSocket 模块引用
+ * 用于解决循环依赖问题，避免在模块加载时直接 require ws-server
+ * @param {object} wsModule - WebSocket 模块对象，包含 manager、send、broadcast、getPerformance 等方法
+ */
+function init(wsModule) {
+  ws = wsModule
+}
+
+module.exports.init = init
 
 /**
  * 追踪管理器
@@ -89,6 +101,7 @@ const traceManager = new TraceManager()
  * @param {string} traceId - 追踪ID
  * @returns {object} MCP 响应格式
  */
+// eslint-disable-next-line no-unused-vars
 function handleListConnections(args, traceId) {
   const ids = ws.manager.getIds()
   const count = ws.manager.getCount()
@@ -173,7 +186,7 @@ const toolHandlers = {
  */
 async function handleToolCall(name, args) {
   const traceId = uuidv4()
-  const trace = traceManager.create(traceId, null, `tool:${name}`)
+  traceManager.create(traceId, null, `tool:${name}`)
   traceManager.addEvent(traceId, 'tool_call', { name, args })
 
   try {
@@ -219,6 +232,7 @@ function handlePluginResponse(connectionId, msg) {
 }
 
 module.exports = {
+  init,
   handleToolCall,
   handlePluginResponse,
   traceManager,

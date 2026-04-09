@@ -1,46 +1,41 @@
+// 加载环境变量配置
 require('dotenv').config()
 
-const ws = require('./ws-server.js')
+// 导入配置文件和工具模块
+const config = require('./config.js')
+const { tools } = require('./tools.js')
 
-/**
- * 主函数 - 启动 Agent 服务器
- * 启动 WebSocket 服务并初始化交互式命令行测试界面
- */
-async function main() {
-  console.log('[Agent Server] Starting...')
-  setupCli()
-}
+// 打印启动欢迎横幅
+console.log('╔════════════════════════════════════════════════════════════╗')
+console.log('║                    Agent Server 启动中...                      ║')
+console.log('╚════════════════════════════════════════════════════════════╝')
+console.log()
 
-/**
- * 设置交互式命令行测试界面
- * 支持通过命令行手动测试 WebSocket 功能
- * 可用命令：list, getperf <id>, broadcast <msg>, exit
- */
-function setupCli() {
-  console.log('[Test] Commands: list, getperf <id>, broadcast <msg>, exit')
+// 打印配置信息
+console.log('📋 配置信息:')
+console.log(`   - 服务端口: ${config.server.port}`)
+console.log(`   - LLM 模型: ${config.llm.model}`)
+console.log(`   - API Base: ${config.llm.baseURL}`)
+console.log(`   - API Key: ${config.llm.apiKey ? '已配置' : '未配置'}`)
+console.log()
 
-  process.stdin.on('data', (data) => {
-    const input = data.toString().trim()
-    if (!input) return
-
-    const [cmd, ...args] = input.split(' ')
-    switch (cmd) {
-      case 'list':
-        console.log('[Test] Clients:', ws.manager.getCount(), 'IDs:', ws.manager.getIds())
-        break
-      case 'getperf':
-        args[0] && ws.getPerformance(parseInt(args[0]))
-        break
-      case 'broadcast':
-        args.length && ws.broadcast({ type: 'broadcast', message: args.join(' ') })
-        break
-      case 'exit':
-        process.exit(0)
-    }
-  })
-}
-
-main().catch((err) => {
-  console.error('[Agent Server] Error:', err)
-  process.exit(1)
+// 打印可用工具列表
+console.log('🔧 可用工具:')
+tools.forEach((tool) => {
+  console.log(`   - ${tool.name}: ${tool.description}`)
 })
+console.log()
+
+// 启动 WebSocket 服务
+require('./ws-server.js')
+
+console.log('✅ WebSocket 服务已启动')
+console.log()
+
+// 打印最终提示信息
+console.log('💡 提示:')
+console.log('   - Agent Server 已准备就绪')
+console.log('   - 等待 Chrome 插件连接...')
+console.log('   - 使用 chat.js 进行交互式测试')
+console.log()
+console.log('─'.repeat(60))

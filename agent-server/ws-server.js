@@ -1,5 +1,5 @@
 const WebSocket = require('ws')
-const { handlePluginResponse } = require('./tool-handler.js')
+const toolHandler = require('./tool-handler.js')
 const { Agent } = require('./agent.js')
 
 const connectionAgents = new Map()
@@ -58,6 +58,7 @@ class ConnectionManager {
    */
   broadcast(message) {
     console.log('[Broadcast]', message)
+    // eslint-disable-next-line no-unused-vars
     this.connections.forEach((ws, id) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(message))
@@ -83,6 +84,13 @@ class ConnectionManager {
 }
 
 const manager = new ConnectionManager()
+
+toolHandler.init({
+  manager,
+  send: (id, cmd) => manager.send(id, cmd),
+  broadcast: (cmd) => manager.broadcast(cmd),
+  getPerformance: (id) => manager.send(id, { type: 'get_performance' }),
+})
 
 /**
  * 启动 WebSocket 服务器
@@ -141,7 +149,7 @@ async function handleMessage(id, msg, agent) {
   switch (msg.type) {
     case 'performance_data':
       console.log('[Data] Performance:', msg.payload)
-      handlePluginResponse(id, msg)
+      toolHandler.handlePluginResponse(id, msg)
       break
     case 'ping':
       manager.send(id, { type: 'pong' })

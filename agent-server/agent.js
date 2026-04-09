@@ -26,6 +26,26 @@ class Agent {
       content: prompt,
     })
 
+    //最大迭代次数
+    /**
+     * LLM迭代循环逻辑说明：
+     *
+     * 1. 初始化参数：从配置或选项中获取最大迭代次数，防止无限循环
+     * 2. 循环调用LLM：每次迭代中调用大模型，传入当前对话历史和可用工具
+     * 3. 判断响应类型：
+     *    - 如果LLM返回tool_calls（工具调用请求），说明需要执行工具来获取更多信息
+     *      * 将LLM的响应加入对话历史
+     *      * 根据工具调用数量和配置决定并行或顺序执行工具
+     *        · 并行执行：当工具调用数>1且配置允许并行时，按批次并行处理
+     *        · 顺序执行：单个工具调用或配置不允许并行时，逐个执行
+     *      * 工具执行结果会加入对话历史，继续下一轮迭代
+     *    - 如果LLM返回普通文本响应（无工具调用），说明任务完成
+     *      * 将响应加入对话历史，返回最终结果
+     * 4. 循环终止条件：达到最大迭代次数时强制退出，返回错误信息
+     *
+     * 该机制实现了ReAct（Reasoning + Acting）模式：LLM通过推理决定调用哪些工具，
+     * 工具执行结果反馈给LLM继续推理，直到得出最终答案。
+     */
     const maxIterations = options.maxIterations || this.config.maxIterations
     let iteration = 0
 
@@ -35,6 +55,7 @@ class Agent {
 
       const response = await this.llm.chat(this.conversationHistory, tools)
 
+      //需要工具 - 工具调用检测
       if (response.tool_calls && response.tool_calls.length > 0) {
         this.conversationHistory.push(response)
 
@@ -42,8 +63,10 @@ class Agent {
         console.log(`[Agent] Tool calls requested: ${toolCalls.length}`)
 
         if (toolCalls.length > 1 && this.config.parallelToolCalls > 1) {
+          //并行执行
           await this.executeParallelTools(toolCalls)
         } else {
+          //顺序执行
           await this.executeSequentialTools(toolCalls)
         }
       } else {
