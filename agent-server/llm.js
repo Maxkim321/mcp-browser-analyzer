@@ -30,6 +30,7 @@ class LLMClient {
     }
 
     if (tools.length > 0) {
+      //把tools喂给LLM理解的格式
       body.tools = tools.map((tool) => ({
         type: 'function',
         function: {
