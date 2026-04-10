@@ -1,7 +1,7 @@
 const WebSocket = require('ws')
-const toolHandler = require('./tool-handler.js')
-const { Agent } = require('./agent.js')
-const config = require('./config.js')
+const toolHandler = require('../tools/handler.js')
+const { Agent } = require('../core/agent.js')
+const config = require('../config/index.js')
 
 const connectionAgents = new Map()
 

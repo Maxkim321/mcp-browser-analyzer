@@ -1,7 +1,7 @@
 const { LLMClient } = require('./llm.js')
-const { tools } = require('./tools.js')
-const { handleToolCall } = require('./tool-handler.js')
-const config = require('./config.js')
+const { tools } = require('../tools/index.js')
+const { handleToolCall } = require('../tools/handler.js')
+const config = require('../config/index.js')
 
 /**
  * AI Agent 编排器

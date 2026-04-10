@@ -2,8 +2,8 @@
 require('dotenv').config()
 
 // 导入配置文件和工具模块
-const config = require('./config.js')
-const { tools } = require('./tools.js')
+const config = require('./config/index.js')
+const { tools } = require('./tools/index.js')
 
 /**
  * 启动前校验关键配置，缺失时快速失败并给出明确提示
@@ -45,7 +45,7 @@ tools.forEach((tool) => {
 console.log()
 
 // 启动 WebSocket 服务
-require('./ws-server.js')
+require('./communication/ws-server.js')
 
 console.log('✅ WebSocket 服务已启动')
 console.log()

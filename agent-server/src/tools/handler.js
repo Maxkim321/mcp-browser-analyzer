@@ -193,10 +193,6 @@ function handleBroadcastMessage(args, traceId) {
 }
 
 /**
- * 工具处理器映射表
- * 将工具名称映射到对应的处理函数
- */
-/**
  * 处理 todo_write 工具
  * 接收任务列表并格式化返回给LLM
  * @param {object} args - 工具参数

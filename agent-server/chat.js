@@ -1,6 +1,6 @@
 require('dotenv').config()
-const { Agent } = require('./agent.js')
-const { tools } = require('./tools.js')
+const { Agent } = require('./src/core/agent.js')
+const { tools } = require('./src/tools/index.js')
 const readline = require('readline')
 
 const rl = readline.createInterface({

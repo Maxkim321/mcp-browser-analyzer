@@ -1,5 +1,5 @@
-const config = require('./config.js')
-const { SYSTEM_PROMPT } = require('./prompts.js')
+const config = require('../config/index.js')
+const { SYSTEM_PROMPT } = require('../config/prompts.js')
 
 /**
  * 大模型集成模块

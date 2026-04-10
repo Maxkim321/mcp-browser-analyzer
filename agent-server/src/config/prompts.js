@@ -1,4 +1,4 @@
-const { version } = require('./package.json')
+const { version } = require('../../package.json')
 
 /**
  * 系统提示词模块

@@ -1,19 +1,16 @@
 {
   "name": "agent-server",
   "version": "1.0.0",
-  "description": "Agent Server - 集成大模型的浏览器分析服务",
-  "main": "index.js",
+  "private": true,
   "type": "commonjs",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/index.js",
+    "chat": "node chat.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "dotenv": "^16.4.0",
-    "uuid": "^13.0.0",
-    "ws": "^8.20.0"
+    "uuid": "^10.0.0",
+    "ws": "^8.18.0"
   }
 }

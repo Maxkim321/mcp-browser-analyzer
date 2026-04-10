@@ -23,11 +23,9 @@
     "storage",
     "sidePanel"
   ],
-  "host_permissions": [
-    "http://localhost:3000/*"
-  ],
+  "host_permissions": [],
   "background": {
-    "service_worker": "dist/script/dev-hmr.js",
+    "service_worker": "dist/script/background.js",
     "type": "module"
   },
   "web_accessible_resources": [
@@ -39,8 +37,5 @@
         "<all_urls>"
       ]
     }
-  ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' http://localhost:3000; object-src 'self'; connect-src 'self' ws://localhost:3000 http://localhost:3000"
-  }
+  ]
 }
