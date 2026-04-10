@@ -5,7 +5,8 @@
 
 const config = {
   server: {
-    port: 9999,
+    // 支持通过环境变量覆盖端口，便于本地多实例或部署场景
+    port: Number(process.env.AGENT_SERVER_PORT || 9999),
   },
 
   llm: {
@@ -19,6 +20,8 @@ const config = {
     maxIterations: 5,
     parallelToolCalls: 2,
     timeout: 60000,
+    // 对话历史上限，避免长会话导致内存持续增长
+    historyLimit: 40,
   },
 }
 

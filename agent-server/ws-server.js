@@ -1,6 +1,7 @@
 const WebSocket = require('ws')
 const toolHandler = require('./tool-handler.js')
 const { Agent } = require('./agent.js')
+const config = require('./config.js')
 
 const connectionAgents = new Map()
 
@@ -96,8 +97,8 @@ toolHandler.init({
  * 启动 WebSocket 服务器
  * 监听端口 9999，处理客户端连接和消息
  */
-const wss = new WebSocket.Server({ port: 9999 })
-console.log('[WebSocket] Server started on port 9999')
+const wss = new WebSocket.Server({ port: config.server.port })
+console.log(`[WebSocket] Server started on port ${config.server.port}`)
 
 /**
  * 处理新的客户端连接
@@ -158,7 +159,8 @@ async function handleMessage(id, msg, agent) {
       console.log('[Agent] Processing prompt:', msg.prompt)
       try {
         manager.send(id, { type: 'thinking' })
-        const result = await agent.process(msg.prompt)
+        // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
+        const result = await agent.process(msg.prompt, { connectionId: id })
         manager.send(id, {
           type: 'agent_response',
           success: result.success,
@@ -178,6 +180,14 @@ async function handleMessage(id, msg, agent) {
     case 'clear_history':
       agent.clearHistory()
       manager.send(id, { type: 'history_cleared' })
+      break
+    default:
+      console.warn(`[Message] Unknown message type from ${id}:`, msg.type)
+      manager.send(id, {
+        type: 'agent_response',
+        success: false,
+        content: '不支持的消息类型，请检查客户端协议。',
+      })
       break
   }
 }

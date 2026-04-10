@@ -20,10 +20,9 @@ const tools = [
       properties: {
         connectionId: {
           type: 'number',
-          description: '浏览器插件连接ID，使用list_connections获取',
+          description: '浏览器插件连接ID，可选；缺省时默认使用当前会话连接',
         },
       },
-      required: ['connectionId'],
     },
   },
   {

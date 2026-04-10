@@ -21,6 +21,22 @@ function init(wsModule) {
 module.exports.init = init
 
 /**
+ * 规范化并校验 connectionId
+ * 支持工具参数显式传入，未传入时回退到上下文 connectionId
+ * @param {number|string|undefined} providedId - 工具参数中的连接ID
+ * @param {object} context - 运行上下文
+ * @returns {number} 规范化后的连接ID
+ */
+function resolveConnectionId(providedId, context = {}) {
+  const rawId = providedId ?? context.connectionId
+  const normalized = Number(rawId)
+  if (!Number.isInteger(normalized) || normalized <= 0) {
+    throw new Error('Invalid connectionId')
+  }
+  return normalized
+}
+
+/**
  * 追踪管理器
  * 用于记录和管理 MCP 工具调用的完整执行链路
  */
@@ -123,8 +139,8 @@ function handleListConnections(args, traceId) {
  * @param {string} traceId - 追踪ID
  * @returns {Promise<object>} MCP 响应格式
  */
-async function handleGetPerformance(args, traceId) {
-  const { connectionId } = args
+async function handleGetPerformance(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
   const requestId = uuidv4()
 
   return new Promise((resolve, reject) => {
@@ -142,7 +158,15 @@ async function handleGetPerformance(args, traceId) {
     })
 
     traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'get_performance' })
-    ws.send(connectionId, { type: 'get_performance', requestId })
+    const sendSuccess = ws.send(connectionId, { type: 'get_performance', requestId })
+
+    // 连接不可用时立即失败，避免无意义等待到超时
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
   })
 }
 
@@ -184,7 +208,11 @@ const toolHandlers = {
  * @param {object} args - 工具参数
  * @returns {Promise<object>} MCP 响应格式
  */
-async function handleToolCall(name, args) {
+async function handleToolCall(name, args, context = {}) {
+  if (!ws || !ws.manager) {
+    throw new Error('WebSocket module is not initialized')
+  }
+
   const traceId = uuidv4()
   traceManager.create(traceId, null, `tool:${name}`)
   traceManager.addEvent(traceId, 'tool_call', { name, args })
@@ -195,7 +223,7 @@ async function handleToolCall(name, args) {
       throw new Error(`Unknown tool: ${name}`)
     }
 
-    const result = await handler(args, traceId)
+    const result = await handler(args, traceId, context)
     traceManager.complete(traceId, 'success')
     return result
   } catch (error) {

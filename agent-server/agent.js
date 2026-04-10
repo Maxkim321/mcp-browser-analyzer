@@ -21,10 +21,19 @@ class Agent {
    * @returns {Promise<object>} 最终结果
    */
   async process(prompt, options = {}) {
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+      return {
+        success: false,
+        error: 'Invalid prompt',
+        content: '请输入有效的问题内容。',
+      }
+    }
+
     this.conversationHistory.push({
       role: 'user',
-      content: prompt,
+      content: prompt.trim(),
     })
+    this.trimHistory()
 
     //最大迭代次数
     /**
@@ -62,15 +71,17 @@ class Agent {
         const toolCalls = response.tool_calls
         console.log(`[Agent] Tool calls requested: ${toolCalls.length}`)
 
+        const toolContext = { connectionId: options.connectionId }
         if (toolCalls.length > 1 && this.config.parallelToolCalls > 1) {
           //并行执行
-          await this.executeParallelTools(toolCalls)
+          await this.executeParallelTools(toolCalls, toolContext)
         } else {
           //顺序执行
-          await this.executeSequentialTools(toolCalls)
+          await this.executeSequentialTools(toolCalls, toolContext)
         }
       } else {
         this.conversationHistory.push(response)
+        this.trimHistory()
         console.log(`[Agent] Final response:`, response.content)
         return {
           success: true,
@@ -93,9 +104,9 @@ class Agent {
    * 顺序执行工具调用
    * @param {Array} toolCalls - 工具调用列表
    */
-  async executeSequentialTools(toolCalls) {
+  async executeSequentialTools(toolCalls, context = {}) {
     for (const toolCall of toolCalls) {
-      await this.executeSingleTool(toolCall)
+      await this.executeSingleTool(toolCall, context)
     }
   }
 
@@ -103,12 +114,12 @@ class Agent {
    * 并行执行工具调用
    * @param {Array} toolCalls - 工具调用列表
    */
-  async executeParallelTools(toolCalls) {
+  async executeParallelTools(toolCalls, context = {}) {
     const batchSize = this.config.parallelToolCalls
     for (let i = 0; i < toolCalls.length; i += batchSize) {
       const batch = toolCalls.slice(i, i + batchSize)
       console.log(`[Agent] Executing batch ${Math.floor(i / batchSize) + 1}, size: ${batch.length}`)
-      await Promise.all(batch.map((toolCall) => this.executeSingleTool(toolCall)))
+      await Promise.all(batch.map((toolCall) => this.executeSingleTool(toolCall, context)))
     }
   }
 
@@ -116,20 +127,33 @@ class Agent {
    * 执行单个工具调用
    * @param {object} toolCall - 单个工具调用
    */
-  async executeSingleTool(toolCall) {
+  async executeSingleTool(toolCall, context = {}) {
     const toolName = toolCall.function.name
-    const toolArgs = JSON.parse(toolCall.function.arguments || '{}')
+    let toolArgs = {}
+    try {
+      toolArgs = JSON.parse(toolCall.function.arguments || '{}')
+    } catch (error) {
+      // 工具参数解析失败时向 LLM 返回明确错误，避免陷入无效重试
+      this.conversationHistory.push({
+        role: 'tool',
+        tool_call_id: toolCall.id,
+        content: `Error: Invalid JSON arguments for tool ${toolName}`,
+      })
+      this.trimHistory()
+      return
+    }
 
     console.log(`[Agent] Calling tool: ${toolName}`, toolArgs)
 
     try {
-      const result = await handleToolCall(toolName, toolArgs)
+      const result = await handleToolCall(toolName, toolArgs, context)
       const toolResult = {
         role: 'tool',
         tool_call_id: toolCall.id,
         content: result.content[0].text,
       }
       this.conversationHistory.push(toolResult)
+      this.trimHistory()
       console.log(`[Agent] Tool result:`, result)
     } catch (error) {
       console.error(`[Agent] Tool error:`, error)
@@ -138,6 +162,17 @@ class Agent {
         tool_call_id: toolCall.id,
         content: `Error: ${error.message}`,
       })
+      this.trimHistory()
+    }
+  }
+
+  /**
+   * 裁剪历史消息，保留最近 N 条，限制内存增长
+   */
+  trimHistory() {
+    const historyLimit = this.config.historyLimit
+    if (typeof historyLimit === 'number' && historyLimit > 0 && this.conversationHistory.length > historyLimit) {
+      this.conversationHistory = this.conversationHistory.slice(-historyLimit)
     }
   }
 
