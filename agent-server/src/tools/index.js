@@ -13,6 +13,58 @@ const tools = [
     },
   },
   {
+    name: 'navigate_to',
+    description: '导航到指定URL，用于测试首屏加载性能',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: '要导航到的URL，例如 https://example.com',
+        },
+        connectionId: {
+          type: 'number',
+          description: '浏览器插件连接ID，可选；缺省时默认使用当前会话连接',
+        },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'reload_page',
+    description: '刷新当前页面，用于重新测试性能',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        connectionId: {
+          type: 'number',
+          description: '浏览器插件连接ID，可选；缺省时默认使用当前会话连接',
+        },
+        ignoreCache: {
+          type: 'boolean',
+          description: '是否忽略缓存强制刷新，默认为false',
+        },
+      },
+    },
+  },
+  {
+    name: 'wait_for_load',
+    description: '等待页面加载完成',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        connectionId: {
+          type: 'number',
+          description: '浏览器插件连接ID，可选；缺省时默认使用当前会话连接',
+        },
+        timeout: {
+          type: 'number',
+          description: '超时时间（毫秒），默认为30000',
+        },
+      },
+    },
+  },
+  {
     name: 'get_browser_performance',
     description: '获取指定浏览器标签页的性能数据',
     inputSchema: {

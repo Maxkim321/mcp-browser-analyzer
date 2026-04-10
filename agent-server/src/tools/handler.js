@@ -193,6 +193,126 @@ function handleBroadcastMessage(args, traceId) {
 }
 
 /**
+ * 处理 navigate_to 工具
+ * 向浏览器插件发送导航指令，等待页面加载完成
+ * @param {object} args - 工具参数
+ * @param {string} args.url - 要导航到的URL
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP响应格式
+ */
+async function handleNavigateTo(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { url } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('Navigation timeout'))
+    }, 60000)
+
+    pendingRequests.set(requestId, {
+      resolve,
+      reject,
+      timeout,
+      traceId,
+    })
+
+    traceManager.addEvent(traceId, 'navigate', { connectionId, url })
+    const sendSuccess = ws.send(connectionId, { type: 'navigate_to', requestId, url })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
+/**
+ * 处理 reload_page 工具
+ * 向浏览器插件发送刷新页面指令
+ * @param {object} args - 工具参数
+ * @param {boolean} args.ignoreCache - 是否忽略缓存
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP响应格式
+ */
+async function handleReloadPage(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { ignoreCache = false } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('Reload timeout'))
+    }, 60000)
+
+    pendingRequests.set(requestId, {
+      resolve,
+      reject,
+      timeout,
+      traceId,
+    })
+
+    traceManager.addEvent(traceId, 'reload', { connectionId, ignoreCache })
+    const sendSuccess = ws.send(connectionId, { type: 'reload_page', requestId, ignoreCache })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
+/**
+ * 处理 wait_for_load 工具
+ * 等待页面加载完成
+ * @param {object} args - 工具参数
+ * @param {number} args.timeout - 超时时间
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP响应格式
+ */
+async function handleWaitForLoad(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { timeout = 30000 } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeoutTimer = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('Wait for load timeout'))
+    }, timeout)
+
+    pendingRequests.set(requestId, {
+      resolve,
+      reject,
+      timeout: timeoutTimer,
+      traceId,
+    })
+
+    traceManager.addEvent(traceId, 'wait_for_load', { connectionId, timeout })
+    const sendSuccess = ws.send(connectionId, { type: 'wait_for_load', requestId, timeout })
+
+    if (!sendSuccess) {
+      clearTimeout(timeoutTimer)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
+/**
  * 处理 todo_write 工具
  * 接收任务列表并格式化返回给LLM
  * @param {object} args - 工具参数
@@ -266,6 +386,9 @@ function formatTodoSummary(todos) {
 }
 
 const toolHandlers = {
+  navigate_to: handleNavigateTo,
+  reload_page: handleReloadPage,
+  wait_for_load: handleWaitForLoad,
   list_connections: handleListConnections,
   get_browser_performance: handleGetPerformance,
   broadcast_message: handleBroadcastMessage,
@@ -310,17 +433,31 @@ async function handleToolCall(name, args, context = {}) {
  * @param {object} msg - 插件消息对象
  */
 function handlePluginResponse(connectionId, msg) {
-  if (msg.type === 'performance_data' && msg.requestId) {
+  if (msg.requestId) {
     const pending = pendingRequests.get(msg.requestId)
     if (pending) {
       clearTimeout(pending.timeout)
       pendingRequests.delete(msg.requestId)
-      traceManager.addEvent(pending.traceId, 'receive_data', msg.payload)
+      
+      // 根据消息类型添加不同的追踪事件
+      let eventType = 'receive_response'
+      let responseText = 'Operation completed successfully'
+      
+      if (msg.type === 'performance_data') {
+        eventType = 'receive_data'
+        responseText = JSON.stringify(msg.payload, null, 2)
+      } else if (msg.payload) {
+        responseText = JSON.stringify(msg.payload, null, 2)
+      } else if (msg.message) {
+        responseText = msg.message
+      }
+      
+      traceManager.addEvent(pending.traceId, eventType, msg.payload || msg)
       pending.resolve({
         content: [
           {
             type: 'text',
-            text: JSON.stringify(msg.payload, null, 2),
+            text: responseText,
           },
         ],
       })
