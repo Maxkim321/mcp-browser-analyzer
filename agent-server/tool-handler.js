@@ -196,10 +196,84 @@ function handleBroadcastMessage(args, traceId) {
  * 工具处理器映射表
  * 将工具名称映射到对应的处理函数
  */
+/**
+ * 处理 todo_write 工具
+ * 接收任务列表并格式化返回给LLM
+ * @param {object} args - 工具参数
+ * @param {Array} args.todos - 任务列表
+ * @param {string} traceId - 追踪ID
+ * @returns {object} MCP响应格式
+ */
+function handleTodoWrite(args, traceId) {
+  const { todos } = args
+  
+  traceManager.addEvent(traceId, 'todo_updated', { todos })
+  
+  const summary = formatTodoSummary(todos)
+  return {
+    content: [
+      {
+        type: 'text',
+        text: summary,
+      },
+    ],
+  }
+}
+
+/**
+ * 格式化任务列表为友好的可读格式
+ * 添加进度百分比、状态图标和优先级图标
+ * @param {Array} todos - 任务列表
+ * @returns {string} 格式化后的任务摘要
+ */
+function formatTodoSummary(todos) {
+  if (!todos || todos.length === 0) {
+    return '暂无任务'
+  }
+  
+  const completed = todos.filter(t => t.status === 'completed').length
+  const total = todos.length
+  const progress = Math.round((completed / total) * 100)
+  
+  let summary = `📋 任务列表 (${progress}% 完成)\n`
+  summary += `─`.repeat(40) + '\n'
+  
+  todos.forEach((todo) => {
+    let statusIcon = ''
+    switch (todo.status) {
+      case 'completed':
+        statusIcon = '✅'
+        break
+      case 'in_progress':
+        statusIcon = '🔄'
+        break
+      default:
+        statusIcon = '⏳'
+    }
+    
+    let priorityIcon = ''
+    switch (todo.priority) {
+      case 'high':
+        priorityIcon = '🔴'
+        break
+      case 'medium':
+        priorityIcon = '🟡'
+        break
+      default:
+        priorityIcon = '🟢'
+    }
+    
+    summary += `${statusIcon} ${priorityIcon} [${todo.id}] ${todo.content}\n`
+  })
+  
+  return summary
+}
+
 const toolHandlers = {
   list_connections: handleListConnections,
   get_browser_performance: handleGetPerformance,
   broadcast_message: handleBroadcastMessage,
+  todo_write: handleTodoWrite,
 }
 
 /**

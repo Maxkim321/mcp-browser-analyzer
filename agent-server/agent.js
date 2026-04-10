@@ -132,7 +132,7 @@ class Agent {
     let toolArgs = {}
     try {
       toolArgs = JSON.parse(toolCall.function.arguments || '{}')
-    } catch (error) {
+    } catch {
       // 工具参数解析失败时向 LLM 返回明确错误，避免陷入无效重试
       this.conversationHistory.push({
         role: 'tool',

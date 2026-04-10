@@ -1,8 +1,10 @@
 const config = require('./config.js')
+const { SYSTEM_PROMPT } = require('./prompts.js')
 
 /**
  * 大模型集成模块
  * 支持调用 OpenAI/Anthropic 等大模型 API
+ * 自动在每次请求前添加系统提示词，指导Agent行为
  */
 
 class LLMClient {
@@ -16,6 +18,7 @@ class LLMClient {
 
   /**
    * 调用大模型生成回复
+   * 自动在消息列表开头添加系统提示词
    * @param {Array} messages - 对话消息列表
    * @param {Array} tools - 可用的工具列表
    * @returns {Promise<object>} 大模型响应
@@ -23,9 +26,14 @@ class LLMClient {
   async chat(messages, tools = []) {
     console.log(`[LLM] Calling model: ${this.model}`)
 
+    const augmentedMessages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...messages,
+    ]
+
     const body = {
       model: this.model,
-      messages,
+      messages: augmentedMessages,
       temperature: this.temperature,
     }
 
