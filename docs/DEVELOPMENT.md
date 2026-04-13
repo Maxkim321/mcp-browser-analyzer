@@ -422,6 +422,121 @@ taskkill /PID <PID> /F
 - 提供足够的上下文信息
 - 确保 CI/CD 通过
 
+## 大模型配置
+
+### 环境变量配置
+
+1. **创建 .env 文件**
+
+   在项目根目录创建 `.env` 文件：
+
+   ```bash
+   touch .env
+   ```
+
+2. **配置大模型相关环境变量**
+
+   编辑 `.env` 文件，添加以下配置：
+
+   ```env
+   # 大模型 API 配置
+   MODEL_API_KEY=your_api_key_here
+   MODEL_API_BASE_URL=https://api.example.com/v1
+   MODEL_NAME=gpt-4
+
+   # 服务器配置
+   PORT=3000
+
+   # 环境配置
+   NODE_ENV=development
+   ```
+
+3. **配置说明**
+   - `MODEL_API_KEY`: 大模型 API 密钥
+   - `MODEL_API_BASE_URL`: 大模型 API 基础 URL
+   - `MODEL_NAME`: 使用的大模型名称
+   - `PORT`: 服务器端口
+   - `NODE_ENV`: 环境类型（development 或 production）
+
+### 加载环境变量
+
+1. **安装 dotenv 依赖**
+
+   ```bash
+   pnpm add dotenv
+   ```
+
+2. **在服务器代码中加载环境变量**
+
+   修改 `server/index.js` 文件：
+
+   ```javascript
+   require('dotenv').config()
+   const { Server } = require('@modelcontextprotocol/sdk/server/index.js')
+   const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js')
+
+   const server = new Server(
+     {
+       name: 'browser-analyzer-server',
+       version: '1.0.0',
+     },
+     {
+       capabilities: {},
+     }
+   )
+
+   // 使用环境变量
+   const modelApiKey = process.env.MODEL_API_KEY
+   const modelName = process.env.MODEL_NAME
+
+   async function main() {
+     const transport = new StdioServerTransport()
+     await server.connect(transport)
+     console.error('Browser Analyzer MCP Server running on stdio')
+     console.error(`Using model: ${modelName}`)
+   }
+
+   main().catch((error) => {
+     console.error('Server error:', error)
+     process.exit(1)
+   })
+   ```
+
+3. **在 Chrome 插件中使用环境变量**
+
+   修改 `chrome-extension/src/utils/config.js` 文件：
+
+   ```javascript
+   import { resolve } from 'node:path'
+   import process from 'node:process'
+
+   const root = process.cwd()
+   export const r = (...args) => resolve(root, ...args)
+   export const isDev = process.env.NODE_ENV === 'development'
+   export const port = Number(process.env.PORT || '') || 3000
+
+   // 大模型配置
+   export const modelApiKey = process.env.MODEL_API_KEY
+   export const modelApiBaseUrl = process.env.MODEL_API_BASE_URL
+   export const modelName = process.env.MODEL_NAME
+   ```
+
+### 注意事项
+
+1. **环境变量安全**
+   - `.env` 文件已添加到 `.gitignore`，不会被提交到版本控制系统
+   - 不要在代码中硬编码 API 密钥等敏感信息
+   - 在生产环境中，使用环境变量或密钥管理服务来存储敏感信息
+
+2. **不同环境的配置**
+   - 开发环境：使用 `.env` 文件配置
+   - 生产环境：使用环境变量或专门的配置管理服务
+
+3. **常见问题**
+   - **API 密钥无效**：确保 API 密钥正确且未过期
+   - **网络连接问题**：检查网络连接和 API 基础 URL 是否正确
+   - **模型名称错误**：确保使用的模型名称在 API 提供商处可用
+
 ## 参考资源
 
 - [pnpm Workspace 文档](https://pnpm.io/workspaces)
@@ -429,3 +544,4 @@ taskkill /PID <PID> /F
 - [Chrome Extension 开发文档](https://developer.chrome.com/docs/extensions/)
 - [Vue 3 文档](https://vuejs.org/)
 - [Vite 文档](https://vitejs.dev/)
+- [dotenv 文档](https://www.npmjs.com/package/dotenv)
