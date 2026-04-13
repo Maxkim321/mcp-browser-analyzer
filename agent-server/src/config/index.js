@@ -10,9 +10,9 @@ const config = {
   },
 
   llm: {
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-    model: process.env.OPENAI_MODEL || 'gpt-4o',
+    apiKey: process.env.ARK_API_KEY,
+    baseURL: process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3',
+    model: process.env.ARK_MODEL || 'doubao-seed-2-0-pro-260215',
     temperature: 0.7,
   },
 

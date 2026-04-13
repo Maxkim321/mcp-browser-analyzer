@@ -21,13 +21,30 @@
   "options_page": "dist/src/ui/options/index.html",
   "permissions": [
     "storage",
-    "sidePanel"
+    "sidePanel",
+    "activeTab",
+    "tabs"
   ],
-  "host_permissions": [],
+  "host_permissions": [
+    "ws://localhost:9999/*",
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "dist/script/background.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "dist/src/content-script/index.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ],
   "web_accessible_resources": [
     {
       "resources": [
