@@ -1,0 +1,64 @@
+{
+  "name": "crx3",
+  "version": "2.0.0",
+  "description": "Package web extension into CRX file (version 3) for Google Chrome and Chromium browsers",
+  "main": "index.js",
+  "homepage": "https://github.com/ahwayakchih/crx3",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/ahwayakchih/crx3.git"
+  },
+  "engines": {
+    "node": ">=22",
+    "bun": ">=1.2.18"
+  },
+  "bin": {
+    "crx3": "bin/crx3.js"
+  },
+  "dependencies": {
+    "mri": "^1.2.0",
+    "pbf": "^4.0.1",
+    "yazl": "^3.3.1"
+  },
+  "devDependencies": {
+    "c8": "^10.1.3",
+    "docdash": "^2.0.2",
+    "eslint": "^9.39.1",
+    "eslint-plugin-jsdoc": "^61.4.1",
+    "jsdoc": "^4.0.5",
+    "tape": "^5.9.0",
+    "tape-catch": "^1.0.6"
+  },
+  "scripts": {
+    "puppeteer": "node ./puppeteer-core.js",
+    "test": "node ./test/index.js",
+    "prepublishOnly": "npm run --silent test && npm run --silent checkStyle",
+    "proto": "curl https://raw.githubusercontent.com/chromium/chromium/master/components/crx_file/crx3.proto > lib/crx3.proto",
+    "postproto": "echo '/* eslint-disable */' > lib/crx3.pb.js && pbf lib/crx3.proto --no-read --legacy >> lib/crx3.pb.js",
+    "precheckStyle": "rm -f ./reports/eslint.txt",
+    "checkStyle": "eslint index.js puppeteer-core.js lib/*.js test/** bin/*  > ./reports/eslint.txt || echo 'ESLint results saved to `reports/eslint.txt`' && cat ./reports/eslint.txt",
+    "precheckCoverage": "rm -rf ./reports/coverage",
+    "checkCoverage": "c8 --clean --report --reporter text --reporter html --reports-dir reports/coverage node ./test/index.js",
+    "postcheckCoverage": "echo Coverage results saved to '`reports/coverage/index.html`'",
+    "checkAudit": "npm shrinkwrap && npm audit > ./reports/audit.log || cat ./reports/audit.log; rm npm-shrinkwrap.json",
+    "predoc": "rm -rf ./reports/jsdoc",
+    "doc": "jsdoc -d reports/jsdoc -c .jsdoc.json --readme README.md -r index.js lib",
+    "postdoc": "echo 'Documentation available at `reports/jsdoc/index.html`'"
+  },
+  "keywords": [
+    "crx",
+    "web",
+    "extension",
+    "chromium",
+    "chrome",
+    "opera"
+  ],
+  "author": "Marcin Konicki (https://ahwayakchih.neoni.net)",
+  "license": "MIT",
+  "files": [
+    "bin/**",
+    "lib/**",
+    "index.js",
+    "README.md"
+  ]
+}

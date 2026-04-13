@@ -1,0 +1,31 @@
+{
+  "name": "brace-expansion",
+  "version": "1.1.13",
+  "requiresBuild": false,
+  "files": {
+    "LICENSE": {
+      "checkedAt": 1776045038655,
+      "integrity": "sha512-CwBouL62hk27aXHZ/hZdLV/UILzW17u9j0JYnrmBv5XYVN8tFsIdN46m1I9WI0XS9m3g/RcTTf+oSV60lubf8A==",
+      "mode": 420,
+      "size": 1096
+    },
+    "index.js": {
+      "checkedAt": 1776045038656,
+      "integrity": "sha512-UmRsnUrjWBTKGLw+W7Ach6i1+XqEioBoWtVKtFgB0HndQxLVPDemfDOrLr3fL5U12hhjMJMOBAzwRIdsMv4HAw==",
+      "mode": 420,
+      "size": 4809
+    },
+    "package.json": {
+      "checkedAt": 1776045038656,
+      "integrity": "sha512-2/v2YYXKBqszcyA8InSqDRuCF8Ehiy7bcUNiE0YWxCuffnZA/ojx5auykELMgLxruOGdobJCnj2ceCB7wdMd5w==",
+      "mode": 420,
+      "size": 1156
+    },
+    "README.md": {
+      "checkedAt": 1776045038656,
+      "integrity": "sha512-AWsMjzK1dtM8sFJPdzcIElc6HBYMvDF/kIR3v2AiVyRvWPVu/5sTQg5AhYKGNfr73LetS0MY9gBgz/XoYl1G8w==",
+      "mode": 420,
+      "size": 4058
+    }
+  }
+}

@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "build:dev": "NODE_ENV=development vite build",
+    "package": "npm run build && crx3 --key=./key.pem ./extension ./extension.crx"
   },
   "dependencies": {
     "vue": "^3.5.25"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.2",
+    "crx3": "^2.0.0",
+    "terser": "^5.46.1",
     "vite": "^7.2.4"
   }
 }

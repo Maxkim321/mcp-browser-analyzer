@@ -35,6 +35,10 @@ export const getManifest = () => {
     m.content_security_policy = {
       extension_pages: `script-src 'self' http://localhost:${port}; object-src 'self'; connect-src 'self' ws://localhost:${port} http://localhost:${port}`,
     }
+  } else {
+    m.content_security_policy = {
+      extension_pages: `script-src 'self'; object-src 'self'; connect-src 'self'`,
+    }
   }
   return m
 }

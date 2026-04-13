@@ -1,0 +1,31 @@
+{
+  "name": "yazl",
+  "version": "3.3.1",
+  "requiresBuild": false,
+  "files": {
+    "LICENSE": {
+      "checkedAt": 1776045037517,
+      "integrity": "sha512-j+gLojoSGzN02T4WS7gO1HdZs51ahjqm3zLuKUqpXT0ipKNlY2x2AzdZGeRJ74oVh+NUqdLC+/M90Bozpq5Tvw==",
+      "mode": 420,
+      "size": 1077
+    },
+    "index.js": {
+      "checkedAt": 1776045037517,
+      "integrity": "sha512-cUO5/0lIDqKFoI1AdPq71AcTaM+jCahqkfxWKS+X33zLNRQVl6/OSjTomry26G+SIk/nSMUdzhNia3yNu6tmJg==",
+      "mode": 420,
+      "size": 33328
+    },
+    "package.json": {
+      "checkedAt": 1776045037518,
+      "integrity": "sha512-JOpoXS4g6wJzzMB+iy879BkQNEDRTBuiaYzWhvzAdEamsmXwPuNEK5jw2F7D3AsfsNvrJ67TLaZPFTPmPpAwkg==",
+      "mode": 420,
+      "size": 678
+    },
+    "README.md": {
+      "checkedAt": 1776045037518,
+      "integrity": "sha512-SSHHU4Sys/SmWurGW1DVhYkQApooQIlplpPe3281lbnYDDGjfyV2z2rIPn6r0z11EIafDLW7Gjx3TqjUoXBeBQ==",
+      "mode": 420,
+      "size": 23660
+    }
+  }
+}

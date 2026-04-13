@@ -99,9 +99,15 @@ export default defineConfig({
     outDir: r('extension/dist'),
     emptyOutDir: false,
     sourcemap: isDev ? 'inline' : false,
+    minify: 'terser',
     terserOptions: {
-      mangle: false,
+      compress: {
+        drop_console: !isDev,
+        drop_debugger: !isDev,
+      },
+      mangle: true,
     },
+    cssCodeSplit: true,
     rollupOptions: {
       input: {
         options: r('src/ui/options/index.html'),
@@ -119,6 +125,9 @@ export default defineConfig({
         },
         chunkFileNames: 'script/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
+        manualChunks: {
+          vendor: ['vue'],
+        },
       },
     },
   },

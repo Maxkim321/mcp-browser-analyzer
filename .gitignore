@@ -137,3 +137,8 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Chrome extension build files
+chrome-extension/extension/
+chrome-extension/extension.crx
+chrome-extension/key.pem
