@@ -8,6 +8,8 @@
     "server": "pnpm -F server start",
     "extension": "pnpm -F chrome-extension dev",
     "extension:build": "pnpm -F chrome-extension build",
+    "extension:dev": "pnpm -F chrome-extension build:dev",
+    "extension:package": "pnpm -F chrome-extension package",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

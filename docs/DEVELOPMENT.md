@@ -149,17 +149,19 @@ git push origin feature/your-feature-name
 
 ### 命令速查
 
-| 命令                   | 说明                     |
-| ---------------------- | ------------------------ |
-| `pnpm server`          | 启动 MCP 服务            |
-| `pnpm extension`       | 启动 Chrome 插件开发模式 |
-| `pnpm extension:build` | 构建 Chrome 插件         |
-| `pnpm build`           | 构建所有子项目           |
-| `pnpm lint`            | 检查代码问题             |
-| `pnpm lint:fix`        | 自动修复代码问题         |
-| `pnpm format`          | 格式化所有代码           |
-| `pnpm format:check`    | 检查代码格式             |
-| `pnpm clean`           | 清理所有依赖和构建产物   |
+| 命令                     | 说明                         |
+| ------------------------ | ---------------------------- |
+| `pnpm server`            | 启动 MCP 服务                |
+| `pnpm extension`         | 启动 Chrome 插件开发模式     |
+| `pnpm extension:build`   | 构建 Chrome 插件             |
+| `pnpm build`             | 构建所有子项目               |
+| `pnpm extension:dev`     | 构建 Chrome 插件（开发环境） |
+| `pnpm extension:package` | 打包 Chrome 插件为 CRX3 文件 |
+| `pnpm lint`              | 检查代码问题                 |
+| `pnpm lint:fix`          | 自动修复代码问题             |
+| `pnpm format`            | 格式化所有代码               |
+| `pnpm format:check`      | 检查代码格式                 |
+| `pnpm clean`             | 清理所有依赖和构建产物       |
 
 ## 代码规范
 
@@ -277,6 +279,58 @@ MCP 服务的日志会输出到运行 `pnpm server` 的终端
 1. 打开 DevTools → Network
 2. 筛选「WS」（WebSocket）
 3. 选择连接查看消息
+
+## CRX3 打包优化
+
+### 打包流程
+
+1. **构建插件**
+
+   ```bash
+   # 生产环境构建
+   pnpm extension:build
+
+   # 开发环境构建
+   pnpm extension:dev
+   ```
+
+2. **打包为 CRX3 文件**
+
+   ```bash
+   pnpm extension:package
+   ```
+
+   这会在 `chrome-extension` 目录下生成 `web-extension.crx` 文件。
+
+### 打包优化措施
+
+1. **代码压缩和混淆**
+   - 使用 Terser 进行代码压缩
+   - 移除生产环境中的 console 和 debugger 语句
+   - 启用变量名混淆
+
+2. **资源优化**
+   - 分离 CSS 代码
+   - 将 Vue 等第三方库分离到单独的 chunk 中
+   - 优化文件命名和哈希策略
+
+3. **安全性配置**
+   - 为生产环境配置严格的内容安全策略
+   - 使用私钥签名扩展，确保扩展的完整性和来源可信
+
+### 注意事项
+
+1. **私钥管理**
+   - 私钥文件 `key.pem` 已添加到 `.gitignore`，不会被提交到版本控制系统
+   - 请妥善保管私钥文件，用于后续扩展更新
+
+2. **内容安全策略**
+   - 生产环境中只允许从扩展本身加载资源
+   - 开发环境中允许本地服务器连接，便于调试
+
+3. **构建产物**
+   - 构建和打包产物已添加到 `.gitignore`，不会被提交到版本控制系统
+   - 每次打包都会生成新的 CRX3 文件
 
 ## 常见问题
 
