@@ -147,11 +147,14 @@ wss.on('connection', (ws) => {
  * @param {Agent} agent - 该连接的 Agent 实例
  */
 async function handleMessage(id, msg, agent) {
+  // 统一处理工具响应：只要插件回了 requestId，就交给 tool handler 匹配 pending request
+  // 这可以覆盖 performance_data / navigate_to_result / reload_result / wait_for_load_result 等类型
+  if (msg.requestId) {
+    toolHandler.handlePluginResponse(id, msg)
+    return
+  }
+
   switch (msg.type) {
-    case 'performance_data':
-      console.log('[Data] Performance:', msg.payload)
-      toolHandler.handlePluginResponse(id, msg)
-      break
     case 'ping':
       manager.send(id, { type: 'pong' })
       break

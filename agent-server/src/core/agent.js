@@ -57,6 +57,8 @@ class Agent {
      */
     const maxIterations = options.maxIterations || this.config.maxIterations
     let iteration = 0
+    // 工具上下文在整个 process 生命周期内共享，避免每轮迭代被重置
+    const toolContext = { connectionId: options.connectionId, todoWriteCount: 0 }
 
     while (iteration < maxIterations) {
       iteration++
@@ -71,7 +73,6 @@ class Agent {
         const toolCalls = response.tool_calls
         console.log(`[Agent] Tool calls requested: ${toolCalls.length}`)
 
-        const toolContext = { connectionId: options.connectionId }
         if (toolCalls.length > 1 && this.config.parallelToolCalls > 1) {
           //并行执行
           await this.executeParallelTools(toolCalls, toolContext)
@@ -92,10 +93,37 @@ class Agent {
       }
     }
 
+    // 兜底收敛：达到最大轮次后，禁用工具再请求一次，让模型直接输出最终结论
+    // 避免“数据已采集成功但最后卡在工具循环”导致整体失败
+    try {
+      const forcedFinalResponse = await this.llm.chat([
+        ...this.conversationHistory,
+        {
+          role: 'user',
+          content: '请基于已有工具结果直接输出最终结论，不要再调用任何工具。若数据不足请明确说明不足点。',
+        },
+      ], [])
+
+      if (forcedFinalResponse?.content) {
+        this.conversationHistory.push(forcedFinalResponse)
+        this.trimHistory()
+        console.log('[Agent] Fallback final response:', forcedFinalResponse.content)
+        return {
+          success: true,
+          content: forcedFinalResponse.content,
+          conversation: this.conversationHistory,
+          iterations: maxIterations,
+          fallback: true,
+        }
+      }
+    } catch (fallbackError) {
+      console.error('[Agent] Fallback finalization failed:', fallbackError)
+    }
+
     return {
       success: false,
       error: 'Max iterations reached',
-      content: '抱歉，我无法完成这个任务，请尝试更简单的请求。',
+      content: '抱歉，已达到最大推理轮次，当前任务未完整收敛。可重试或简化请求。',
       iterations: maxIterations,
     }
   }
@@ -144,6 +172,21 @@ class Agent {
     }
 
     console.log(`[Agent] Calling tool: ${toolName}`, toolArgs)
+
+    // 限制 todo_write 在单次任务中最多执行一次，避免模型陷入反复更新任务列表
+    if (toolName === 'todo_write') {
+      if ((context.todoWriteCount || 0) >= 1) {
+        this.conversationHistory.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: 'Skipped: todo_write can only be called once per request.',
+        })
+        this.trimHistory()
+        console.log('[Agent] Skipped tool: todo_write (already called once)')
+        return
+      }
+      context.todoWriteCount = (context.todoWriteCount || 0) + 1
+    }
 
     try {
       const result = await handleToolCall(toolName, toolArgs, context)

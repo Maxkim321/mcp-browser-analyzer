@@ -17,7 +17,7 @@ const config = {
   },
 
   agent: {
-    maxIterations: 5,
+    maxIterations: 10,
     parallelToolCalls: 2,
     timeout: 60000,
     // 对话历史上限，避免长会话导致内存持续增长

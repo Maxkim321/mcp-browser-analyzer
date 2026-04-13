@@ -120,6 +120,68 @@ let websocket = null
 let reconnectTimer = null
 const WS_URL = 'ws://localhost:9999'
 
+const sendToolResponse = (type, requestId, payload = {}, message = '') => {
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+    return
+  }
+  websocket.send(JSON.stringify({
+    type,
+    requestId,
+    payload,
+    message
+  }))
+}
+
+const getActiveTab = async () => {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
+  if (!tabs.length || !tabs[0].id) {
+    throw new Error('No active tab found')
+  }
+  return tabs[0]
+}
+
+const waitForTabLoad = async (tabId, timeoutMs = 30000) => {
+  const existingTab = await chrome.tabs.get(tabId)
+  if (existingTab?.status === 'complete') {
+    return existingTab
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false
+
+    const cleanup = () => {
+      chrome.tabs.onUpdated.removeListener(handleUpdated)
+      clearTimeout(timer)
+    }
+
+    const finishResolve = (tab) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(tab)
+    }
+
+    const finishReject = (error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    }
+
+    const handleUpdated = (updatedTabId, changeInfo, tab) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        finishResolve(tab)
+      }
+    }
+
+    chrome.tabs.onUpdated.addListener(handleUpdated)
+
+    const timer = setTimeout(() => {
+      finishReject(new Error('Tab load timeout'))
+    }, timeoutMs)
+  })
+}
+
 // 格式化时间
 const formatTime = (timestamp) => {
   const date = new Date(timestamp)
@@ -225,18 +287,75 @@ const connectWebSocket = () => {
             }).then(response => {
               console.log('Performance data received:', response)
               if (response.success && response.payload) {
-                // 向agent-server发送性能数据
-                if (websocket && websocket.readyState === WebSocket.OPEN) {
-                  websocket.send(JSON.stringify({
-                    type: 'performance_data',
-                    requestId: data.requestId,
-                    payload: response.payload
-                  }))
-                }
+                sendToolResponse('performance_data', data.requestId, response.payload, 'Performance data collected')
+              } else {
+                sendToolResponse('performance_data', data.requestId, {
+                  error: response?.error || 'Failed to collect performance data'
+                }, response?.error || 'Failed to collect performance data')
               }
             }).catch(error => {
               console.error('Error getting performance data:', error)
+              sendToolResponse('performance_data', data.requestId, {
+                error: error.message
+              }, error.message)
             })
+            break
+
+          case 'navigate_to':
+            ;(async () => {
+              try {
+                const tab = await getActiveTab()
+                const updatedTab = await chrome.tabs.update(tab.id, { url: data.url })
+                const loadedTab = await waitForTabLoad(updatedTab.id, 60000)
+                sendToolResponse('navigate_to_result', data.requestId, {
+                  tabId: loadedTab.id,
+                  url: loadedTab.url,
+                  status: loadedTab.status
+                }, `Navigated to ${loadedTab.url}`)
+              } catch (error) {
+                console.error('Navigate failed:', error)
+                sendToolResponse('navigate_to_result', data.requestId, {
+                  error: error.message
+                }, error.message)
+              }
+            })()
+            break
+
+          case 'reload_page':
+            ;(async () => {
+              try {
+                const tab = await getActiveTab()
+                await chrome.tabs.reload(tab.id, { bypassCache: !!data.ignoreCache })
+                sendToolResponse('reload_result', data.requestId, {
+                  tabId: tab.id,
+                  ignoreCache: !!data.ignoreCache
+                }, 'Reload requested')
+              } catch (error) {
+                console.error('Reload failed:', error)
+                sendToolResponse('reload_result', data.requestId, {
+                  error: error.message
+                }, error.message)
+              }
+            })()
+            break
+
+          case 'wait_for_load':
+            ;(async () => {
+              try {
+                const tab = await getActiveTab()
+                const loadedTab = await waitForTabLoad(tab.id, data.timeout || 30000)
+                sendToolResponse('wait_for_load_result', data.requestId, {
+                  tabId: loadedTab.id,
+                  url: loadedTab.url,
+                  status: loadedTab.status
+                }, 'Page load completed')
+              } catch (error) {
+                console.error('Wait for load failed:', error)
+                sendToolResponse('wait_for_load_result', data.requestId, {
+                  error: error.message
+                }, error.message)
+              }
+            })()
             break
 
           default:

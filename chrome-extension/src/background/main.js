@@ -38,44 +38,61 @@ const sendToContentScript = (tabId, message) => {
   })
 }
 
+const ensureContentScriptInjected = async (tabId) => {
+  if (!c?.scripting?.executeScript) {
+    throw new Error('Missing scripting permission')
+  }
+  await c.scripting.executeScript({
+    target: { tabId },
+    files: ['dist/src/content-script/index.js']
+  })
+}
+
+const getActiveTabId = async () => {
+  const tabs = await c.tabs.query({ active: true, currentWindow: true })
+  if (!tabs.length || !tabs[0].id) {
+    throw new Error('No active tab found')
+  }
+  const tab = tabs[0]
+  if (!tab.url || tab.url.startsWith('edge://') || tab.url.startsWith('chrome://')) {
+    throw new Error('Unsupported page: cannot inject into browser internal pages')
+  }
+  return tab.id
+}
+
+const getPerformanceWithRetry = async (requestId) => {
+  const tabId = await getActiveTabId()
+  try {
+    return await sendToContentScript(tabId, { type: 'get_performance', requestId })
+  } catch (error) {
+    const message = String(error?.message || '')
+    const shouldRetryByInject = message.includes('Receiving end does not exist')
+    if (!shouldRetryByInject) {
+      throw error
+    }
+    await ensureContentScriptInjected(tabId)
+    return sendToContentScript(tabId, { type: 'get_performance', requestId })
+  }
+}
+
 // 监听来自agent-server的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request)
   
   if (request.type === 'get_performance') {
-    // 找到当前激活的标签页
-    c.tabs.query({ active: true, currentWindow: true }).then(tabs => {
-      if (tabs.length > 0) {
-        const tabId = tabs[0].id
-        
-        // 向content-script发送性能数据采集请求
-        sendToContentScript(tabId, {
-          type: 'get_performance',
-          requestId: request.requestId
-        }).then(response => {
-          console.log('Background received performance data:', response)
-          sendResponse(response)
-        }).catch(error => {
-          console.error('Error getting performance data:', error)
-          sendResponse({
-            success: false,
-            error: error.message
-          })
-        })
-      } else {
+    getPerformanceWithRetry(request.requestId)
+      .then(response => {
+        console.log('Background received performance data:', response)
+        sendResponse(response)
+      })
+      .catch(error => {
+        console.error('Error getting performance data:', error)
         sendResponse({
           success: false,
-          error: 'No active tab found'
+          error: error.message
         })
-      }
-    }).catch(error => {
-      console.error('Error querying tabs:', error)
-      sendResponse({
-        success: false,
-        error: error.message
       })
-    })
-    
+
     return true // 保持消息通道开放，用于异步响应
   }
   

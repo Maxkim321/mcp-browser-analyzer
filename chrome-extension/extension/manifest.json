@@ -23,7 +23,8 @@
     "storage",
     "sidePanel",
     "activeTab",
-    "tabs"
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
     "ws://localhost:9999/*",

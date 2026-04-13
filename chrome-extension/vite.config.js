@@ -107,7 +107,7 @@ export default defineConfig({
         options: r('src/ui/options/index.html'),
         popup: r('src/ui/popup/index.html'),
         sidepanel: r('src/ui/sidepanel/index.html'),
-        content: r('src/content-script/index.js'),
+        'src/content-script/index': r('src/content-script/index.js'),
         ...(isDev
           ? { 'src/background/dev-hmr': r('src/background/dev-hmr.js') }
           : { 'src/background/main': r('src/background/main.js') }),

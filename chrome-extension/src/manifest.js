@@ -24,7 +24,7 @@ export const getManifest = () => {
     },
     side_panel: { default_path: 'dist/src/ui/sidepanel/index.html' },
     options_page: 'dist/src/ui/options/index.html',
-    permissions: ['storage', 'sidePanel', 'activeTab', 'tabs'],
+    permissions: ['storage', 'sidePanel', 'activeTab', 'tabs', 'scripting'],
     host_permissions: isDev 
       ? [`http://localhost:${port}/*`, 'ws://localhost:9999/*', '<all_urls>'] 
       : ['ws://localhost:9999/*', '<all_urls>'],
