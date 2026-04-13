@@ -17,8 +17,8 @@
 
 ```
 mcp-browser-analyzer/
-├── server/              # MCP 服务端（Agent 后端）
-│   ├── index.js        # MCP 服务入口
+├── server/              # Agent 后端（MCP 服务端）
+│   ├── index.js        # Agent 服务入口（MCP 服务）
 │   ├── ws-server.js    # WebSocket 服务
 │   └── package.json
 └── chrome-extension/    # Chrome 插件（前端）
@@ -37,6 +37,20 @@ mcp-browser-analyzer/
     ├── package.json
     └── vite.config.js  # Vite 构建配置
 ```
+
+### Agent 后端说明
+
+`server/` 目录即为 Agent 后端，它包含：
+
+- **index.js**：Agent 服务入口，基于 MCP 协议实现与大模型的交互
+- **ws-server.js**：WebSocket 服务，用于与前端插件通信
+- **环境变量支持**：通过 `.env` 文件配置大模型 API 密钥和其他参数
+
+Agent 后端负责：
+
+1. 处理来自前端插件的请求
+2. 与大模型进行交互
+3. 将大模型的响应返回给前端插件
 
 ### 技术架构图
 
