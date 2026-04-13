@@ -17,36 +17,44 @@
 
 ```
 mcp-browser-analyzer/
-├── server/              # MCP 服务端
+├── server/              # MCP 服务端（Agent 后端）
 │   ├── index.js        # MCP 服务入口
 │   ├── ws-server.js    # WebSocket 服务
 │   └── package.json
-└── chrome-extension/    # Chrome 插件
+└── chrome-extension/    # Chrome 插件（前端）
+    ├── extension/      # 构建输出目录
+    ├── public/         # 静态资源
     ├── src/
     │   ├── background/ # 后台脚本
-    │   ├── ui/         # UI 页面（popup、options、sidepanel）
     │   ├── logic/      # 业务逻辑
-    │   └── utils/      # 工具函数
-    └── package.json
+    │   ├── ui/         # UI 页面（popup、options、sidepanel）
+    │   │   ├── options/     # 选项页面
+    │   │   ├── popup/       # 弹出页面
+    │   │   └── sidepanel/   # 侧边栏页面
+    │   ├── utils/      # 工具函数
+    │   └── manifest.js # 扩展配置
+    ├── key.pem         # CRX3 签名密钥
+    ├── package.json
+    └── vite.config.js  # Vite 构建配置
 ```
 
 ### 技术架构图
 
 ```
 ┌─────────────┐
-│   AI Client │
+│   AI Agent  │
 └──────┬──────┘
        │ MCP Protocol
        ↓
 ┌─────────────────┐
 │  MCP Server     │ (server/index.js)
-│  (Node.js)      │
+│  (Agent 后端)   │
 └──────┬──────────┘
        │ WebSocket
        ↓
 ┌─────────────────────┐
 │  Chrome Extension   │ (chrome-extension/)
-│  (Vue 3 + Vite)    │
+│  (前端插件)        │
 └─────────────────────┘
        │ Chrome API
        ↓
@@ -85,6 +93,15 @@ pnpm install
 pnpm prepare
 ```
 
+4. **配置环境变量**
+
+创建 `.env` 文件并配置大模型相关环境变量：
+
+```bash
+touch .env
+# 编辑 .env 文件，添加大模型配置
+```
+
 ### 验证安装
 
 运行以下命令验证环境是否正常：
@@ -117,7 +134,7 @@ git checkout -b feature/your-feature-name
 3. **启动开发服务**
 
 ```bash
-# 终端 1：启动 MCP 服务
+# 终端 1：启动 Agent 后端服务（MCP 服务）
 pnpm server
 
 # 终端 2：启动 Chrome 插件开发
@@ -126,7 +143,8 @@ pnpm extension
 
 4. **开发功能**
 
-- 修改代码
+- **Agent 后端开发**：修改 `server/` 目录下的代码
+- **前端插件开发**：修改 `chrome-extension/src/` 目录下的代码
 - 保存后自动热重载
 - 在浏览器中测试
 
@@ -149,19 +167,19 @@ git push origin feature/your-feature-name
 
 ### 命令速查
 
-| 命令                     | 说明                         |
-| ------------------------ | ---------------------------- |
-| `pnpm server`            | 启动 MCP 服务                |
-| `pnpm extension`         | 启动 Chrome 插件开发模式     |
-| `pnpm extension:build`   | 构建 Chrome 插件             |
-| `pnpm build`             | 构建所有子项目               |
-| `pnpm extension:dev`     | 构建 Chrome 插件（开发环境） |
-| `pnpm extension:package` | 打包 Chrome 插件为 CRX3 文件 |
-| `pnpm lint`              | 检查代码问题                 |
-| `pnpm lint:fix`          | 自动修复代码问题             |
-| `pnpm format`            | 格式化所有代码               |
-| `pnpm format:check`      | 检查代码格式                 |
-| `pnpm clean`             | 清理所有依赖和构建产物       |
+| 命令                     | 说明                            |
+| ------------------------ | ------------------------------- |
+| `pnpm server`            | 启动 Agent 后端服务（MCP 服务） |
+| `pnpm extension`         | 启动 Chrome 插件开发模式        |
+| `pnpm extension:build`   | 构建 Chrome 插件                |
+| `pnpm build`             | 构建所有子项目                  |
+| `pnpm extension:dev`     | 构建 Chrome 插件（开发环境）    |
+| `pnpm extension:package` | 打包 Chrome 插件为 CRX3 文件    |
+| `pnpm lint`              | 检查代码问题                    |
+| `pnpm lint:fix`          | 自动修复代码问题                |
+| `pnpm format`            | 格式化所有代码                  |
+| `pnpm format:check`      | 检查代码格式                    |
+| `pnpm clean`             | 清理所有依赖和构建产物          |
 
 ## 代码规范
 
