@@ -107,6 +107,7 @@ export default defineConfig({
         options: r('src/ui/options/index.html'),
         popup: r('src/ui/popup/index.html'),
         sidepanel: r('src/ui/sidepanel/index.html'),
+        'src/content-script/index': r('src/content-script/index.js'),
         ...(isDev
           ? { 'src/background/dev-hmr': r('src/background/dev-hmr.js') }
           : { 'src/background/main': r('src/background/main.js') }),
@@ -115,6 +116,7 @@ export default defineConfig({
         entryFileNames: (chunk) => {
           if (chunk.name === 'src/background/dev-hmr') return 'script/dev-hmr.js'
           if (chunk.name === 'src/background/main') return 'script/background.js'
+          if (chunk.name === 'src/content-script/index') return 'src/content-script/index.js'
           return 'script/[name]-[hash].js'
         },
         chunkFileNames: 'script/[name]-[hash].js',

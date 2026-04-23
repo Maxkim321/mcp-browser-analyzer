@@ -1,5 +1,9 @@
 const WebSocket = require('ws')
-const { handlePluginResponse } = require('./tool-handler.js')
+const toolHandler = require('../tools/handler.js')
+const { Agent } = require('../core/agent.js')
+const config = require('../config/index.js')
+
+const connectionAgents = new Map()
 
 /**
  * 连接管理器 - 管理所有 WebSocket 客户端连接
@@ -55,6 +59,7 @@ class ConnectionManager {
    */
   broadcast(message) {
     console.log('[Broadcast]', message)
+    // eslint-disable-next-line no-unused-vars
     this.connections.forEach((ws, id) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(message))
@@ -81,18 +86,27 @@ class ConnectionManager {
 
 const manager = new ConnectionManager()
 
+toolHandler.init({
+  manager,
+  send: (id, cmd) => manager.send(id, cmd),
+  broadcast: (cmd) => manager.broadcast(cmd),
+  getPerformance: (id) => manager.send(id, { type: 'get_performance' }),
+})
+
 /**
  * 启动 WebSocket 服务器
  * 监听端口 9999，处理客户端连接和消息
  */
-const wss = new WebSocket.Server({ port: 9999 })
-console.log('[WebSocket] Server started on port 9999')
+const wss = new WebSocket.Server({ port: config.server.port })
+console.log(`[WebSocket] Server started on port ${config.server.port}`)
 
 /**
  * 处理新的客户端连接
  */
 wss.on('connection', (ws) => {
   const connectionId = manager.add(ws)
+  const agent = new Agent()
+  connectionAgents.set(connectionId, agent)
 
   /**
    * 接收并处理客户端消息
@@ -101,7 +115,7 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(data.toString())
       console.log(`[Receive] From ${connectionId}:`, msg)
-      await handleMessage(connectionId, msg)
+      await handleMessage(connectionId, msg, agent)
     } catch (err) {
       console.error('[Error] Parse message:', err)
     }
@@ -112,6 +126,7 @@ wss.on('connection', (ws) => {
    */
   ws.on('close', () => {
     manager.remove(connectionId)
+    connectionAgents.delete(connectionId)
   })
 
   /**
@@ -120,6 +135,7 @@ wss.on('connection', (ws) => {
   ws.on('error', (err) => {
     console.error('[Error] Connection:', err)
     manager.remove(connectionId)
+    connectionAgents.delete(connectionId)
   })
 })
 
@@ -128,15 +144,53 @@ wss.on('connection', (ws) => {
  * 根据消息类型分发到不同的处理逻辑
  * @param {number} id - 连接 ID
  * @param {object} msg - 消息对象
+ * @param {Agent} agent - 该连接的 Agent 实例
  */
-async function handleMessage(id, msg) {
+async function handleMessage(id, msg, agent) {
+  // 统一处理工具响应：只要插件回了 requestId，就交给 tool handler 匹配 pending request
+  // 这可以覆盖 performance_data / navigate_to_result / reload_result / wait_for_load_result 等类型
+  if (msg.requestId) {
+    toolHandler.handlePluginResponse(id, msg)
+    return
+  }
+
   switch (msg.type) {
-    case 'performance_data':
-      console.log('[Data] Performance:', msg.payload)
-      handlePluginResponse(id, msg)
-      break
     case 'ping':
       manager.send(id, { type: 'pong' })
+      break
+    case 'user_prompt':
+      console.log('[Agent] Processing prompt:', msg.prompt)
+      try {
+        manager.send(id, { type: 'thinking' })
+        // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
+        const result = await agent.process(msg.prompt, { connectionId: id })
+        manager.send(id, {
+          type: 'agent_response',
+          success: result.success,
+          content: result.content,
+          error: result.error,
+        })
+      } catch (error) {
+        console.error('[Agent] Error:', error)
+        manager.send(id, {
+          type: 'agent_response',
+          success: false,
+          content: '抱歉，处理你的请求时出错了。',
+          error: error.message,
+        })
+      }
+      break
+    case 'clear_history':
+      agent.clearHistory()
+      manager.send(id, { type: 'history_cleared' })
+      break
+    default:
+      console.warn(`[Message] Unknown message type from ${id}:`, msg.type)
+      manager.send(id, {
+        type: 'agent_response',
+        success: false,
+        content: '不支持的消息类型，请检查客户端协议。',
+      })
       break
   }
 }

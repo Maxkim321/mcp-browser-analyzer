@@ -1,0 +1,16 @@
+{
+  "name": "agent-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "chat": "node chat.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "uuid": "^10.0.0",
+    "ws": "^8.18.0"
+  }
+}
