@@ -171,9 +171,9 @@ pnpm extension
 - ✅ Day2：WebSocket 通信基础
 - ✅ Day3：Agent Server 框架 + 火山引擎集成
 - ✅ Day4：性能数据采集工具
-- ⏳ Day5：Chrome 插件开发（MVP 性能测试链路）
-- ⏳ Day6：联调测试（聚焦性能测试稳定性）
-- ⏳ Day7：优化 + 文档完善（明确通用 Agent 演进路线）
+- ✅ Day5：Chrome 插件开发（MVP 性能测试链路）
+- ✅ Day6：联调测试（聚焦性能测试稳定性）
+- ✅ Day7：优化 + 文档完善（明确通用 Agent 演进路线）
 
 ## 团队协作
 
