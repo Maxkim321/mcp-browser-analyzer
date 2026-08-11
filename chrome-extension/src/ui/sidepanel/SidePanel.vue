@@ -126,6 +126,8 @@ const connectionStatus = ref('disconnected')
 const statusText = ref('未连接')
 let websocket = null
 let reconnectTimer = null
+// 当前正在流式渲染的 AI 消息（打字机效果），agent_response 到达后用完整内容覆盖
+let currentStreaming = null
 const WS_URL = 'ws://localhost:9999'
 
 const sendToolResponse = (type, requestId, payload = {}, message = '') => {
@@ -245,9 +247,30 @@ const connectWebSocket = () => {
         console.log('WebSocket message received:', data)
 
         switch (data.type) {
+          case 'token':
+            // 流式增量：首次收到 token 创建 AI 消息，后续追加内容（打字机效果）
+            thinking.value = false
+            if (!currentStreaming) {
+              currentStreaming = {
+                type: 'text',
+                sender: 'ai',
+                content: '',
+                timestamp: Date.now(),
+                streaming: true
+              }
+              messages.value.push(currentStreaming)
+            }
+            currentStreaming.content += data.content
+            break
+
           case 'agent_response':
             thinking.value = false
-            if (data.success) {
+            if (currentStreaming) {
+              // 流式已开始：用最终完整内容覆盖增量，防止分片丢失导致内容不全
+              currentStreaming.content = data.success ? data.content : `${currentStreaming.content}\n\n错误: ${data.content || data.error || ''}`
+              currentStreaming.streaming = false
+              currentStreaming = null
+            } else if (data.success) {
               messages.value.push({
                 type: 'text',
                 sender: 'ai',

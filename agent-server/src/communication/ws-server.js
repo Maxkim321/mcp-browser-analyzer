@@ -166,7 +166,12 @@ async function handleMessage(id, msg, agent) {
         // 固定动作（总结/翻译/解释等）使用专用提示词驱动结构化输出
         const systemPrompt = msg.action ? ACTION_PROMPTS[msg.action] : undefined
         // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
-        const result = await agent.process(msg.prompt, { connectionId: id, systemPrompt })
+        // onToken：LLM 文本增量实时分片推送（流式输出），最终结果仍由 agent_response 兜底
+        const result = await agent.process(msg.prompt, {
+          connectionId: id,
+          systemPrompt,
+          onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
+        })
         manager.send(id, {
           type: 'agent_response',
           success: result.success,

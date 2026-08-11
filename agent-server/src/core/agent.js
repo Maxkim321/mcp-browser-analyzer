@@ -64,7 +64,8 @@ class Agent {
       iteration++
       console.log(`[Agent] Iteration ${iteration}/${maxIterations}`)
 
-      const response = await this.llm.chat(this.conversationHistory, tools, options.systemPrompt)
+      // 流式调用：工具轮 content 为空（不触发 onToken），最终文本轮实时推送增量
+      const response = await this.llm.chatStream(this.conversationHistory, tools, options.systemPrompt, options.onToken)
 
       //需要工具 - 工具调用检测
       if (response.tool_calls && response.tool_calls.length > 0) {
@@ -96,13 +97,13 @@ class Agent {
     // 兜底收敛：达到最大轮次后，禁用工具再请求一次，让模型直接输出最终结论
     // 避免“数据已采集成功但最后卡在工具循环”导致整体失败
     try {
-      const forcedFinalResponse = await this.llm.chat([
+      const forcedFinalResponse = await this.llm.chatStream([
         ...this.conversationHistory,
         {
           role: 'user',
           content: '请基于已有工具结果直接输出最终结论，不要再调用任何工具。若数据不足请明确说明不足点。',
         },
-      ], [], options.systemPrompt)
+      ], [], options.systemPrompt, options.onToken)
 
       if (forcedFinalResponse?.content) {
         this.conversationHistory.push(forcedFinalResponse)
