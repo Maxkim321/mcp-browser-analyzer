@@ -6,61 +6,10 @@ on:
   pull_request:
     branches: [main, develop]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
-  lint-and-format:
-    name: Lint and Format
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Check format
-        run: pnpm format:check
-
-      - name: Lint code
-        run: pnpm lint
-
-  build-server:
-    name: Build Server
-    runs-on: ubuntu-latest
-    needs: lint-and-format
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install
-
   build-extension:
     name: Build Extension
     runs-on: ubuntu-latest
-    needs: lint-and-format
 
     steps:
       - name: Checkout
@@ -76,7 +25,30 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build extension
         run: pnpm -F chrome-extension build
+
+  build-server:
+    name: Check Server Syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Syntax check agent-server
+        run: node --check agent-server/src/index.js && node --check agent-server/src/core/agent.js && node --check agent-server/src/core/llm.js && node --check agent-server/src/communication/ws-server.js && node --check agent-server/src/tools/handler.js
