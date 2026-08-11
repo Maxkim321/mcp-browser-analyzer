@@ -64,7 +64,7 @@ class Agent {
       iteration++
       console.log(`[Agent] Iteration ${iteration}/${maxIterations}`)
 
-      const response = await this.llm.chat(this.conversationHistory, tools)
+      const response = await this.llm.chat(this.conversationHistory, tools, options.systemPrompt)
 
       //需要工具 - 工具调用检测
       if (response.tool_calls && response.tool_calls.length > 0) {
@@ -102,7 +102,7 @@ class Agent {
           role: 'user',
           content: '请基于已有工具结果直接输出最终结论，不要再调用任何工具。若数据不足请明确说明不足点。',
         },
-      ], [])
+      ], [], options.systemPrompt)
 
       if (forcedFinalResponse?.content) {
         this.conversationHistory.push(forcedFinalResponse)

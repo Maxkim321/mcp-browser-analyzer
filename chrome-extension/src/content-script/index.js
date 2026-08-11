@@ -1,8 +1,10 @@
 /**
  * Content Script - 页面内容脚本
- * 注入到目标页面，用于采集页面性能数据
+ * 注入到目标页面，用于采集页面性能数据与正文内容
  * 使用 Chrome 消息 API 与插件通信
  */
+
+import { Readability } from '@mozilla/readability'
 
 (function() {
   let latestLcp = 0
@@ -43,6 +45,10 @@
         handleGetPerformance(request, sender, sendResponse)
         return true // 保持消息通道开放，用于异步响应
 
+      case 'get_page_content':
+        handleGetPageContent(request, sender, sendResponse)
+        return true
+
       default:
         console.warn('Unknown message type:', request.type)
         sendResponse({
@@ -79,6 +85,68 @@
         error: error.message
       })
     }
+  }
+
+  /**
+   * 处理页面正文提取请求
+   * 使用 Readability 提取正文（去导航/广告），超长按 maxChars 截断
+   */
+  async function handleGetPageContent(request, sender, sendResponse) {
+    try {
+      const { content, title, charCount } = extractPageContent(request.maxChars || 12000)
+      console.log('Page content extracted, chars:', charCount)
+      sendResponse({
+        success: true,
+        type: 'page_content',
+        requestId: request.requestId,
+        payload: {
+          url: window.location.href,
+          title,
+          content,
+          charCount,
+        },
+      })
+    } catch (error) {
+      console.error('Failed to extract page content:', error)
+      sendResponse({
+        success: false,
+        type: 'page_content',
+        requestId: request.requestId,
+        error: error.message,
+      })
+    }
+  }
+
+  /**
+   * 提取页面正文
+   * 优先 Readability（<article> 识别），失败降级 body.innerText
+   * 在克隆文档上操作，避免干扰原页面
+   * @param {number} maxChars - 最大字符数，超出截断
+   */
+  function extractPageContent(maxChars) {
+    let content = ''
+    let title = document.title || ''
+
+    try {
+      const docClone = document.cloneNode(true)
+      const article = new Readability(docClone).parse()
+      if (article && article.textContent) {
+        title = article.title || title
+        content = article.textContent.trim()
+      }
+    } catch (error) {
+      console.warn('Readability parse failed, fallback to innerText:', error)
+    }
+
+    if (!content && document.body) {
+      content = document.body.innerText.trim()
+    }
+
+    const charCount = content.length
+    if (content.length > maxChars) {
+      content = content.slice(0, maxChars)
+    }
+    return { content, title, charCount }
   }
 
   function waitForPageReady(timeoutMs = 5000) {

@@ -385,12 +385,53 @@ function formatTodoSummary(todos) {
   return summary
 }
 
+/**
+ * 处理 get_page_content 工具
+ * 向浏览器插件发送获取页面正文的指令，并等待响应
+ * @param {object} args - 工具参数
+ * @param {number} [args.maxChars] - 返回内容最大字符数
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP响应格式
+ */
+async function handleGetPageContent(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { maxChars = 12000 } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('Page content timeout'))
+    }, 30000)
+
+    pendingRequests.set(requestId, {
+      resolve,
+      reject,
+      timeout,
+      traceId,
+    })
+
+    traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'get_page_content', maxChars })
+    const sendSuccess = ws.send(connectionId, { type: 'get_page_content', requestId, maxChars })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
 const toolHandlers = {
   navigate_to: handleNavigateTo,
   reload_page: handleReloadPage,
   wait_for_load: handleWaitForLoad,
   list_connections: handleListConnections,
   get_browser_performance: handleGetPerformance,
+  get_page_content: handleGetPageContent,
   broadcast_message: handleBroadcastMessage,
   todo_write: handleTodoWrite,
 }

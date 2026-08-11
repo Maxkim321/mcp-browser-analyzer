@@ -21,13 +21,14 @@ class LLMClient {
    * 自动在消息列表开头添加系统提示词
    * @param {Array} messages - 对话消息列表
    * @param {Array} tools - 可用的工具列表
+   * @param {string} [systemPrompt] - 可选的系统提示词，覆盖默认值（用于总结/翻译等专用动作）
    * @returns {Promise<object>} 大模型响应
    */
-  async chat(messages, tools = []) {
+  async chat(messages, tools = [], systemPrompt) {
     console.log(`[LLM] Calling model: ${this.model}`)
 
     const augmentedMessages = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt || SYSTEM_PROMPT },
       ...messages,
     ]
 

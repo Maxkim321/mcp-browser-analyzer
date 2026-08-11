@@ -75,6 +75,21 @@ const getPerformanceWithRetry = async (requestId) => {
   }
 }
 
+const getPageContentWithRetry = async (requestId, maxChars) => {
+  const tabId = await getActiveTabId()
+  try {
+    return await sendToContentScript(tabId, { type: 'get_page_content', requestId, maxChars })
+  } catch (error) {
+    const message = String(error?.message || '')
+    const shouldRetryByInject = message.includes('Receiving end does not exist')
+    if (!shouldRetryByInject) {
+      throw error
+    }
+    await ensureContentScriptInjected(tabId)
+    return sendToContentScript(tabId, { type: 'get_page_content', requestId, maxChars })
+  }
+}
+
 // 监听来自agent-server的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request)
@@ -94,6 +109,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })
 
     return true // 保持消息通道开放，用于异步响应
+  }
+
+  if (request.type === 'get_page_content') {
+    getPageContentWithRetry(request.requestId, request.maxChars)
+      .then(response => {
+        console.log('Background received page content:', response)
+        sendResponse(response)
+      })
+      .catch(error => {
+        console.error('Error getting page content:', error)
+        sendResponse({
+          success: false,
+          error: error.message
+        })
+      })
+
+    return true
   }
   
   return false

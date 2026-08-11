@@ -8,6 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
     "vue": "^3.5.25"
   },
   "devDependencies": {

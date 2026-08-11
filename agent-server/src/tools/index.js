@@ -92,6 +92,24 @@ const tools = [
     },
   },
   {
+    name: 'get_page_content',
+    description:
+      '获取当前激活标签页的正文内容（去除导航/广告，基于 Readability 提取），用于总结、问答或内容分析。返回 {url, title, content, charCount}',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        connectionId: {
+          type: 'number',
+          description: '浏览器插件连接ID，可选；缺省时默认使用当前会话连接',
+        },
+        maxChars: {
+          type: 'number',
+          description: '返回内容的最大字符数，超出则截断，默认 12000',
+        },
+      },
+    },
+  },
+  {
     name: 'todo_write',
     description: '创建或更新任务列表，用于管理多步骤操作。使用这个工具来规划和跟踪你的工作进度。',
     inputSchema: {

@@ -6,7 +6,7 @@
         <img src="./assets/logo.png" alt="logo" />
       </div>
       <div class="header-info">
-        <h1 class="title">浏览器性能分析器</h1>
+        <h1 class="title">浏览器 AI 助手</h1>
         <div class="connection-status">
           <span class="status-label">连接状态:</span>
           <span class="status-badge" :class="connectionStatus">{{ statusText }}</span>
@@ -18,8 +18,8 @@
     <div class="chat-messages">
       <!-- 欢迎消息 -->
       <div v-if="messages.length === 0" class="welcome-message">
-        <p class="welcome-text">👋 欢迎使用浏览器性能分析器</p>
-        <p class="welcome-desc">连接成功后，我会自动采集页面性能数据并通过 AI 进行分析。</p>
+        <p class="welcome-text">👋 欢迎使用浏览器 AI 助手</p>
+        <p class="welcome-desc">我可以总结当前页面、回答基于页面内容的问题，以及分析页面性能。</p>
       </div>
 
       <!-- 消息列表 -->
@@ -82,6 +82,14 @@
 
     <!-- 输入区域 -->
     <div class="chat-input">
+      <button
+        class="action-button"
+        @click="handleSummarize"
+        :disabled="thinking"
+        title="总结当前页面核心内容"
+      >
+        📄 总结本页
+      </button>
       <input 
         v-model="inputText" 
         type="text" 
@@ -301,6 +309,29 @@ const connectWebSocket = () => {
             })
             break
 
+          case 'get_page_content':
+            // 收到获取页面正文的指令，经 background 转发到 content-script
+            chrome.runtime.sendMessage({
+              type: 'get_page_content',
+              requestId: data.requestId,
+              maxChars: data.maxChars
+            }).then(response => {
+              console.log('Page content received:', response)
+              if (response.success && response.payload) {
+                sendToolResponse('page_content', data.requestId, response.payload, 'Page content collected')
+              } else {
+                sendToolResponse('page_content', data.requestId, {
+                  error: response?.error || 'Failed to get page content'
+                }, response?.error || 'Failed to get page content')
+              }
+            }).catch(error => {
+              console.error('Error getting page content:', error)
+              sendToolResponse('page_content', data.requestId, {
+                error: error.message
+              }, error.message)
+            })
+            break
+
           case 'navigate_to':
             ;(async () => {
               try {
@@ -416,6 +447,37 @@ const handleSendMessage = () => {
     websocket.send(JSON.stringify({
       type: 'user_prompt',
       prompt: text
+    }))
+  } else {
+    thinking.value = false
+    messages.value.push({
+      type: 'text',
+      sender: 'ai',
+      content: '连接已断开，请检查服务器是否正在运行。',
+      timestamp: Date.now()
+    })
+  }
+}
+
+// 总结本页：携带 action 触发专用总结提示词
+const handleSummarize = () => {
+  if (thinking.value) {
+    return
+  }
+
+  messages.value.push({
+    type: 'text',
+    sender: 'user',
+    content: '总结当前页面内容',
+    timestamp: Date.now()
+  })
+  thinking.value = true
+
+  if (websocket && websocket.readyState === WebSocket.OPEN) {
+    websocket.send(JSON.stringify({
+      type: 'user_prompt',
+      prompt: '请总结当前页面内容',
+      action: 'summarize'
     }))
   } else {
     thinking.value = false
@@ -683,10 +745,37 @@ onUnmounted(() => {
 /* 输入区域 */
 .chat-input {
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 16px;
   background-color: #ffffff;
   border-top: 1px solid #e1e8ed;
+}
+
+/* 快捷动作按钮（总结本页等） */
+.action-button {
+  padding: 10px 12px;
+  background-color: #ebf4ff;
+  color: #1e5fb4;
+  border: 1px solid #b3d0f2;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+
+.action-button:hover:not(:disabled) {
+  background-color: #dbeafe;
+  border-color: #7fb0e8;
+}
+
+.action-button:disabled {
+  background-color: #f1f5f9;
+  color: #9ca3af;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
 }
 
 .input-field {

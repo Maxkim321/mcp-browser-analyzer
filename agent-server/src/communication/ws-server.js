@@ -2,6 +2,7 @@ const WebSocket = require('ws')
 const toolHandler = require('../tools/handler.js')
 const { Agent } = require('../core/agent.js')
 const config = require('../config/index.js')
+const { ACTION_PROMPTS } = require('../config/prompts.js')
 
 const connectionAgents = new Map()
 
@@ -162,8 +163,10 @@ async function handleMessage(id, msg, agent) {
       console.log('[Agent] Processing prompt:', msg.prompt)
       try {
         manager.send(id, { type: 'thinking' })
+        // 固定动作（总结/翻译/解释等）使用专用提示词驱动结构化输出
+        const systemPrompt = msg.action ? ACTION_PROMPTS[msg.action] : undefined
         // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
-        const result = await agent.process(msg.prompt, { connectionId: id })
+        const result = await agent.process(msg.prompt, { connectionId: id, systemPrompt })
         manager.send(id, {
           type: 'agent_response',
           success: result.success,
