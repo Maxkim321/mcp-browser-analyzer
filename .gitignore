@@ -140,3 +140,6 @@ vite.config.ts.timestamp-*
 
 # Chrome extension build output
 chrome-extension/extension
+
+# 本地规划/面试文档（不公开）
+docs/

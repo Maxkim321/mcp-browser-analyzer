@@ -10,9 +10,9 @@ const { tools } = require('./tools/index.js')
  */
 function validateConfig() {
   const missing = []
-  if (!config.llm.apiKey) missing.push('OPENAI_API_KEY')
-  if (!config.llm.baseURL) missing.push('OPENAI_BASE_URL')
-  if (!config.llm.model) missing.push('OPENAI_MODEL')
+  if (!config.llm.apiKey) missing.push('ARK_API_KEY')
+  if (!config.llm.baseURL) missing.push('ARK_BASE_URL')
+  if (!config.llm.model) missing.push('ARK_MODEL')
 
   if (missing.length > 0) {
     console.error('❌ 配置缺失: ', missing.join(', '))
