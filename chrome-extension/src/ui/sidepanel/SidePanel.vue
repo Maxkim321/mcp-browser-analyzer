@@ -126,8 +126,6 @@ const connectionStatus = ref('disconnected')
 const statusText = ref('未连接')
 let websocket = null
 let reconnectTimer = null
-// 当前正在流式渲染的 AI 消息（打字机效果），agent_response 到达后用完整内容覆盖
-let currentStreaming = null
 const WS_URL = 'ws://localhost:9999'
 
 const sendToolResponse = (type, requestId, payload = {}, message = '') => {
@@ -236,7 +234,7 @@ const connectWebSocket = () => {
       messages.value.push({
         type: 'text',
         sender: 'ai',
-        content: '连接成功！我已准备好为您提供性能分析服务。',
+        content: '连接成功！选中网页文字或点击"总结本页"即可开始，也可以直接问我问题。',
         timestamp: Date.now()
       })
     }
@@ -247,29 +245,33 @@ const connectWebSocket = () => {
         console.log('WebSocket message received:', data)
 
         switch (data.type) {
-          case 'token':
-            // 流式增量：首次收到 token 创建 AI 消息，后续追加内容（打字机效果）
+          case 'token': {
+            // 流式增量：打字机效果
+            // 注意：必须从 messages.value 取元素（reactive proxy）再修改，
+            // 不能持有外部普通对象引用直接改（不触发 Vue 响应式更新）
             thinking.value = false
-            if (!currentStreaming) {
-              currentStreaming = {
+            const lastMsg = messages.value[messages.value.length - 1]
+            if (lastMsg && lastMsg.streaming) {
+              lastMsg.content += data.content
+            } else {
+              messages.value.push({
                 type: 'text',
                 sender: 'ai',
-                content: '',
+                content: data.content,
                 timestamp: Date.now(),
                 streaming: true
-              }
-              messages.value.push(currentStreaming)
+              })
             }
-            currentStreaming.content += data.content
             break
+          }
 
-          case 'agent_response':
+          case 'agent_response': {
             thinking.value = false
-            if (currentStreaming) {
+            const lastStreamingMsg = messages.value[messages.value.length - 1]
+            if (lastStreamingMsg && lastStreamingMsg.streaming) {
               // 流式已开始：用最终完整内容覆盖增量，防止分片丢失导致内容不全
-              currentStreaming.content = data.success ? data.content : `${currentStreaming.content}\n\n错误: ${data.content || data.error || ''}`
-              currentStreaming.streaming = false
-              currentStreaming = null
+              lastStreamingMsg.content = data.success ? data.content : `${lastStreamingMsg.content}\n\n错误: ${data.content || data.error || ''}`
+              lastStreamingMsg.streaming = false
             } else if (data.success) {
               messages.value.push({
                 type: 'text',
@@ -286,6 +288,7 @@ const connectWebSocket = () => {
               })
             }
             break
+          }
 
           case 'performance_data':
             thinking.value = false

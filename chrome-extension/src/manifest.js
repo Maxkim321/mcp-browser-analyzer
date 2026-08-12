@@ -7,7 +7,8 @@ const pkg = require('../package.json')
 export const getManifest = () => {
   const m = {
     manifest_version: 3,
-    name: 'Vue Chrome Extension',
+    name: '浏览器 AI 助手',
+    description: '在浏览器侧边栏和 AI 对话：总结网页、划词翻译/解释/改写、围绕页面内容追问',
     version: pkg.version,
     icons: {
       16: 'dist/icons/logo-16.png',
