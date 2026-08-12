@@ -513,13 +513,60 @@ const handleSummarize = () => {
   }
 }
 
+// 划词动作标签映射
+const ACTION_LABELS = {
+  translate: '翻译',
+  summarize_selection: '总结',
+  explain: '解释',
+  rewrite: '改写',
+}
+
+// 划词即问：接收 content-script 经 background 转发的选中文本，触发对应动作
+const handleTextAction = (payload) => {
+  const action = ACTION_LABELS[payload.action] ? payload.action : 'explain'
+  const label = ACTION_LABELS[action]
+  const text = String(payload.text || '').slice(0, 2000)
+
+  messages.value.push({
+    type: 'text',
+    sender: 'user',
+    content: `【${label}】${text.length > 80 ? `${text.slice(0, 80)}...` : text}`,
+    timestamp: Date.now()
+  })
+
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+    messages.value.push({
+      type: 'text',
+      sender: 'ai',
+      content: '连接已断开，请检查服务器是否正在运行。',
+      timestamp: Date.now()
+    })
+    return
+  }
+
+  thinking.value = true
+  websocket.send(JSON.stringify({
+    type: 'user_prompt',
+    prompt: `请对以下选中的文字进行${label}：\n\n"""\n${text}\n"""`,
+    action
+  }))
+}
+
 // 页面加载完成后连接
+const onRuntimeMessage = (request) => {
+  if (request.type === 'text_action_relay') {
+    handleTextAction(request)
+  }
+}
+
 onMounted(() => {
   connectWebSocket()
+  chrome.runtime.onMessage.addListener(onRuntimeMessage)
 })
 
 // 清理资源
 onUnmounted(() => {
+  chrome.runtime.onMessage.removeListener(onRuntimeMessage)
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
   }

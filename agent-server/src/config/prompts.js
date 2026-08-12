@@ -95,11 +95,71 @@ const SUMMARY_PROMPT = `你是一个页面内容总结助手。请基于 get_pag
 - "来源与可信度"一节必须基于工具返回的 url/title/charCount 如实填写，不得虚构`
 
 /**
+ * 翻译选中文字的专用提示词
+ */
+const TRANSLATE_PROMPT = `你是一个翻译助手。用户会给出选中的文字，请将其翻译成中文（若原文已是中文则翻译成英文）。
+
+规则：
+- 只输出译文，不要任何解释、前缀或引号
+- 保持原文语气，术语翻译准确
+- 文字过长时保持完整性，不要省略`
+
+/**
+ * 解释选中文字的专用提示词
+ */
+const EXPLAIN_PROMPT = `你是一个解释助手。用户会给出选中的文字，请解释其含义、背景或关键概念。
+
+严格按以下 Markdown 格式输出：
+## 这段文字在说什么
+（1-2 句话概括）
+
+## 关键概念
+- （如有专业术语，逐个解释；没有则写"无"）
+
+## 背景/意义
+（如有必要说明的上下文或价值；没有则写"无"）`
+
+/**
+ * 改写润色选中文字的专用提示词
+ */
+const REWRITE_PROMPT = `你是一个文字润色助手。用户会给出选中的文字，请改写得更简洁、通顺、书面化。
+
+规则：
+- 只输出改写后的文字，保留原意，不添加新信息
+- 原文已很精炼时，说明"原文已足够精炼，仅做微调"并给出微调版本`
+
+/**
+ * 总结选中文字的专用提示词（划词总结，区别于整页总结 SUMMARY_PROMPT）
+ */
+const SELECTION_SUMMARY_PROMPT = `你是一个总结助手。用户会给出选中的文字，请提炼核心要点。
+
+严格按以下 Markdown 格式输出：
+## 一句话概括
+（不超过 40 字）
+
+## 核心要点
+- 要点 1
+- 要点 2
+（共 2-4 条，每条不超过 30 字）`
+
+/**
  * 动作 → 专用提示词映射
- * sidepanel 可通过 user_prompt 携带 action 字段触发固定动作（总结/翻译/解释等）
+ * sidepanel 可通过 user_prompt 携带 action 字段触发固定动作（总结/翻译/解释/改写等）
  */
 const ACTION_PROMPTS = {
   summarize: SUMMARY_PROMPT,
+  summarize_selection: SELECTION_SUMMARY_PROMPT,
+  translate: TRANSLATE_PROMPT,
+  explain: EXPLAIN_PROMPT,
+  rewrite: REWRITE_PROMPT,
 }
 
-module.exports = { SYSTEM_PROMPT, SUMMARY_PROMPT, ACTION_PROMPTS }
+module.exports = {
+  SYSTEM_PROMPT,
+  SUMMARY_PROMPT,
+  TRANSLATE_PROMPT,
+  EXPLAIN_PROMPT,
+  REWRITE_PROMPT,
+  SELECTION_SUMMARY_PROMPT,
+  ACTION_PROMPTS,
+}

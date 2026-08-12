@@ -90,10 +90,31 @@ const getPageContentWithRetry = async (requestId, maxChars) => {
   }
 }
 
+// 划词动作：打开侧边栏并把选中文本+动作转发给 sidepanel
+const handleTextAction = async (payload) => {
+  try {
+    const tabs = await c.tabs.query({ active: true, currentWindow: true })
+    const tab = tabs[0]
+    if (tab && tab.windowId != null) {
+      await c.sidePanel.open({ windowId: tab.windowId })
+    }
+    c.runtime.sendMessage({ type: 'text_action_relay', action: payload.action, text: payload.text })
+      .catch(() => void 0)
+  } catch (error) {
+    console.warn('handleTextAction failed:', error)
+  }
+}
+
 // 监听来自agent-server的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request)
   
+  if (request.type === 'text_action') {
+    // 划词动作：来自 content-script（MAIN world），无需回包，异步处理
+    handleTextAction(request)
+    return false
+  }
+
   if (request.type === 'get_performance') {
     getPerformanceWithRetry(request.requestId)
       .then(response => {

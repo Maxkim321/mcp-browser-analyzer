@@ -50,12 +50,8 @@ import { Readability } from '@mozilla/readability'
         return true
 
       default:
-        console.warn('Unknown message type:', request.type)
-        sendResponse({
-          success: false,
-          error: 'Unknown message type'
-        })
-        return true
+        // 与本脚本无关的消息（如 background 广播给 sidepanel 的划词消息）不响应
+        return false
     }
   })
 
@@ -217,6 +213,137 @@ import { Readability } from '@mozilla/readability'
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {
       console.log('Page became visible, performance data may be ready')
+    }
+  })
+
+  /**
+   * ===== 划词即问：选中文字后弹出浮动工具条 =====
+   * 工具条用 Shadow DOM 隔离样式，避免被页面 CSS 污染
+   * 点击动作按钮后经 background 打开侧边栏并转发给 sidepanel
+   */
+  let selectionBarHost = null
+
+  const SELECTION_ACTIONS = [
+    { action: 'translate', label: '翻译' },
+    { action: 'summarize_selection', label: '总结' },
+    { action: 'explain', label: '解释' },
+    { action: 'rewrite', label: '改写' },
+  ]
+
+  function getSelectionText(maxChars = 2000) {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return ''
+    const text = sel.toString().trim()
+    return text.length > maxChars ? text.slice(0, maxChars) : text
+  }
+
+  function hideSelectionBar() {
+    if (selectionBarHost) {
+      selectionBarHost.remove()
+      selectionBarHost = null
+    }
+  }
+
+  function showSelectionBar() {
+    const text = getSelectionText()
+    if (!text) return
+
+    const sel = window.getSelection()
+    const rect = sel.getRangeAt(0).getBoundingClientRect()
+    if (!rect || (rect.width === 0 && rect.height === 0)) return
+
+    hideSelectionBar()
+
+    const host = document.createElement('div')
+    host.style.cssText = 'position:fixed;z-index:2147483647;'
+    const shadow = host.attachShadow({ mode: 'closed' })
+
+    const style = document.createElement('style')
+    style.textContent = `
+      .selection-bar {
+        display: flex;
+        gap: 4px;
+        padding: 6px 8px;
+        background: #1f2937;
+        border-radius: 8px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      }
+      .selection-btn {
+        border: none;
+        background: transparent;
+        color: #e5e7eb;
+        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .selection-btn:hover {
+        background: #374151;
+        color: #ffffff;
+      }
+    `
+    shadow.appendChild(style)
+
+    const bar = document.createElement('div')
+    bar.className = 'selection-bar'
+
+    for (const { action, label } of SELECTION_ACTIONS) {
+      const btn = document.createElement('button')
+      btn.className = 'selection-btn'
+      btn.textContent = label
+      btn.addEventListener('click', () => {
+        const selectedText = getSelectionText()
+        hideSelectionBar()
+        if (!selectedText) return
+        try {
+          chrome.runtime.sendMessage({ type: 'text_action', action, text: selectedText }, () => void chrome.runtime.lastError)
+        } catch (error) {
+          console.warn('Send text_action failed:', error)
+        }
+      })
+      bar.appendChild(btn)
+    }
+    shadow.appendChild(bar)
+
+    // 定位：优先放选区上方，上方空间不足则放下方
+    const x = Math.max(4, Math.min(rect.left, window.innerWidth - 180))
+    const y = rect.top - 44 >= 0 ? rect.top - 44 : rect.bottom + 8
+    host.style.left = `${x}px`
+    host.style.top = `${y}px`
+
+    document.documentElement.appendChild(host)
+    selectionBarHost = host
+  }
+
+  function isInsideSelectionBar(target) {
+    return !!(selectionBarHost && target && selectionBarHost.contains(target))
+  }
+
+  document.addEventListener('mouseup', (event) => {
+    if (isInsideSelectionBar(event.target)) return
+    // 延迟一拍，等浏览器更新 selection 状态后再读取
+    setTimeout(() => {
+      const text = getSelectionText()
+      if (text) {
+        showSelectionBar()
+      } else {
+        hideSelectionBar()
+      }
+    }, 0)
+  })
+
+  document.addEventListener('mousedown', (event) => {
+    if (isInsideSelectionBar(event.target)) return
+    hideSelectionBar()
+  })
+
+  window.addEventListener('scroll', hideSelectionBar, true)
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      hideSelectionBar()
     }
   })
 
