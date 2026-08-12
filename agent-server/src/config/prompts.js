@@ -97,12 +97,19 @@ const SUMMARY_PROMPT = `你是一个页面内容总结助手。请基于 get_pag
 /**
  * 翻译选中文字的专用提示词
  */
-const TRANSLATE_PROMPT = `你是一个翻译助手。用户会给出选中的文字，请将其翻译成中文（若原文已是中文则翻译成英文）。
+const TRANSLATE_PROMPT = `你是一个翻译助手。请将用户选中的文字翻译成另一种语言。
 
-规则：
-- 只输出译文，不要任何解释、前缀或引号
+语言规则（必须严格遵守）：
+- 先检测原文的主要语言
+- 原文是中文 → 翻译成英文
+- 原文是英文等其他语言 → 翻译成中文
+- 中英混排 → 按主要语言处理，专有名词（React、API 等）保留原文
+- 如果译文与原文语言相同（等于没翻译），视为翻译失败，必须换一种语言输出
+
+输出规则：
+- 只输出译文本身，不要任何解释、前缀、引号或"译文："标注
 - 保持原文语气，术语翻译准确
-- 文字过长时保持完整性，不要省略`
+- 文字过长时保持完整，不要省略`
 
 /**
  * 解释选中文字的专用提示词
@@ -143,6 +150,19 @@ const SELECTION_SUMMARY_PROMPT = `你是一个总结助手。用户会给出选�
 （共 2-4 条，每条不超过 30 字）`
 
 /**
+ * 基于选中文字回答自定义问题的专用提示词
+ * 用户选中一段文字后自由提问（如选中 let 问 let 和 var 的区别）
+ */
+const ASK_PROMPT = `你是一个浏览器 AI 助手。用户选中了一段文字，并基于它提出了问题（选中文字会以「选中文字」附在消息中）。
+
+规则：
+- 优先结合选中文字回答用户的问题
+- 如果问题超出选中文字本身（如选中 let 问 let 和 var 的区别），结合你的技术知识回答
+- 回答要具体、准确，可适当引用选中文字佐证
+- 不要调用任何工具，选中文字已在上下文中
+- 用中文回答`
+
+/**
  * 动作 → 专用提示词映射
  * sidepanel 可通过 user_prompt 携带 action 字段触发固定动作（总结/翻译/解释/改写等）
  */
@@ -152,6 +172,7 @@ const ACTION_PROMPTS = {
   translate: TRANSLATE_PROMPT,
   explain: EXPLAIN_PROMPT,
   rewrite: REWRITE_PROMPT,
+  ask: ASK_PROMPT,
 }
 
 module.exports = {
@@ -161,5 +182,6 @@ module.exports = {
   EXPLAIN_PROMPT,
   REWRITE_PROMPT,
   SELECTION_SUMMARY_PROMPT,
+  ASK_PROMPT,
   ACTION_PROMPTS,
 }

@@ -36,9 +36,19 @@
           <div class="message-sender">
             {{ msg.sender === 'user' ? '我' : 'AI 助手' }}
             <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
+            <button
+              v-if="msg.type === 'text' && msg.sender === 'ai'"
+              class="message-copy-button"
+              @click="copyText(msg.content)"
+            >复制</button>
           </div>
-          <div class="message-text" v-if="msg.type === 'text'">
-            {{ msg.content }}
+          <div class="message-text markdown-content" v-if="msg.type === 'text' && msg.sender === 'ai'" v-html="renderMarkdown(msg.content)"></div>
+          <div class="message-text" v-else-if="msg.type === 'text'">{{ msg.content }}</div>
+          <div class="message-selection" v-if="msg.type === 'selection'">
+            <div class="selection-header">
+              <span class="selection-action">📝 {{ msg.action }} · 选中内容</span>
+            </div>
+            <div class="selection-text">{{ msg.content }}</div>
           </div>
           <div class="message-performance" v-if="msg.type === 'performance'">
             <div class="performance-card">
@@ -91,10 +101,11 @@
         📄 总结本页
       </button>
       <input 
+        ref="inputRef"
         v-model="inputText" 
         type="text" 
         class="input-field" 
-        placeholder="输入您的问题或指令..."
+        :placeholder="pendingSelection ? '基于选中内容提问，如：let 和 var 的区别' : '输入您的问题或指令...'"
         @keydown.enter="handleSendMessage"
       />
       <button 
@@ -109,8 +120,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { openOptions } from '@/utils/base'
+import { renderMarkdown } from '@/utils/markdown'
 
 defineOptions({
   name: 'SidePanel',
@@ -121,6 +133,9 @@ const goOptions = () => openOptions()
 // 状态
 const messages = ref([])
 const inputText = ref('')
+const inputRef = ref(null)
+// 划词「问问」：选中的文字作为上下文，用户输入问题后一并发送
+const pendingSelection = ref('')
 const thinking = ref(false)
 const connectionStatus = ref('disconnected')
 const statusText = ref('未连接')
@@ -197,6 +212,15 @@ const formatTime = (timestamp) => {
   const minutes = String(date.getMinutes()).padStart(2, '0')
   const seconds = String(date.getSeconds()).padStart(2, '0')
   return `${hours}:${minutes}:${seconds}`
+}
+
+// 复制选中原文（划词原文展示块）
+const copyText = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch (error) {
+    console.warn('Copy failed:', error)
+  }
 }
 
 // 更新连接状态
@@ -458,6 +482,16 @@ const handleSendMessage = () => {
   }
 
   const text = inputText.value.trim()
+
+  // 划词「问问」：有选中上下文时，把问题和选中文字一起发送
+  let prompt = text
+  let action = undefined
+  if (pendingSelection.value) {
+    prompt = `选中文字："""\n${pendingSelection.value}\n"""\n\n我的问题：${text}`
+    action = 'ask'
+    pendingSelection.value = ''
+  }
+
   messages.value.push({
     type: 'text',
     sender: 'user',
@@ -472,7 +506,8 @@ const handleSendMessage = () => {
   if (websocket && websocket.readyState === WebSocket.OPEN) {
     websocket.send(JSON.stringify({
       type: 'user_prompt',
-      prompt: text
+      prompt,
+      action
     }))
   } else {
     thinking.value = false
@@ -522,20 +557,38 @@ const ACTION_LABELS = {
   summarize_selection: '总结',
   explain: '解释',
   rewrite: '改写',
+  ask: '问问',
 }
 
 // 划词即问：接收 content-script 经 background 转发的选中文本，触发对应动作
+const processedActionIds = new Set()
 const handleTextAction = (payload) => {
+  // 广播与 storage 兜底可能同时触发同一条，靠 id 去重
+  if (!payload || !payload.id || processedActionIds.has(payload.id)) return
+  processedActionIds.add(payload.id)
+  if (processedActionIds.size > 50) {
+    processedActionIds.clear()
+  }
+
   const action = ACTION_LABELS[payload.action] ? payload.action : 'explain'
   const label = ACTION_LABELS[action]
   const text = String(payload.text || '').slice(0, 2000)
 
   messages.value.push({
-    type: 'text',
+    type: 'selection',
     sender: 'user',
-    content: `【${label}】${text.length > 80 ? `${text.slice(0, 80)}...` : text}`,
+    action: label,
+    content: text,
     timestamp: Date.now()
   })
+
+  // 「问问」：不直接发送，选中文字作为上下文，聚焦输入框等用户输入问题
+  if (action === 'ask') {
+    pendingSelection.value = text
+    inputText.value = ''
+    nextTick(() => inputRef.value?.focus())
+    return
+  }
 
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
     messages.value.push({
@@ -559,12 +612,21 @@ const handleTextAction = (payload) => {
 const onRuntimeMessage = (request) => {
   if (request.type === 'text_action_relay') {
     handleTextAction(request)
+    // 广播已成功到达，清掉 storage 里同一条，避免下次打开侧边栏重复触发
+    chrome.storage.session.remove('pendingTextAction').catch(() => void 0)
   }
 }
 
 onMounted(() => {
   connectWebSocket()
   chrome.runtime.onMessage.addListener(onRuntimeMessage)
+  // 兜底：sidepanel 刚打开时可能错过广播（监听器未就绪），从 storage.session 补取
+  chrome.storage.session.get('pendingTextAction').then(({ pendingTextAction }) => {
+    if (pendingTextAction) {
+      handleTextAction(pendingTextAction)
+      chrome.storage.session.remove('pendingTextAction')
+    }
+  }).catch(() => void 0)
 })
 
 // 清理资源
@@ -767,6 +829,89 @@ onUnmounted(() => {
 .message-item.user-message .message-text {
   background-color: #4299e1;
   color: white;
+}
+
+.message-copy-button {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #4299e1;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.message-copy-button:hover {
+  color: #2b6cb0;
+}
+
+/* Markdown 渲染内容样式（v-html 插入，需 :deep 生效） */
+.markdown-content :deep(h2),
+.markdown-content :deep(h3),
+.markdown-content :deep(h4) {
+  margin: 10px 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #1a1a1a;
+}
+
+.markdown-content :deep(h2) {
+  font-size: 16px;
+  border-bottom: 1px solid #e1e8ed;
+  padding-bottom: 4px;
+}
+
+.markdown-content :deep(p) {
+  margin: 6px 0;
+}
+
+.markdown-content :deep(ul),
+.markdown-content :deep(ol) {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.markdown-content :deep(li) {
+  margin: 4px 0;
+}
+
+.markdown-content :deep(strong) {
+  font-weight: 600;
+}
+
+/* 划词原文展示块 */
+.message-selection {
+  margin-top: 4px;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f7fafc;
+}
+
+.selection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: #edf2f7;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.selection-action {
+  font-size: 12px;
+  color: #4a5568;
+}
+
+.selection-text {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #2d3748;
+  line-height: 1.6;
+  word-break: break-all;
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow-y: auto;
 }
 
 /* 性能数据展示 */

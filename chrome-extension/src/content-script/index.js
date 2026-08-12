@@ -228,6 +228,7 @@ import { Readability } from '@mozilla/readability'
     { action: 'summarize_selection', label: '总结' },
     { action: 'explain', label: '解释' },
     { action: 'rewrite', label: '改写' },
+    { action: 'ask', label: '问问' },
   ]
 
   function getSelectionText(maxChars = 2000) {
@@ -297,10 +298,12 @@ import { Readability } from '@mozilla/readability'
         const selectedText = getSelectionText()
         hideSelectionBar()
         if (!selectedText) return
+        // isolated world 下 chrome.* 完整可用，直接发给 background（无需 postMessage 桥）
         try {
+          console.log('[BA] dispatch text_action:', action)
           chrome.runtime.sendMessage({ type: 'text_action', action, text: selectedText }, () => void chrome.runtime.lastError)
         } catch (error) {
-          console.warn('Send text_action failed:', error)
+          console.warn('Dispatch text_action failed:', error)
         }
       })
       bar.appendChild(btn)
@@ -317,12 +320,14 @@ import { Readability } from '@mozilla/readability'
     selectionBarHost = host
   }
 
-  function isInsideSelectionBar(target) {
-    return !!(selectionBarHost && target && selectionBarHost.contains(target))
+  function isInsideSelectionBar(event) {
+    // 工具条在 shadow DOM 内，host.contains() 不包含 shadow 树内部节点，
+    // 必须用 composedPath() 才能命中（点击 shadow 内按钮时路径包含 shadow host）
+    return !!(selectionBarHost && event?.composedPath && event.composedPath().includes(selectionBarHost))
   }
 
   document.addEventListener('mouseup', (event) => {
-    if (isInsideSelectionBar(event.target)) return
+    if (isInsideSelectionBar(event)) return
     // 延迟一拍，等浏览器更新 selection 状态后再读取
     setTimeout(() => {
       const text = getSelectionText()
@@ -335,7 +340,7 @@ import { Readability } from '@mozilla/readability'
   })
 
   document.addEventListener('mousedown', (event) => {
-    if (isInsideSelectionBar(event.target)) return
+    if (isInsideSelectionBar(event)) return
     hideSelectionBar()
   })
 

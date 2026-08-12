@@ -34,10 +34,10 @@ export const getManifest = () => {
       : { service_worker: 'dist/script/background.js', type: 'module' },
     content_scripts: [
       {
+        // 默认 isolated world：chrome.* API 完整且不被页面 JS 污染（MAIN world 会被掘金等站点删除 window.chrome）
         matches: ['<all_urls>'],
         js: ['dist/src/content-script/index.js'],
         run_at: 'document_idle',
-        world: 'MAIN',
       },
     ],
     web_accessible_resources: [

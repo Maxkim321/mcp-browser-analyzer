@@ -43,8 +43,7 @@
       "js": [
         "dist/src/content-script/index.js"
       ],
-      "run_at": "document_idle",
-      "world": "MAIN"
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [

@@ -91,18 +91,25 @@ const getPageContentWithRetry = async (requestId, maxChars) => {
 }
 
 // 划词动作：打开侧边栏并把选中文本+动作转发给 sidepanel
-const handleTextAction = async (payload) => {
-  try {
-    const tabs = await c.tabs.query({ active: true, currentWindow: true })
-    const tab = tabs[0]
-    if (tab && tab.windowId != null) {
-      await c.sidePanel.open({ windowId: tab.windowId })
-    }
-    c.runtime.sendMessage({ type: 'text_action_relay', action: payload.action, text: payload.text })
-      .catch(() => void 0)
-  } catch (error) {
-    console.warn('handleTextAction failed:', error)
+// 注意：sidePanel.open() 只能在用户手势的同步调用链中执行，因此这里不能有任何 await
+const handleTextAction = (payload, sender) => {
+  // 唯一 id：sidepanel 广播与 storage 兜底两条路径靠它去重
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const data = { id, action: payload.action, text: payload.text }
+
+  // 写入 storage.session（fire-and-forget）：sidepanel 尚未挂载监听器时靠它兜底读取
+  c.storage.session.set({ pendingTextAction: data }).catch(() => void 0)
+
+  // 打开侧边栏：用 sender.tab.windowId 保持用户手势上下文（异步 tabs.query 会丢失手势，导致 open 被拒）
+  const windowId = sender?.tab?.windowId
+  if (windowId != null) {
+    c.sidePanel.open({ windowId }).catch((error) => {
+      console.warn('sidePanel.open failed (sidepanel may already be open):', error.message)
+    })
   }
+
+  // 广播给已挂载的 sidepanel（快速路径），无论 open 成败都发送
+  c.runtime.sendMessage({ type: 'text_action_relay', ...data }).catch(() => void 0)
 }
 
 // 监听来自agent-server的消息
@@ -110,8 +117,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request)
   
   if (request.type === 'text_action') {
-    // 划词动作：来自 content-script（MAIN world），无需回包，异步处理
-    handleTextAction(request)
+    // 划词动作：来自 content-script，无需回包，异步处理；sender 提供 tab.windowId 用于同步打开侧边栏
+    handleTextAction(request, sender)
     return false
   }
 
