@@ -90,6 +90,22 @@ const getPageContentWithRetry = async (requestId, maxChars) => {
   }
 }
 
+// F1 轻量 pageContext：读取当前页面选中文本，SPA/新开页未注入时自动补注入重试
+const getSelectionWithRetry = async () => {
+  const tabId = await getActiveTabId()
+  try {
+    return await sendToContentScript(tabId, { type: 'get_selection' })
+  } catch (error) {
+    const message = String(error?.message || '')
+    const shouldRetryByInject = message.includes('Receiving end does not exist')
+    if (!shouldRetryByInject) {
+      throw error
+    }
+    await ensureContentScriptInjected(tabId)
+    return sendToContentScript(tabId, { type: 'get_selection' })
+  }
+}
+
 // 划词动作：打开侧边栏并把选中文本+动作转发给 sidepanel
 // 注意：sidePanel.open() 只能在用户手势的同步调用链中执行，因此这里不能有任何 await
 const handleTextAction = (payload, sender) => {
@@ -151,6 +167,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           success: false,
           error: error.message
         })
+      })
+
+    return true
+  }
+
+  if (request.type === 'get_selection') {
+    getSelectionWithRetry()
+      .then(response => {
+        sendResponse(response)
+      })
+      .catch(error => {
+        console.error('Error getting selection:', error)
+        sendResponse({ success: false, error: error.message })
       })
 
     return true

@@ -2,7 +2,7 @@ const WebSocket = require('ws')
 const toolHandler = require('../tools/handler.js')
 const { Agent } = require('../core/agent.js')
 const config = require('../config/index.js')
-const { ACTION_PROMPTS } = require('../config/prompts.js')
+const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
 
 const connectionAgents = new Map()
 
@@ -164,7 +164,11 @@ async function handleMessage(id, msg, agent) {
       try {
         manager.send(id, { type: 'thinking' })
         // 固定动作（总结/翻译/解释等）使用专用提示词驱动结构化输出
-        const systemPrompt = msg.action ? ACTION_PROMPTS[msg.action] : undefined
+        // F1 轻量 pageContext：仅普通对话注入（固定动作的 prompt 是严格模板，塞上下文会破坏结构化输出）
+        let systemPrompt = msg.action ? ACTION_PROMPTS[msg.action] : SYSTEM_PROMPT
+        if (!msg.action && msg.pageContext) {
+          systemPrompt = appendPageContext(systemPrompt, msg.pageContext)
+        }
         // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
         // onToken：LLM 文本增量实时分片推送（流式输出），最终结果仍由 agent_response 兜底
         const result = await agent.process(msg.prompt, {
@@ -192,6 +196,14 @@ async function handleMessage(id, msg, agent) {
       agent.clearHistory()
       manager.send(id, { type: 'history_cleared' })
       break
+    case 'restore_session':
+      // F4 会话持久化：插件把 chrome.storage.local 持久化的历史重放过来，
+      // 重建新连接 Agent 的上下文（每次重连服务端都是全新 Agent，重放总是安全）
+      {
+        const count = agent.restoreHistory(msg.history)
+        manager.send(id, { type: 'history_restored', count })
+      }
+      break
     default:
       console.warn(`[Message] Unknown message type from ${id}:`, msg.type)
       manager.send(id, {
@@ -203,10 +215,31 @@ async function handleMessage(id, msg, agent) {
   }
 }
 
+/**
+ * 把轻量页面上下文附加到系统提示词（F1）
+ * 只追加 {url,title,selection}，token 开销极小；与问题无关时模型会忽略
+ * @param {string} systemPrompt - 原始系统提示词
+ * @param {object} pageContext - 插件随 user_prompt 附带的页面上下文
+ * @returns {string} 追加后的系统提示词
+ */
+function appendPageContext(systemPrompt, pageContext) {
+  if (!pageContext || typeof pageContext !== 'object') return systemPrompt
+  const lines = []
+  const title = String(pageContext.title || '').trim()
+  const url = String(pageContext.url || '').trim()
+  const selection = String(pageContext.selection || '').trim()
+  if (title) lines.push(`- 页面标题：${title.slice(0, 200)}`)
+  if (url) lines.push(`- 页面地址：${url.slice(0, 500)}`)
+  if (selection) lines.push(`- 用户选中文本：${selection.slice(0, 500)}`)
+  if (lines.length === 0) return systemPrompt
+  return `${systemPrompt}\n\n## 当前页面上下文（用户提问时参考，与问题无关则忽略）\n${lines.join('\n')}`
+}
+
 module.exports = {
   manager,
   wss,
   send: (id, cmd) => manager.send(id, cmd),
   broadcast: (cmd) => manager.broadcast(cmd),
   getPerformance: (id) => manager.send(id, { type: 'get_performance' }),
+  appendPageContext,
 }

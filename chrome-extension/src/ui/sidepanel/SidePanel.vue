@@ -12,6 +12,32 @@
           <span class="status-badge" :class="connectionStatus">{{ statusText }}</span>
         </div>
       </div>
+      <!-- F4 会话持久化：历史切换 + 新会话 -->
+      <div class="header-actions">
+        <button class="header-btn" title="会话历史" @click="toggleHistoryList">🕘</button>
+        <button class="header-btn" title="新会话" @click="startNewSession">＋</button>
+      </div>
+    </div>
+
+    <!-- 会话历史下拉 -->
+    <div v-if="showHistoryList" class="history-panel">
+      <div v-if="!sessionList.length" class="history-empty">暂无历史会话</div>
+      <div
+        v-for="s in sessionList"
+        :key="s.id"
+        class="history-item"
+        :class="{ active: s.id === sessionId }"
+        @click="switchSession(s.id)"
+      >
+        <span class="history-title">{{ s.title }}</span>
+        <span class="history-time">{{ formatShortTime(s.updatedAt) }}</span>
+        <button class="history-delete" title="删除该会话" @click.stop="deleteSession(s.id)">
+          ×
+        </button>
+      </div>
+      <div v-if="sessionList.length" class="history-clear" @click="clearAllSessions">
+        清空全部历史
+      </div>
     </div>
 
     <!-- 消息列表 -->
@@ -23,10 +49,10 @@
       </div>
 
       <!-- 消息列表 -->
-      <div 
-        v-for="(msg, index) in messages" 
-        :key="index" 
-        class="message-item" 
+      <div
+        v-for="(msg, index) in messages"
+        :key="index"
+        class="message-item"
         :class="{ 'user-message': msg.sender === 'user', 'ai-message': msg.sender === 'ai' }"
       >
         <div class="message-avatar">
@@ -40,9 +66,15 @@
               v-if="msg.type === 'text' && msg.sender === 'ai'"
               class="message-copy-button"
               @click="copyText(msg.content)"
-            >复制</button>
+            >
+              复制
+            </button>
           </div>
-          <div class="message-text markdown-content" v-if="msg.type === 'text' && msg.sender === 'ai'" v-html="renderMarkdown(msg.content)"></div>
+          <div
+            class="message-text markdown-content"
+            v-if="msg.type === 'text' && msg.sender === 'ai'"
+            v-html="renderMarkdown(msg.content)"
+          ></div>
           <div class="message-text" v-else-if="msg.type === 'text'">{{ msg.content }}</div>
           <div class="message-selection" v-if="msg.type === 'selection'">
             <div class="selection-header">
@@ -100,16 +132,18 @@
       >
         📄 总结本页
       </button>
-      <input 
+      <input
         ref="inputRef"
-        v-model="inputText" 
-        type="text" 
-        class="input-field" 
-        :placeholder="pendingSelection ? '基于选中内容提问，如：let 和 var 的区别' : '输入您的问题或指令...'"
+        v-model="inputText"
+        type="text"
+        class="input-field"
+        :placeholder="
+          pendingSelection ? '基于选中内容提问，如：let 和 var 的区别' : '输入您的问题或指令...'
+        "
         @keydown.enter="handleSendMessage"
       />
-      <button 
-        class="send-button" 
+      <button
+        class="send-button"
         @click="handleSendMessage"
         :disabled="!inputText.trim() || thinking"
       >
@@ -143,16 +177,257 @@ let websocket = null
 let reconnectTimer = null
 const WS_URL = 'ws://localhost:9999'
 
+// F4 会话持久化：chrome.storage.local 按 sessionId 存储（索引 + 消息）
+const SESSION_INDEX_KEY = 'ba_sessions'
+const MAX_SESSIONS = 10
+const sessionId = ref('')
+const sessionList = ref([])
+const showHistoryList = ref(false)
+let saveTimer = null
+
 const sendToolResponse = (type, requestId, payload = {}, message = '') => {
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
     return
   }
-  websocket.send(JSON.stringify({
-    type,
-    requestId,
-    payload,
-    message
-  }))
+  websocket.send(
+    JSON.stringify({
+      type,
+      requestId,
+      payload,
+      message,
+    })
+  )
+}
+
+// ===== F1 轻量 pageContext：{url, title, selection} 随 user_prompt 附带 =====
+// selection 经 background→content-script 获取，带 800ms 超时兜底；任何失败都不阻塞主流程
+const getPageContext = async () => {
+  const ctx = { url: '', title: '', selection: '' }
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab) {
+      ctx.url = tab.url || ''
+      ctx.title = tab.title || ''
+    }
+  } catch (e) {
+    // 忽略：拿不到上下文时照常提问
+  }
+  try {
+    const res = await Promise.race([
+      chrome.runtime.sendMessage({ type: 'get_selection' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('get_selection timeout')), 800)),
+    ])
+    if (res && res.success && res.selection) {
+      ctx.selection = res.selection
+    }
+  } catch (e) {
+    // 忽略：content-script 未注入/超时均不影响提问
+  }
+  return ctx
+}
+
+// 统一发送 user_prompt：附带 pageContext，返回是否成功发送
+const sendPrompt = async (prompt, action) => {
+  const pageContext = await getPageContext()
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+    return false
+  }
+  websocket.send(JSON.stringify({ type: 'user_prompt', prompt, action, pageContext }))
+  return true
+}
+
+// ===== F4 会话持久化 =====
+const createSessionId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+const loadSessionMessages = async (id) => {
+  const { [`ba_session_${id}`]: data } = await chrome.storage.local.get(`ba_session_${id}`)
+  return data && Array.isArray(data.messages) ? data.messages : []
+}
+
+// 保存当前会话（300ms 防抖，流式期间的增量不打断）
+const persistSession = () => {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(flushSession, 300)
+}
+
+const flushSession = async () => {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  if (!sessionId.value) return
+  const snapshot = messages.value.map((m) => ({ ...m }))
+  await chrome.storage.local.set({
+    [`ba_session_${sessionId.value}`]: { id: sessionId.value, messages: snapshot },
+  })
+  await updateSessionIndex()
+}
+
+// 会话索引：最近 MAX_SESSIONS 个，标题取首条用户消息
+const updateSessionIndex = async () => {
+  const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
+  const firstUserMsg = messages.value.find((m) => m.sender === 'user')
+  const title = (firstUserMsg && firstUserMsg.content ? firstUserMsg.content : '新对话').slice(
+    0,
+    20
+  )
+  const entry = {
+    id: sessionId.value,
+    title,
+    updatedAt: Date.now(),
+    msgCount: messages.value.length,
+  }
+  const next = [entry, ...sessions.filter((s) => s.id !== sessionId.value)].slice(0, MAX_SESSIONS)
+  sessionList.value = next
+  await chrome.storage.local.set({ [SESSION_INDEX_KEY]: next })
+}
+
+// 把 UI 消息转成 OpenAI 格式历史（重放给服务端重建上下文）
+// selection 卡片（划词）转成 user 消息保留动作语义；performance 卡片不重放
+const buildOpenAIHistory = (msgs) => {
+  const history = []
+  for (const m of msgs) {
+    if (m.type === 'text' && m.sender === 'user' && m.content) {
+      history.push({ role: 'user', content: m.content })
+    } else if (m.type === 'selection' && m.content) {
+      if (m.action === 'ask') {
+        history.push({ role: 'user', content: `选中文字：${m.content}` })
+      } else {
+        const label = ACTION_LABELS[m.action] || ''
+        history.push({
+          role: 'user',
+          content: label ? `请对以下选中的文字进行${label}：\n\n"""\n${m.content}\n"""` : m.content,
+        })
+      }
+    } else if (m.type === 'text' && m.sender === 'ai' && m.content && !m.streaming) {
+      history.push({ role: 'assistant', content: m.content })
+    }
+  }
+  // 合并连续 user 消息（OpenAI 角色交替更规范）
+  const merged = []
+  for (const item of history) {
+    const last = merged[merged.length - 1]
+    if (last && last.role === item.role && item.role === 'user') {
+      last.content = `${last.content}\n${item.content}`
+    } else {
+      merged.push({ ...item })
+    }
+  }
+  return merged
+}
+
+// 重放持久化历史给服务端：每次 WS 重连服务端都是全新 Agent（内存历史为空），重放总是安全
+const replayHistoryToServer = () => {
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) return
+  const history = buildOpenAIHistory(messages.value)
+  if (!history.length) return
+  console.log('[Session] Replaying history to server:', history.length)
+  websocket.send(JSON.stringify({ type: 'restore_session', history }))
+}
+
+// 打开侧边栏时恢复最近会话（记住的 sessionId 优先，否则取最近一个）
+const restoreCurrentSession = async () => {
+  const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
+  const { ba_current_session: current } = await chrome.storage.local.get('ba_current_session')
+  const targetId =
+    current && sessions.some((s) => s.id === current)
+      ? current
+      : sessions[0]?.id || createSessionId()
+  sessionId.value = targetId
+  sessionList.value = sessions
+  // 过滤上次关闭时可能中断的半条流式消息（streaming: true），避免恢复出残影
+  messages.value = (await loadSessionMessages(targetId)).filter((m) => !m.streaming)
+}
+
+// 切换到指定历史会话
+const switchSession = async (id) => {
+  if (id === sessionId.value) {
+    showHistoryList.value = false
+    return
+  }
+  await flushSession()
+  sessionId.value = id
+  messages.value = (await loadSessionMessages(id)).filter((m) => !m.streaming)
+  pendingSelection.value = ''
+  showHistoryList.value = false
+  await chrome.storage.local.set({ ba_current_session: id })
+  // 服务端内存 Agent 还挂着旧会话：先清空再重放新会话历史
+  if (websocket && websocket.readyState === WebSocket.OPEN) {
+    websocket.send(JSON.stringify({ type: 'clear_history' }))
+  }
+  replayHistoryToServer()
+}
+
+// 新建会话
+const startNewSession = async () => {
+  await flushSession()
+  sessionId.value = createSessionId()
+  messages.value = []
+  pendingSelection.value = ''
+  showHistoryList.value = false
+  await chrome.storage.local.set({ ba_current_session: sessionId.value })
+  await flushSession() // 建立新会话占位，保证索引立即可见
+  if (websocket && websocket.readyState === WebSocket.OPEN) {
+    websocket.send(JSON.stringify({ type: 'clear_history' }))
+  }
+  nextTick(() => inputRef.value?.focus())
+}
+
+// 删除单个会话
+// 注意：删除当前会话时不能走 flushSession()（会把已删 id 的索引/消息重新写回 storage），必须手动切换
+const deleteSession = async (id) => {
+  if (id === sessionId.value && websocket && websocket.readyState === WebSocket.OPEN) {
+    websocket.send(JSON.stringify({ type: 'clear_history' }))
+  }
+  const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
+  const next = sessions.filter((s) => s.id !== id)
+  await chrome.storage.local.set({ [SESSION_INDEX_KEY]: next })
+  await chrome.storage.local.remove(`ba_session_${id}`)
+  sessionList.value = next
+
+  if (id === sessionId.value) {
+    if (next.length > 0) {
+      // 切到最近一个会话
+      sessionId.value = next[0].id
+      messages.value = (await loadSessionMessages(next[0].id)).filter((m) => !m.streaming)
+      pendingSelection.value = ''
+      await chrome.storage.local.set({ ba_current_session: next[0].id })
+      replayHistoryToServer()
+    } else {
+      // 全部删空：新建空会话
+      sessionId.value = createSessionId()
+      messages.value = []
+      pendingSelection.value = ''
+      await chrome.storage.local.set({ ba_current_session: sessionId.value })
+    }
+    showHistoryList.value = false
+  }
+}
+
+// 清空全部会话
+const clearAllSessions = async () => {
+  const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
+  await chrome.storage.local.remove(sessions.map((s) => `ba_session_${s.id}`))
+  await chrome.storage.local.remove(SESSION_INDEX_KEY)
+  sessionList.value = []
+  sessionId.value = createSessionId()
+  messages.value = []
+  pendingSelection.value = ''
+  showHistoryList.value = false
+  await chrome.storage.local.set({ ba_current_session: sessionId.value })
+  if (websocket && websocket.readyState === WebSocket.OPEN) {
+    websocket.send(JSON.stringify({ type: 'clear_history' }))
+  }
+}
+
+const toggleHistoryList = () => {
+  showHistoryList.value = !showHistoryList.value
+}
+
+const formatShortTime = (ts) => {
+  const d = new Date(ts)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 const getActiveTab = async () => {
@@ -255,12 +530,16 @@ const connectWebSocket = () => {
 
     websocket.onopen = () => {
       updateConnectionStatus('connected')
-      messages.value.push({
-        type: 'text',
-        sender: 'ai',
-        content: '连接成功！选中网页文字或点击"总结本页"即可开始，也可以直接问我问题。',
-        timestamp: Date.now()
-      })
+      // F4：每次重连服务端都是全新 Agent（内存历史为空），重放持久化历史重建上下文
+      replayHistoryToServer()
+      if (messages.value.length === 0) {
+        messages.value.push({
+          type: 'text',
+          sender: 'ai',
+          content: '连接成功！选中网页文字或点击"总结本页"即可开始，也可以直接问我问题。',
+          timestamp: Date.now(),
+        })
+      }
     }
 
     websocket.onmessage = (event) => {
@@ -283,7 +562,7 @@ const connectWebSocket = () => {
                 sender: 'ai',
                 content: data.content,
                 timestamp: Date.now(),
-                streaming: true
+                streaming: true,
               })
             }
             break
@@ -294,23 +573,26 @@ const connectWebSocket = () => {
             const lastStreamingMsg = messages.value[messages.value.length - 1]
             if (lastStreamingMsg && lastStreamingMsg.streaming) {
               // 流式已开始：用最终完整内容覆盖增量，防止分片丢失导致内容不全
-              lastStreamingMsg.content = data.success ? data.content : `${lastStreamingMsg.content}\n\n错误: ${data.content || data.error || ''}`
+              lastStreamingMsg.content = data.success
+                ? data.content
+                : `${lastStreamingMsg.content}\n\n错误: ${data.content || data.error || ''}`
               lastStreamingMsg.streaming = false
             } else if (data.success) {
               messages.value.push({
                 type: 'text',
                 sender: 'ai',
                 content: data.content,
-                timestamp: Date.now()
+                timestamp: Date.now(),
               })
             } else {
               messages.value.push({
                 type: 'text',
                 sender: 'ai',
                 content: `错误: ${data.content}`,
-                timestamp: Date.now()
+                timestamp: Date.now(),
               })
             }
+            persistSession()
             break
           }
 
@@ -320,8 +602,9 @@ const connectWebSocket = () => {
               type: 'performance',
               sender: 'ai',
               data: data.payload,
-              timestamp: Date.now()
+              timestamp: Date.now(),
             })
+            persistSession()
             break
 
           case 'thinking':
@@ -333,53 +616,89 @@ const connectWebSocket = () => {
               type: 'text',
               sender: 'ai',
               content: data.message,
-              timestamp: Date.now()
+              timestamp: Date.now(),
             })
             break
-            
+
           case 'get_performance':
             // 收到获取性能数据的指令，向content-script发送请求
-            chrome.runtime.sendMessage({
-              type: 'get_performance',
-              requestId: data.requestId
-            }).then(response => {
-              console.log('Performance data received:', response)
-              if (response.success && response.payload) {
-                sendToolResponse('performance_data', data.requestId, response.payload, 'Performance data collected')
-              } else {
-                sendToolResponse('performance_data', data.requestId, {
-                  error: response?.error || 'Failed to collect performance data'
-                }, response?.error || 'Failed to collect performance data')
-              }
-            }).catch(error => {
-              console.error('Error getting performance data:', error)
-              sendToolResponse('performance_data', data.requestId, {
-                error: error.message
-              }, error.message)
-            })
+            chrome.runtime
+              .sendMessage({
+                type: 'get_performance',
+                requestId: data.requestId,
+              })
+              .then((response) => {
+                console.log('Performance data received:', response)
+                if (response.success && response.payload) {
+                  sendToolResponse(
+                    'performance_data',
+                    data.requestId,
+                    response.payload,
+                    'Performance data collected'
+                  )
+                } else {
+                  sendToolResponse(
+                    'performance_data',
+                    data.requestId,
+                    {
+                      error: response?.error || 'Failed to collect performance data',
+                    },
+                    response?.error || 'Failed to collect performance data'
+                  )
+                }
+              })
+              .catch((error) => {
+                console.error('Error getting performance data:', error)
+                sendToolResponse(
+                  'performance_data',
+                  data.requestId,
+                  {
+                    error: error.message,
+                  },
+                  error.message
+                )
+              })
             break
 
           case 'get_page_content':
             // 收到获取页面正文的指令，经 background 转发到 content-script
-            chrome.runtime.sendMessage({
-              type: 'get_page_content',
-              requestId: data.requestId,
-              maxChars: data.maxChars
-            }).then(response => {
-              console.log('Page content received:', response)
-              if (response.success && response.payload) {
-                sendToolResponse('page_content', data.requestId, response.payload, 'Page content collected')
-              } else {
-                sendToolResponse('page_content', data.requestId, {
-                  error: response?.error || 'Failed to get page content'
-                }, response?.error || 'Failed to get page content')
-              }
-            }).catch(error => {
-              console.error('Error getting page content:', error)
-              sendToolResponse('page_content', data.requestId, {
-                error: error.message
-              }, error.message)
-            })
+            chrome.runtime
+              .sendMessage({
+                type: 'get_page_content',
+                requestId: data.requestId,
+                maxChars: data.maxChars,
+              })
+              .then((response) => {
+                console.log('Page content received:', response)
+                if (response.success && response.payload) {
+                  sendToolResponse(
+                    'page_content',
+                    data.requestId,
+                    response.payload,
+                    'Page content collected'
+                  )
+                } else {
+                  sendToolResponse(
+                    'page_content',
+                    data.requestId,
+                    {
+                      error: response?.error || 'Failed to get page content',
+                    },
+                    response?.error || 'Failed to get page content'
+                  )
+                }
+              })
+              .catch((error) => {
+                console.error('Error getting page content:', error)
+                sendToolResponse(
+                  'page_content',
+                  data.requestId,
+                  {
+                    error: error.message,
+                  },
+                  error.message
+                )
+              })
             break
 
           case 'navigate_to':
@@ -388,16 +707,26 @@ const connectWebSocket = () => {
                 const tab = await getActiveTab()
                 const updatedTab = await chrome.tabs.update(tab.id, { url: data.url })
                 const loadedTab = await waitForTabLoad(updatedTab.id, 60000)
-                sendToolResponse('navigate_to_result', data.requestId, {
-                  tabId: loadedTab.id,
-                  url: loadedTab.url,
-                  status: loadedTab.status
-                }, `Navigated to ${loadedTab.url}`)
+                sendToolResponse(
+                  'navigate_to_result',
+                  data.requestId,
+                  {
+                    tabId: loadedTab.id,
+                    url: loadedTab.url,
+                    status: loadedTab.status,
+                  },
+                  `Navigated to ${loadedTab.url}`
+                )
               } catch (error) {
                 console.error('Navigate failed:', error)
-                sendToolResponse('navigate_to_result', data.requestId, {
-                  error: error.message
-                }, error.message)
+                sendToolResponse(
+                  'navigate_to_result',
+                  data.requestId,
+                  {
+                    error: error.message,
+                  },
+                  error.message
+                )
               }
             })()
             break
@@ -407,15 +736,25 @@ const connectWebSocket = () => {
               try {
                 const tab = await getActiveTab()
                 await chrome.tabs.reload(tab.id, { bypassCache: !!data.ignoreCache })
-                sendToolResponse('reload_result', data.requestId, {
-                  tabId: tab.id,
-                  ignoreCache: !!data.ignoreCache
-                }, 'Reload requested')
+                sendToolResponse(
+                  'reload_result',
+                  data.requestId,
+                  {
+                    tabId: tab.id,
+                    ignoreCache: !!data.ignoreCache,
+                  },
+                  'Reload requested'
+                )
               } catch (error) {
                 console.error('Reload failed:', error)
-                sendToolResponse('reload_result', data.requestId, {
-                  error: error.message
-                }, error.message)
+                sendToolResponse(
+                  'reload_result',
+                  data.requestId,
+                  {
+                    error: error.message,
+                  },
+                  error.message
+                )
               }
             })()
             break
@@ -425,16 +764,26 @@ const connectWebSocket = () => {
               try {
                 const tab = await getActiveTab()
                 const loadedTab = await waitForTabLoad(tab.id, data.timeout || 30000)
-                sendToolResponse('wait_for_load_result', data.requestId, {
-                  tabId: loadedTab.id,
-                  url: loadedTab.url,
-                  status: loadedTab.status
-                }, 'Page load completed')
+                sendToolResponse(
+                  'wait_for_load_result',
+                  data.requestId,
+                  {
+                    tabId: loadedTab.id,
+                    url: loadedTab.url,
+                    status: loadedTab.status,
+                  },
+                  'Page load completed'
+                )
               } catch (error) {
                 console.error('Wait for load failed:', error)
-                sendToolResponse('wait_for_load_result', data.requestId, {
-                  error: error.message
-                }, error.message)
+                sendToolResponse(
+                  'wait_for_load_result',
+                  data.requestId,
+                  {
+                    error: error.message,
+                  },
+                  error.message
+                )
               }
             })()
             break
@@ -476,7 +825,7 @@ const scheduleReconnect = () => {
 }
 
 // 发送消息
-const handleSendMessage = () => {
+const handleSendMessage = async () => {
   if (!inputText.value.trim() || thinking.value) {
     return
   }
@@ -496,32 +845,29 @@ const handleSendMessage = () => {
     type: 'text',
     sender: 'user',
     content: text,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   })
+  persistSession()
 
   inputText.value = ''
   thinking.value = true
 
-  // 发送消息到服务端
-  if (websocket && websocket.readyState === WebSocket.OPEN) {
-    websocket.send(JSON.stringify({
-      type: 'user_prompt',
-      prompt,
-      action
-    }))
-  } else {
+  // 发送消息到服务端（附带 F1 轻量 pageContext）
+  const ok = await sendPrompt(prompt, action)
+  if (!ok) {
     thinking.value = false
     messages.value.push({
       type: 'text',
       sender: 'ai',
       content: '连接已断开，请检查服务器是否正在运行。',
-      timestamp: Date.now()
+      timestamp: Date.now(),
     })
+    persistSession()
   }
 }
 
 // 总结本页：携带 action 触发专用总结提示词
-const handleSummarize = () => {
+const handleSummarize = async () => {
   if (thinking.value) {
     return
   }
@@ -530,24 +876,21 @@ const handleSummarize = () => {
     type: 'text',
     sender: 'user',
     content: '总结当前页面内容',
-    timestamp: Date.now()
+    timestamp: Date.now(),
   })
+  persistSession()
   thinking.value = true
 
-  if (websocket && websocket.readyState === WebSocket.OPEN) {
-    websocket.send(JSON.stringify({
-      type: 'user_prompt',
-      prompt: '请总结当前页面内容',
-      action: 'summarize'
-    }))
-  } else {
+  const ok = await sendPrompt('请总结当前页面内容', 'summarize')
+  if (!ok) {
     thinking.value = false
     messages.value.push({
       type: 'text',
       sender: 'ai',
       content: '连接已断开，请检查服务器是否正在运行。',
-      timestamp: Date.now()
+      timestamp: Date.now(),
     })
+    persistSession()
   }
 }
 
@@ -562,7 +905,7 @@ const ACTION_LABELS = {
 
 // 划词即问：接收 content-script 经 background 转发的选中文本，触发对应动作
 const processedActionIds = new Set()
-const handleTextAction = (payload) => {
+const handleTextAction = async (payload) => {
   // 广播与 storage 兜底可能同时触发同一条，靠 id 去重
   if (!payload || !payload.id || processedActionIds.has(payload.id)) return
   processedActionIds.add(payload.id)
@@ -579,8 +922,9 @@ const handleTextAction = (payload) => {
     sender: 'user',
     action: label,
     content: text,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   })
+  persistSession()
 
   // 「问问」：不直接发送，选中文字作为上下文，聚焦输入框等用户输入问题
   if (action === 'ask') {
@@ -590,22 +934,18 @@ const handleTextAction = (payload) => {
     return
   }
 
-  if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+  thinking.value = true
+  const ok = await sendPrompt(`请对以下选中的文字进行${label}：\n\n"""\n${text}\n"""`, action)
+  if (!ok) {
+    thinking.value = false
     messages.value.push({
       type: 'text',
       sender: 'ai',
       content: '连接已断开，请检查服务器是否正在运行。',
-      timestamp: Date.now()
+      timestamp: Date.now(),
     })
-    return
+    persistSession()
   }
-
-  thinking.value = true
-  websocket.send(JSON.stringify({
-    type: 'user_prompt',
-    prompt: `请对以下选中的文字进行${label}：\n\n"""\n${text}\n"""`,
-    action
-  }))
 }
 
 // 页面加载完成后连接
@@ -617,16 +957,21 @@ const onRuntimeMessage = (request) => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // F4：先恢复最近会话（UI + 后续 WS onopen 时重放给服务端）
+  await restoreCurrentSession()
   connectWebSocket()
   chrome.runtime.onMessage.addListener(onRuntimeMessage)
   // 兜底：sidepanel 刚打开时可能错过广播（监听器未就绪），从 storage.session 补取
-  chrome.storage.session.get('pendingTextAction').then(({ pendingTextAction }) => {
-    if (pendingTextAction) {
-      handleTextAction(pendingTextAction)
-      chrome.storage.session.remove('pendingTextAction')
-    }
-  }).catch(() => void 0)
+  chrome.storage.session
+    .get('pendingTextAction')
+    .then(({ pendingTextAction }) => {
+      if (pendingTextAction) {
+        handleTextAction(pendingTextAction)
+        chrome.storage.session.remove('pendingTextAction')
+      }
+    })
+    .catch(() => void 0)
 })
 
 // 清理资源
@@ -635,6 +980,11 @@ onUnmounted(() => {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
   }
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+  }
+  // 关闭前把最后一次状态落盘
+  flushSession()
   if (websocket) {
     websocket.close()
   }
@@ -647,6 +997,7 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100vh;
   background-color: #f7f9fc;
+  position: relative;
 }
 
 /* 头部 */
@@ -657,6 +1008,130 @@ onUnmounted(() => {
   background-color: #ffffff;
   border-bottom: 1px solid #e1e8ed;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* F4 会话持久化：头部操作按钮 */
+.header-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.header-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  background: #f7f9fc;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.header-btn:hover {
+  background: #edf2f7;
+}
+
+/* 会话历史下拉面板 */
+.history-panel {
+  position: absolute;
+  top: 64px;
+  right: 12px;
+  z-index: 100;
+  width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #e1e8ed;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.history-item:hover {
+  background: #f1f5f9;
+}
+
+.history-item.active {
+  background: #ebf4ff;
+}
+
+.history-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: #1a1a1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-time {
+  font-size: 11px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.history-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+/* 历史项删除按钮 */
+.history-delete {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.history-item:hover .history-delete {
+  opacity: 1;
+}
+
+.history-delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* 清空全部历史 */
+.history-clear {
+  margin-top: 4px;
+  padding: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: #dc2626;
+  border-radius: 8px;
+  cursor: pointer;
+  border-top: 1px solid #f1f5f9;
+}
+
+.history-clear:hover {
+  background: #fef2f2;
 }
 
 .logo {
@@ -980,7 +1455,9 @@ onUnmounted(() => {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s, border-color 0.2s;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
   white-space: nowrap;
 }
 
@@ -1057,7 +1534,9 @@ onUnmounted(() => {
 }
 
 @keyframes thinkingAnimation {
-  0%, 80%, 100% {
+  0%,
+  80%,
+  100% {
     opacity: 0.3;
     transform: scale(1);
   }

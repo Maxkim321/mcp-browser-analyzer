@@ -227,6 +227,28 @@ class Agent {
     this.conversationHistory = []
     console.log('[Agent] Conversation history cleared')
   }
+
+  /**
+   * 恢复对话历史（F4 会话持久化）
+   * 插件侧重连 WS 时，服务端已创建全新 Agent（内存历史为空），
+   * 由插件把 chrome.storage.local 持久化的历史重放过来重建上下文。
+   * @param {Array} history - OpenAI 格式消息数组 [{role:'user'|'assistant', content}]
+   * @returns {number} 恢复的消息条数
+   */
+  restoreHistory(history) {
+    if (!Array.isArray(history) || history.length === 0) {
+      console.log('[Agent] restoreHistory skipped: empty history')
+      return 0
+    }
+    const clean = history
+      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+      .map((m) => ({ role: m.role, content: m.content.trim() }))
+    if (clean.length === 0) return 0
+    this.conversationHistory = clean
+    this.trimHistory()
+    console.log(`[Agent] Restored ${clean.length} history messages (kept ${this.conversationHistory.length})`)
+    return clean.length
+  }
 }
 
 module.exports = { Agent }

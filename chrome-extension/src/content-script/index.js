@@ -49,6 +49,16 @@ import { Readability } from '@mozilla/readability'
         handleGetPageContent(request, sender, sendResponse)
         return true
 
+      case 'get_selection':
+        // F1 轻量 pageContext：同步返回当前选中文本（无选中返回空串）
+        // 纯同步操作，无需保持消息通道
+        try {
+          sendResponse({ success: true, selection: getSelectionText() })
+        } catch (error) {
+          sendResponse({ success: false, error: error.message })
+        }
+        return false
+
       default:
         // 与本脚本无关的消息（如 background 广播给 sidepanel 的划词消息）不响应
         return false
