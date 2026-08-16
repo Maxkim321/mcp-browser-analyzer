@@ -425,6 +425,49 @@ async function handleGetPageContent(args, traceId, context = {}) {
   })
 }
 
+/**
+ * 处理 fetch_url 工具（深度研究 M1-F8）
+ * 向插件发送"后台新开 tab 读取指定 URL 正文"指令，等待响应
+ * 与 get_page_content 复用同一套 requestId 异步匹配机制，区别是读指定 URL 而非当前页
+ * @param {object} args - 工具参数
+ * @param {string} args.url - 要读取的 URL
+ * @param {number} [args.maxChars] - 返回内容最大字符数
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP响应格式
+ */
+async function handleFetchUrl(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { url } = args
+  const { maxChars = 12000 } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('Fetch url timeout'))
+    }, 45000)
+
+    pendingRequests.set(requestId, {
+      resolve,
+      reject,
+      timeout,
+      traceId,
+    })
+
+    traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'fetch_url', url, maxChars })
+    const sendSuccess = ws.send(connectionId, { type: 'fetch_url', requestId, url, maxChars })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
 const toolHandlers = {
   navigate_to: handleNavigateTo,
   reload_page: handleReloadPage,
@@ -432,6 +475,7 @@ const toolHandlers = {
   list_connections: handleListConnections,
   get_browser_performance: handleGetPerformance,
   get_page_content: handleGetPageContent,
+  fetch_url: handleFetchUrl,
   broadcast_message: handleBroadcastMessage,
   todo_write: handleTodoWrite,
 }

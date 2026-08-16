@@ -1,10 +1,17 @@
 const WebSocket = require('ws')
 const toolHandler = require('../tools/handler.js')
 const { Agent } = require('../core/agent.js')
+const { LLMClient } = require('../core/llm.js')
+const { ResearchWorkflow } = require('../core/workflow.js')
 const config = require('../config/index.js')
 const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
 
 const connectionAgents = new Map()
+
+// 深度研究（M1-F8）：每连接只允许一个工作流运行（防止并发烧 token）
+const activeWorkflows = new Map()
+// HITL 等待答复：connectionId → { resolve, timer }
+const pendingWorkflowAsks = new Map()
 
 /**
  * 连接管理器 - 管理所有 WebSocket 客户端连接
@@ -128,6 +135,14 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     manager.remove(connectionId)
     connectionAgents.delete(connectionId)
+    // 清理该连接的深度研究资源（工作流标记 + HITL 等待）
+    activeWorkflows.delete(connectionId)
+    const pendingAsk = pendingWorkflowAsks.get(connectionId)
+    if (pendingAsk) {
+      clearTimeout(pendingAsk.timer)
+      pendingWorkflowAsks.delete(connectionId)
+      pendingAsk.resolve({ cancel: true, text: '' })
+    }
   })
 
   /**
@@ -137,6 +152,13 @@ wss.on('connection', (ws) => {
     console.error('[Error] Connection:', err)
     manager.remove(connectionId)
     connectionAgents.delete(connectionId)
+    activeWorkflows.delete(connectionId)
+    const pendingAsk = pendingWorkflowAsks.get(connectionId)
+    if (pendingAsk) {
+      clearTimeout(pendingAsk.timer)
+      pendingWorkflowAsks.delete(connectionId)
+      pendingAsk.resolve({ cancel: true, text: '' })
+    }
   })
 })
 
@@ -162,6 +184,20 @@ async function handleMessage(id, msg, agent) {
     case 'user_prompt':
       console.log('[Agent] Processing prompt:', msg.prompt)
       try {
+        // M1-F8 深度研究：显式 action 或研究型提问 → 走 LangGraph 式状态机工作流
+        const isResearch = msg.action === 'research' || isResearchPrompt(msg.prompt)
+        if (isResearch) {
+          await runResearch(id, msg.prompt)
+          break
+        }
+        if (activeWorkflows.has(id)) {
+          manager.send(id, {
+            type: 'agent_response',
+            success: false,
+            content: '深度研究正在进行中，请等待其完成后再提问。',
+          })
+          break
+        }
         manager.send(id, { type: 'thinking' })
         // 固定动作（总结/翻译/解释等）使用专用提示词驱动结构化输出
         // F1 轻量 pageContext：仅普通对话注入（固定动作的 prompt 是严格模板，塞上下文会破坏结构化输出）
@@ -192,6 +228,20 @@ async function handleMessage(id, msg, agent) {
         })
       }
       break
+    case 'workflow_answer':
+      // M1-F8 HITL：用户对 workflow_ask 的答复（继续/停止/自定义方向）
+      {
+        const pendingAsk = pendingWorkflowAsks.get(id)
+        if (pendingAsk) {
+          clearTimeout(pendingAsk.timer)
+          pendingWorkflowAsks.delete(id)
+          pendingAsk.resolve({
+            cancel: msg.cancel === true,
+            text: String(msg.answer || '').trim(),
+          })
+        }
+      }
+      break
     case 'clear_history':
       agent.clearHistory()
       manager.send(id, { type: 'history_cleared' })
@@ -212,6 +262,87 @@ async function handleMessage(id, msg, agent) {
         content: '不支持的消息类型，请检查客户端协议。',
       })
       break
+  }
+}
+
+/**
+ * 研究型提问检测（M1-F8 意图路由）
+ * 关键词规则可控、可讲、零成本；显式 action: 'research' 始终触发
+ * 精确意图路由（LLM 判断）会增加一次调用成本，第一版用规则，后续可升级
+ */
+function isResearchPrompt(prompt) {
+  if (typeof prompt !== 'string' || prompt.trim().length < 8) return false
+  return /研究|调研|调查|对比|搞清楚|查明白|分析报告|研究报告|区别|差异|来龙去脉|原理|机制/.test(prompt)
+}
+
+/**
+ * 运行深度研究工作流（M1-F8）
+ * - 注册 activeWorkflows 防止并发
+ * - 推送 workflow_progress（进度）
+ * - HITL：workflow_ask 推送 + 等待 workflow_answer
+ * - 完成/失败后发 agent_response（报告即最终答复），并清理 checkpoint
+ */
+async function runResearch(id, question) {
+  if (activeWorkflows.has(id)) {
+    manager.send(id, {
+      type: 'agent_response',
+      success: false,
+      content: '深度研究正在进行中，请等待其完成后再提问。',
+    })
+    return
+  }
+
+  const workflow = new ResearchWorkflow(new LLMClient(), {
+    maxTopics: 3,
+    maxPagesPerTopic: 3,
+    maxAttempts: 2,
+  })
+  activeWorkflows.set(id, workflow)
+
+  const sendAsk = (askQuestion, options) =>
+    new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        pendingWorkflowAsks.delete(id)
+        resolve({ cancel: false, text: '继续研究', timeout: true })
+      }, 120000) // HITL 超时兜底：用户不答复 2 分钟后默认继续，不挂死工作流
+      pendingWorkflowAsks.set(id, { resolve, timer })
+      manager.send(id, {
+        type: 'workflow_ask',
+        question: askQuestion,
+        options: options || ['继续研究', '停止研究'],
+      })
+    })
+
+  try {
+    const result = await workflow.start(question, {
+      connectionId: id,
+      onProgress: (progress) => manager.send(id, { type: 'workflow_progress', ...progress }),
+      onAsk: sendAsk,
+      onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
+    })
+    manager.send(id, {
+      type: 'agent_response',
+      success: result.success,
+      content: result.content,
+      error: result.error,
+    })
+    // 研究结束：清理 checkpoint，避免重复恢复
+    workflow.clearCheckpoint(result.state?.taskId)
+  } catch (error) {
+    console.error('[Workflow] Error:', error)
+    manager.send(id, {
+      type: 'agent_response',
+      success: false,
+      content: '深度研究执行出错。',
+      error: error.message,
+    })
+  } finally {
+    activeWorkflows.delete(id)
+    const pendingAsk = pendingWorkflowAsks.get(id)
+    if (pendingAsk) {
+      clearTimeout(pendingAsk.timer)
+      pendingWorkflowAsks.delete(id)
+    }
   }
 }
 

@@ -163,6 +163,71 @@ const ASK_PROMPT = `你是一个浏览器 AI 助手。用户选中了一段文�
 - 用中文回答`
 
 /**
+ * 深度研究：规划子问题（F8 plan 节点）
+ * 模型把研究问题拆成若干子问题，并给出每个子问题的候选 URL（LLM 先验知识，无搜索引擎）
+ * 输出必须是严格 JSON，由 workflow 解析
+ */
+const RESEARCH_PLAN_PROMPT = `你是一个深度研究规划助手。请把一个研究问题拆解成 2-3 个子问题，并为每个子问题推荐 1-2 个可访问的权威 URL（优先官方文档、Wikipedia、MDN、知名技术博客），用于后续逐个抓取页面研究。
+
+严格输出 JSON，不要输出任何其他内容：
+{
+  "subQuestions": [
+    { "question": "子问题1", "urls": ["https://...", "https://..."] },
+    { "question": "子问题2", "urls": ["https://..."] }
+  ]
+}
+
+规则：
+- 子问题之间尽量互斥、合起来覆盖原问题
+- URL 必须是真实存在的知名站点地址（不要编造不存在的域名）
+- 只输出 JSON 对象本身`
+
+/**
+ * 深度研究：单页面调研 + 信息量评估（F8 research 节点 + grade 条件边）
+ * 输入：子问题 + 一个页面的正文；输出：是否足够 + 提炼要点 + 缺口
+ * sufficient 决定"条件边"走向：够 → 下一主题；不够 → 换 URL 重试（上限由 workflow 硬约束）
+ */
+const RESEARCH_TOPIC_PROMPT = `你是一个深度研究调研助手。给定一个研究子问题和一页网页正文，请判断这些信息是否足够回答该子问题，并提炼要点。
+
+严格输出 JSON，不要输出任何其他内容：
+{
+  "sufficient": true,
+  "points": ["要点1", "要点2"],
+  "gap": "若 sufficient 为 false，说明还缺什么；若为 true 填空字符串"
+}
+
+规则：
+- points 3-5 条，每条不超过 40 字，只基于正文内容，严禁编造
+- 正文提取失败或内容与主题无关时，sufficient 必须为 false
+- 只输出 JSON 对象本身`
+
+/**
+ * 深度研究：生成研究报告（F8 report 节点）
+ * 输入：全部子问题的提炼要点 + 来源列表；输出：Markdown 研究报告
+ * 报告必须带来源链接（质量门禁 ADR-5：证据可溯源）
+ */
+const RESEARCH_REPORT_PROMPT = `你是一个深度研究分析师。基于下面提供的各主题调研要点和来源，输出一份完整的 Markdown 研究报告。
+
+报告结构（严格遵循）：
+## 结论
+（直接回答原始研究问题，不超过 200 字）
+
+## 分主题调研结果
+（每个主题一节：要点 + 该主题信息是否充分）
+
+## 交叉对比
+（主题之间的异同、关联、矛盾点；只有一个主题时写"无"）
+
+## 数据可信度说明
+- 每个来源标注：页面标题 / URL / 是否截断
+- 信息不足的主题要明确标注"该主题信息可能不完整"
+
+规则：
+- 只基于提供的调研要点，严禁编造数据
+- 来源列表必须如实引用
+- 用中文输出`
+
+/**
  * 动作 → 专用提示词映射
  * sidepanel 可通过 user_prompt 携带 action 字段触发固定动作（总结/翻译/解释/改写等）
  */
@@ -183,5 +248,8 @@ module.exports = {
   REWRITE_PROMPT,
   SELECTION_SUMMARY_PROMPT,
   ASK_PROMPT,
+  RESEARCH_PLAN_PROMPT,
+  RESEARCH_TOPIC_PROMPT,
+  RESEARCH_REPORT_PROMPT,
   ACTION_PROMPTS,
 }

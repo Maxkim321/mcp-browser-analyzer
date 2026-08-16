@@ -110,6 +110,29 @@ const tools = [
     },
   },
   {
+    name: 'fetch_url',
+    description:
+      '在后台新开标签页获取指定 URL 的正文内容（不打扰用户当前页面，读完自动关闭），用于深度研究多页阅读。返回 {url, title, content, charCount}',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: '要读取的页面 URL，例如 https://en.wikipedia.org/wiki/MCP',
+        },
+        maxChars: {
+          type: 'number',
+          description: '返回内容的最大字符数，超出则截断，默认 12000',
+        },
+        connectionId: {
+          type: 'number',
+          description: '浏览器插件连接ID，可选；缺省时默认使用当前会话连接',
+        },
+      },
+      required: ['url'],
+    },
+  },
+  {
     name: 'todo_write',
     description: '创建或更新任务列表，用于管理多步骤操作。使用这个工具来规划和跟踪你的工作进度。',
     inputSchema: {
