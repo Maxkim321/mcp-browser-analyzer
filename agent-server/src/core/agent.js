@@ -2,6 +2,9 @@ const { LLMClient } = require('./llm.js')
 const { tools } = require('../tools/index.js')
 const { handleToolCall } = require('../tools/handler.js')
 const config = require('../config/index.js')
+// dph-C 上下文压缩 / dph-D 工具流水线
+const { CONTEXT_SUMMARY_PROMPT, findCompressCount, compressHistory } = require('./context-manager.js')
+const { runToolPipeline } = require('./tool-pipeline.js')
 
 /**
  * AI Agent 编排器
@@ -59,13 +62,50 @@ class Agent {
     let iteration = 0
     // 工具上下文在整个 process 生命周期内共享，避免每轮迭代被重置
     const toolContext = { connectionId: options.connectionId, todoWriteCount: 0 }
+    // dph-A Turn/Step 执行模型：step 计数器贯穿整个 Turn（一次用户请求 = 一个 Turn），
+    // 每个 Step（LLM 推理 / 工具执行）都通过 onStep 下发事件，前端可观测；signal 支持取消
+    let step = 0
+    const emitStep = (payload) => {
+      step++
+      if (typeof options.onStep === 'function') {
+        options.onStep({ step, iteration, ...payload })
+      }
+    }
+    const isAborted = () => options.signal?.aborted === true
+    const abortError = () => Object.assign(new Error('Agent cancelled'), { code: 'ABORTED' })
 
     while (iteration < maxIterations) {
+      if (isAborted()) throw abortError()
       iteration++
       console.log(`[Agent] Iteration ${iteration}/${maxIterations}`)
 
+      // dph-A 可观测：推理 Step 开始
+      emitStep({ phase: 'reasoning', status: 'running' })
+
+      // dph-C 上下文压缩：每次推理前检查 token 预算，超出则把早期消息滚动摘要压缩。
+      // 摘要由 LLM 生成（非流式），失败降级为不压缩，不影响主流程
+      if (this.config.tokenBudget) {
+        const compressCount = findCompressCount(this.conversationHistory, this.config.tokenBudget)
+        if (compressCount !== null) {
+          try {
+            const result = await compressHistory(this.conversationHistory, this.config.tokenBudget, async (text) => {
+              const reply = await this.llm.chat([
+                { role: 'system', content: CONTEXT_SUMMARY_PROMPT },
+                { role: 'user', content: text },
+              ])
+              return reply?.content
+            })
+            this.conversationHistory = result.messages
+            emitStep({ phase: 'compress', status: 'success', compressed: result.compressed })
+            console.log(`[Agent] Context compressed: ${result.compressed} old messages → summary`)
+          } catch (compressError) {
+            console.error('[Agent] Context compression failed, keep raw history:', compressError)
+          }
+        }
+      }
+
       // 流式调用：工具轮 content 为空（不触发 onToken），最终文本轮实时推送增量
-      const response = await this.llm.chatStream(this.conversationHistory, tools, options.systemPrompt, options.onToken)
+      const response = await this.llm.chatStream(this.conversationHistory, tools, options.systemPrompt, options.onToken, options.signal)
 
       //需要工具 - 工具调用检测
       if (response.tool_calls && response.tool_calls.length > 0) {
@@ -74,6 +114,11 @@ class Agent {
         const toolCalls = response.tool_calls
         console.log(`[Agent] Tool calls requested: ${toolCalls.length}`)
 
+        // dph-A 可观测：工具执行 Step
+        for (const tc of toolCalls) {
+          emitStep({ phase: 'tool', status: 'running', tool: tc.function?.name })
+        }
+
         if (toolCalls.length > 1 && this.config.parallelToolCalls > 1) {
           //并行执行
           await this.executeParallelTools(toolCalls, toolContext)
@@ -81,15 +126,20 @@ class Agent {
           //顺序执行
           await this.executeSequentialTools(toolCalls, toolContext)
         }
+        // 工具执行完成后回到循环顶部发起下一轮推理
+        continue
       } else {
         this.conversationHistory.push(response)
         this.trimHistory()
         console.log(`[Agent] Final response:`, response.content)
+        // dph-A 可观测：完成 Step
+        emitStep({ phase: 'done', status: 'success' })
         return {
           success: true,
           content: response.content,
           conversation: this.conversationHistory,
           iterations: iteration,
+          steps: step,
         }
       }
     }
@@ -103,7 +153,7 @@ class Agent {
           role: 'user',
           content: '请基于已有工具结果直接输出最终结论，不要再调用任何工具。若数据不足请明确说明不足点。',
         },
-      ], [], options.systemPrompt, options.onToken)
+      ], [], options.systemPrompt, options.onToken, options.signal)
 
       if (forcedFinalResponse?.content) {
         this.conversationHistory.push(forcedFinalResponse)
@@ -189,8 +239,16 @@ class Agent {
       context.todoWriteCount = (context.todoWriteCount || 0) + 1
     }
 
+    // dph-D 工具执行流水线：权限校验（写操作预留）→ 超时控制 → 执行，统一收口
     try {
-      const result = await handleToolCall(toolName, toolArgs, context)
+      const result = await runToolPipeline({
+        toolName,
+        args: toolArgs,
+        context,
+        timeoutMs: this.config.toolTimeout,
+        permissionCheck: this.config.permissionCheck,
+        run: (args, ctx) => handleToolCall(toolName, args, ctx),
+      })
       const toolResult = {
         role: 'tool',
         tool_call_id: toolCall.id,
@@ -218,6 +276,14 @@ class Agent {
     if (typeof historyLimit === 'number' && historyLimit > 0 && this.conversationHistory.length > historyLimit) {
       this.conversationHistory = this.conversationHistory.slice(-historyLimit)
     }
+  }
+
+  /**
+   * 判断当前 Agent 是否没有历史上下文（dph-B 事件溯源断点续跑用）
+   * @returns {boolean} true 表示内存历史为空
+   */
+  isEmptyHistory() {
+    return !Array.isArray(this.conversationHistory) || this.conversationHistory.length === 0
   }
 
   /**

@@ -63,9 +63,10 @@ class LLMClient {
    * @param {Array} tools - 可用的工具列表
    * @param {string} [systemPrompt] - 可选系统提示词
    * @param {Function} [onToken] - 文本增量回调 (chunk: string) => void
+   * @param {AbortSignal} [signal] - 取消信号（dph-A 可观测/可取消），abort 后立即中断并抛 AbortError
    * @returns {Promise<object>} 完整消息（含累积的 content / tool_calls）
    */
-  async chatStream(messages, tools = [], systemPrompt, onToken) {
+  async chatStream(messages, tools = [], systemPrompt, onToken, signal) {
     console.log(`[LLM] Streaming model: ${this.model}`)
 
     const body = this.buildBody(messages, tools, systemPrompt, true)
@@ -77,6 +78,7 @@ class LLMClient {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal,
     })
 
     if (!response.ok) {

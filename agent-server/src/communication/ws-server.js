@@ -6,8 +6,12 @@ const { ResearchWorkflow } = require('../core/workflow.js')
 const config = require('../config/index.js')
 const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
 const { appendPageContext, appendPrefs } = require('../core/prompt-context.js')
+const eventLog = require('../core/event-log.js')
 
 const connectionAgents = new Map()
+
+// dph-A Turn/Step 可取消：每连接一个 AbortController，cancel_request 时 abort 当前 agent 任务
+const connectionAborts = new Map()
 
 // 深度研究（M1-F8）：每连接只允许一个工作流运行（防止并发烧 token）
 const activeWorkflows = new Map()
@@ -136,6 +140,12 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     manager.remove(connectionId)
     connectionAgents.delete(connectionId)
+    // dph-A 取消：连接断开即终止未完成的 agent 任务（避免孤儿 fetch 空耗 token）
+    const abort = connectionAborts.get(connectionId)
+    if (abort) {
+      abort.abort()
+      connectionAborts.delete(connectionId)
+    }
     // 清理该连接的深度研究资源（工作流标记 + HITL 等待）
     activeWorkflows.delete(connectionId)
     const pendingAsk = pendingWorkflowAsks.get(connectionId)
@@ -153,6 +163,11 @@ wss.on('connection', (ws) => {
     console.error('[Error] Connection:', err)
     manager.remove(connectionId)
     connectionAgents.delete(connectionId)
+    const abort = connectionAborts.get(connectionId)
+    if (abort) {
+      abort.abort()
+      connectionAborts.delete(connectionId)
+    }
     activeWorkflows.delete(connectionId)
     const pendingAsk = pendingWorkflowAsks.get(connectionId)
     if (pendingAsk) {
@@ -199,6 +214,15 @@ async function handleMessage(id, msg, agent) {
           })
           break
         }
+        // dph-B 事件溯源：同一会话崩溃/重启后，Agent 内存为空时用事件日志投影重建上下文（断点续跑）
+        const sessionId = String(msg.sessionId || '')
+        if (sessionId && agent.isEmptyHistory()) {
+          const events = eventLog.getEvents(sessionId)
+          if (events.length > 0) {
+            const count = agent.restoreHistory(eventLog.projectToHistory(events))
+            console.log(`[EventLog] Rebuilt ${count} messages from events for session ${sessionId}`)
+          }
+        }
         manager.send(id, { type: 'thinking' })
         // 固定动作（总结/翻译/解释等）使用专用提示词驱动结构化输出
         // F1 轻量 pageContext + F5 偏好：仅普通对话注入（固定动作的 prompt 是严格模板，塞上下文会破坏结构化输出）
@@ -211,25 +235,50 @@ async function handleMessage(id, msg, agent) {
         }
         // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
         // onToken：LLM 文本增量实时分片推送（流式输出），最终结果仍由 agent_response 兜底
-        const result = await agent.process(msg.prompt, {
-          connectionId: id,
-          systemPrompt,
-          onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
-        })
-        manager.send(id, {
-          type: 'agent_response',
-          success: result.success,
-          content: result.content,
-          error: result.error,
-        })
+        // dph-A：AbortController 支持用户取消；onStep 把 Turn 内每个 Step（推理/工具）事件下发前端
+        const controller = new AbortController()
+        connectionAborts.set(id, controller)
+        // dph-B：记录本次用户提问事件（append-only）
+        if (sessionId) eventLog.appendEvent(sessionId, 'user', String(msg.prompt || '').trim(), { action: msg.action })
+        try {
+          const result = await agent.process(msg.prompt, {
+            connectionId: id,
+            systemPrompt,
+            signal: controller.signal,
+            onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
+            onStep: (stepInfo) => manager.send(id, { type: 'agent_step', ...stepInfo }),
+          })
+          manager.send(id, {
+            type: 'agent_response',
+            success: result.success,
+            content: result.content,
+            error: result.error,
+          })
+          // dph-B：记录回答事件（仅成功且有内容时，append-only）
+          if (sessionId && result.success && result.content) {
+            eventLog.appendEvent(sessionId, 'assistant', String(result.content).trim())
+          }
+        } finally {
+          connectionAborts.delete(id)
+        }
       } catch (error) {
-        console.error('[Agent] Error:', error)
-        manager.send(id, {
-          type: 'agent_response',
-          success: false,
-          content: '抱歉，处理你的请求时出错了。',
-          error: error.message,
-        })
+        // dph-A 可取消：用户主动取消/连接断开导致的 abort，回复"已停止"，不当作系统错误
+        if (error?.code === 'ABORTED' || error?.name === 'AbortError') {
+          manager.send(id, {
+            type: 'agent_response',
+            success: false,
+            content: '已停止本次回答。',
+            error: 'cancelled',
+          })
+        } else {
+          console.error('[Agent] Error:', error)
+          manager.send(id, {
+            type: 'agent_response',
+            success: false,
+            content: '抱歉，处理你的请求时出错了。',
+            error: error.message,
+          })
+        }
       }
       break
     case 'workflow_answer':
@@ -244,6 +293,17 @@ async function handleMessage(id, msg, agent) {
             text: String(msg.answer || '').trim(),
           })
         }
+      }
+      break
+    case 'cancel_request':
+      // dph-A 可取消：前端点击"停止"时中止当前 agent 任务（fetch abort）
+      {
+        const abort = connectionAborts.get(id)
+        if (abort) {
+          abort.abort()
+          connectionAborts.delete(id)
+        }
+        manager.send(id, { type: 'cancel_ack' })
       }
       break
     case 'clear_history':
