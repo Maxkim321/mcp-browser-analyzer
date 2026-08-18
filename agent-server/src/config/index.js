@@ -22,6 +22,10 @@ const config = {
     timeout: 60000,
     // 对话历史上限，避免长会话导致内存持续增长
     historyLimit: 40,
+    // dph-C token 预算：历史估算 token 超过该值触发滚动摘要压缩
+    tokenBudget: 16000,
+    // dph-D 单工具执行超时（毫秒），防止网络卡死拖垮整个 Turn
+    toolTimeout: 60000,
   },
 }
 

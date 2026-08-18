@@ -338,17 +338,21 @@ class ResearchWorkflow {
   }
 
   // HITL：暂停工作流等待用户答复；超时默认继续（不阻塞研究）
+  // 注意：onAsk 答复后必须 clearTimeout 兜底 timer，否则 timer 会一直挂着拖住进程
   async askUser(onAsk, question, options) {
     if (!onAsk) return { cancel: false, text: '继续研究' }
+    let timer
     try {
       const answer = await Promise.race([
         onAsk(question, options),
-        new Promise((resolve) =>
-          setTimeout(() => resolve({ cancel: false, text: '继续研究', timeout: true }), this.hitlTimeoutMs)
-        ),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve({ cancel: false, text: '继续研究', timeout: true }), this.hitlTimeoutMs)
+        }),
       ])
+      clearTimeout(timer)
       return answer || { cancel: false, text: '继续研究' }
     } catch (error) {
+      clearTimeout(timer)
       console.warn('[Workflow] HITL ask failed:', error.message)
       return { cancel: false, text: '继续研究' }
     }
