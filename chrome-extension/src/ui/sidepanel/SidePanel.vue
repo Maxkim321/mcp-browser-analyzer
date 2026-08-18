@@ -19,25 +19,38 @@
       </div>
     </div>
 
-    <!-- 会话历史下拉 -->
+    <!-- 会话历史下拉（F4 + F6：搜索/重命名） -->
     <div v-if="showHistoryList" class="history-panel">
       <div v-if="!sessionList.length" class="history-empty">暂无历史会话</div>
-      <div
-        v-for="s in sessionList"
-        :key="s.id"
-        class="history-item"
-        :class="{ active: s.id === sessionId }"
-        @click="switchSession(s.id)"
-      >
-        <span class="history-title">{{ s.title }}</span>
-        <span class="history-time">{{ formatShortTime(s.updatedAt) }}</span>
-        <button class="history-delete" title="删除该会话" @click.stop="deleteSession(s.id)">
-          ×
-        </button>
-      </div>
-      <div v-if="sessionList.length" class="history-clear" @click="clearAllSessions">
-        清空全部历史
-      </div>
+      <template v-else>
+        <input
+          v-model="historyKeyword"
+          class="history-search"
+          placeholder="搜索会话..."
+          @keydown.stop
+        />
+        <div v-for="s in filteredSessions" :key="s.id" class="history-item" :class="{ active: s.id === sessionId }">
+          <template v-if="renamingId === s.id">
+            <input
+              v-model="renameDraft"
+              class="history-rename-input"
+              @click.stop
+              @keydown.enter="confirmRename(s)"
+              @keydown.esc="cancelRename"
+              @blur="confirmRename(s)"
+            />
+          </template>
+          <template v-else>
+            <span class="history-title" @click="switchSession(s.id)">{{ s.title }}</span>
+            <span class="history-time">{{ formatShortTime(s.updatedAt) }}</span>
+            <button class="history-rename" title="重命名该会话" @click.stop="startRename(s)">✏️</button>
+            <button class="history-delete" title="删除该会话" @click.stop="deleteSession(s.id)">
+              ×
+            </button>
+          </template>
+        </div>
+        <div class="history-clear" @click="clearAllSessions">清空全部历史</div>
+      </template>
     </div>
 
     <!-- 消息列表 -->
@@ -132,7 +145,7 @@
         </div>
       </div>
 
-      <!-- 思考中动画 -->
+      <!-- 思考中动画（dph-A：显示 Step 进度 + 停止按钮） -->
       <div v-if="thinking" class="message-item ai-message">
         <div class="message-avatar">🤖</div>
         <div class="message-content">
@@ -141,7 +154,10 @@
             <span class="thinking-dot"></span>
             <span class="thinking-dot"></span>
           </div>
-          <p class="thinking-text">AI 助手正在思考...</p>
+          <p class="thinking-text">
+            {{ agentStep ? stepLabel(agentStep) : 'AI 助手正在思考...' }}
+          </p>
+          <button v-if="agentStep" class="stop-btn" @click="cancelAgentTask">⏹ 停止</button>
         </div>
       </div>
     </div>
@@ -163,6 +179,14 @@
         title="基于输入的问题做多页深度研究，输出带来源的研究报告"
       >
         🔍 深度研究
+      </button>
+      <button
+        class="action-button extract"
+        @click="handleExtract"
+        :disabled="thinking"
+        title="提取当前页面的表格/列表为 Markdown 和 CSV"
+      >
+        📊 提取表格
       </button>
       <input
         ref="inputRef"
@@ -186,7 +210,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { openOptions } from '@/utils/base'
 import { renderMarkdown } from '@/utils/markdown'
 import { getPrefs, addArticle } from '@/utils/prefs'
@@ -217,6 +241,9 @@ const sessionId = ref('')
 const sessionList = ref([])
 const showHistoryList = ref(false)
 let saveTimer = null
+
+// dph-A Turn/Step 可观测：当前 Step 事件 {step, iteration, phase, status, tool?}
+const agentStep = ref(null)
 
 const sendToolResponse = (type, requestId, payload = {}, message = '') => {
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
@@ -262,14 +289,16 @@ const getPageContext = async () => {
 // 最近一次发送的 action，用于 agent_response 完成后做后置处理（如 F5 文章索引）
 let lastSentAction = ''
 
-// 统一发送 user_prompt：附带 pageContext + F5 偏好（prefs），返回是否成功发送
+// 统一发送 user_prompt：附带 pageContext + F5 偏好（prefs）+ dph-B sessionId，返回是否成功发送
 const sendPrompt = async (prompt, action) => {
   lastSentAction = action || ''
   const [pageContext, prefs] = await Promise.all([getPageContext(), getPrefs()])
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
     return false
   }
-  websocket.send(JSON.stringify({ type: 'user_prompt', prompt, action, pageContext, prefs }))
+  websocket.send(
+    JSON.stringify({ type: 'user_prompt', prompt, action, pageContext, prefs, sessionId: sessionId.value })
+  )
   return true
 }
 
@@ -316,17 +345,16 @@ const flushSession = async () => {
   await updateSessionIndex()
 }
 
-// 会话索引：最近 MAX_SESSIONS 个，标题取首条用户消息
+// 会话索引：最近 MAX_SESSIONS 个，标题取首条用户消息（F6：重命名后优先用 customTitle，不被自动标题覆盖）
 const updateSessionIndex = async () => {
   const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
+  const prev = sessions.find((s) => s.id === sessionId.value)
   const firstUserMsg = messages.value.find((m) => m.sender === 'user')
-  const title = (firstUserMsg && firstUserMsg.content ? firstUserMsg.content : '新对话').slice(
-    0,
-    20
-  )
+  const autoTitle = (firstUserMsg && firstUserMsg.content ? firstUserMsg.content : '新对话').slice(0, 20)
   const entry = {
     id: sessionId.value,
-    title,
+    title: prev?.customTitle || autoTitle,
+    customTitle: prev?.customTitle || '',
     updatedAt: Date.now(),
     msgCount: messages.value.length,
   }
@@ -477,6 +505,49 @@ const toggleHistoryList = () => {
   showHistoryList.value = !showHistoryList.value
 }
 
+// ===== F6 会话管理：搜索 + 重命名 =====
+const historyKeyword = ref('')
+const renamingId = ref('')
+const renameDraft = ref('')
+
+const filteredSessions = computed(() => {
+  const kw = historyKeyword.value.trim().toLowerCase()
+  if (!kw) return sessionList.value
+  return sessionList.value.filter((s) => (s.title || '').toLowerCase().includes(kw))
+})
+
+const startRename = (s) => {
+  renamingId.value = s.id
+  renameDraft.value = s.title || ''
+  // 下一帧聚焦输入框
+  nextTick(() => {
+    const input = document.querySelector('.history-rename-input')
+    input?.focus()
+    input?.select()
+  })
+}
+
+const cancelRename = () => {
+  renamingId.value = ''
+  renameDraft.value = ''
+}
+
+// 重命名：写入索引 customTitle，下次 flush 时不被自动标题覆盖
+const confirmRename = async (s) => {
+  if (renamingId.value !== s.id) return
+  const newTitle = renameDraft.value.trim().slice(0, 20)
+  renamingId.value = ''
+  renameDraft.value = ''
+  if (!newTitle || newTitle === s.title) return
+
+  const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
+  const next = sessions.map((item) =>
+    item.id === s.id ? { ...item, title: newTitle, customTitle: newTitle } : item
+  )
+  sessionList.value = next
+  await chrome.storage.local.set({ [SESSION_INDEX_KEY]: next })
+}
+
 const formatShortTime = (ts) => {
   const d = new Date(ts)
   const pad = (n) => String(n).padStart(2, '0')
@@ -531,6 +602,28 @@ const waitForTabLoad = async (tabId, timeoutMs = 30000) => {
       finishReject(new Error('Tab load timeout'))
     }, timeoutMs)
   })
+}
+
+// dph-A 可取消：点击停止 → 通知服务端 abort 当前 agent 任务（fetch abort，立即生效）
+const cancelAgentTask = () => {
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) return
+  websocket.send(JSON.stringify({ type: 'cancel_request' }))
+  messages.value.push({
+    type: 'text',
+    sender: 'user',
+    content: '停止生成',
+    timestamp: Date.now(),
+  })
+  persistSession()
+}
+
+// 把 Step 事件转成可读文案（前端展示用）
+const stepLabel = (s) => {
+  if (!s) return ''
+  if (s.phase === 'reasoning') return `第 ${s.step} 步：正在推理...`
+  if (s.phase === 'tool') return `第 ${s.step} 步：调用工具 ${s.tool || ''}...`
+  if (s.phase === 'done') return `第 ${s.step} 步：完成`
+  return `第 ${s.step} 步...`
 }
 
 // 格式化时间
@@ -623,6 +716,7 @@ const connectWebSocket = () => {
 
           case 'agent_response': {
             thinking.value = false
+            agentStep.value = null
             const lastStreamingMsg = messages.value[messages.value.length - 1]
             let finalContent = ''
             if (lastStreamingMsg && lastStreamingMsg.streaming) {
@@ -670,6 +764,15 @@ const connectWebSocket = () => {
 
           case 'thinking':
             thinking.value = true
+            break
+
+          // dph-A Turn/Step 执行模型：Agent 每完成一个 Step（推理/工具执行）推送事件，前端展示可观测进度
+          case 'agent_step':
+            agentStep.value = data
+            break
+
+          case 'cancel_ack':
+            // 取消已受理，等待 agent_response(已停止) 收尾
             break
 
           // M1-F8 深度研究：进度推送（替换最后一条 progress，避免刷屏；也可 push）
@@ -1071,6 +1174,34 @@ const handleSummarize = async () => {
   }
 }
 
+// 提取表格/列表：F7 结构化提取，action 触发 EXTRACT_PROMPT
+const handleExtract = async () => {
+  if (thinking.value) {
+    return
+  }
+
+  messages.value.push({
+    type: 'text',
+    sender: 'user',
+    content: '提取当前页面的结构化数据',
+    timestamp: Date.now(),
+  })
+  persistSession()
+  thinking.value = true
+
+  const ok = await sendPrompt('请提取当前页面的表格/列表数据', 'extract')
+  if (!ok) {
+    thinking.value = false
+    messages.value.push({
+      type: 'text',
+      sender: 'ai',
+      content: '连接已断开，请检查服务器是否正在运行。',
+      timestamp: Date.now(),
+    })
+    persistSession()
+  }
+}
+
 // 划词动作标签映射
 const ACTION_LABELS = {
   translate: '翻译',
@@ -1265,6 +1396,60 @@ onUnmounted(() => {
   text-align: center;
   font-size: 13px;
   color: #9ca3af;
+}
+
+/* F6 会话搜索框 */
+.history-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  font-size: 12px;
+  outline: none;
+}
+
+.history-search:focus {
+  border-color: #60a5fa;
+}
+
+/* F6 会话重命名 */
+.history-rename {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.history-item:hover .history-rename {
+  opacity: 1;
+}
+
+.history-rename:hover {
+  background: #e0e7ff;
+  color: #4f46e5;
+}
+
+.history-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #60a5fa;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
 }
 
 /* 历史项删除按钮 */
@@ -1653,6 +1838,34 @@ onUnmounted(() => {
 .action-button.research:hover:not(:disabled) {
   background-color: #dcfce7;
   border-color: #86efac;
+}
+
+/* 提取表格按钮（区别于总结/深度研究） */
+.action-button.extract {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.action-button.extract:hover:not(:disabled) {
+  background-color: #dbeafe;
+  border-color: #93c5fd;
+}
+
+/* dph-A 停止生成按钮 */
+.stop-btn {
+  margin-top: 8px;
+  padding: 4px 12px;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.stop-btn:hover {
+  background: #fee2e2;
 }
 
 /* 性能数据展示 */

@@ -163,10 +163,41 @@ const ASK_PROMPT = `你是一个浏览器 AI 助手。用户选中了一段文�
 - 用中文回答`
 
 /**
- * 深度研究：规划子问题（F8 plan 节点）
- * 模型把研究问题拆成若干子问题，并给出每个子问题的候选 URL（LLM 先验知识，无搜索引擎）
- * 输出必须是严格 JSON，由 workflow 解析
+ * F7 结构化提取：把页面结构化数据（表格/列表，由 content-script 确定性提取）格式化为可复制输出
+ * 数据提取是 JS 确定性做的（extractStructuredContent），LLM 只负责格式化 + 语义整理
  */
+const EXTRACT_PROMPT = `你是一个结构化数据提取助手。用户希望把当前页面的结构化数据（表格/列表）提取出来。
+get_page_content 返回的 payload.structured 已包含由 DOM 提取的结构化数据（type: table 或 list），请基于它输出。
+
+严格按以下规则输出：
+
+## 表格页（structured.type === 'table'）
+输出 Markdown 表格（表头 + 数据行）+ 末尾附 CSV（便于粘贴到 Excel）：
+
+### 表格
+| 列1 | 列2 |
+| --- | --- |
+| 值1 | 值2 |
+
+### CSV（复制到 Excel 可直接粘贴）
+列1,列2
+值1,值2
+
+## 列表页（structured.type === 'list'）
+输出 Markdown 列表：
+
+### 列表
+- 项 1
+- 项 2
+
+## 无结构化数据（structured 为 null）
+输出：当前页面未检测到结构化表格或列表，建议使用「总结本页」获取正文内容。
+
+规则（质量门禁，必须遵守）：
+- 只基于 structured 数据，严禁编造任何单元格/条目
+- structured.truncated 为 true 时，开头注明"数据过长已截断，仅展示前 50 行/项"
+- CSV 字段含逗号/引号时按 RFC 4180 转义（用双引号包裹并加倍内部引号）
+- 表格列数多于 6 列时，Markdown 表格照常输出，但 CSV 必须完整保留所有列`
 const RESEARCH_PLAN_PROMPT = `你是一个深度研究规划助手。请把一个研究问题拆解成 2-3 个子问题，并为每个子问题推荐 1-2 个可访问的权威 URL（优先官方文档、Wikipedia、MDN、知名技术博客），用于后续逐个抓取页面研究。
 
 严格输出 JSON，不要输出任何其他内容：
@@ -228,6 +259,17 @@ const RESEARCH_REPORT_PROMPT = `你是一个深度研究分析师。基于下面
 - 用中文输出`
 
 /**
+ * dph-C 上下文压缩：把一段早期对话压缩成滚动摘要
+ * 输入：角色标注的历史文本（用户/助手交错）；输出：保留关键背景的摘要
+ * 摘要消息以 system 角色注入，不受 user/assistant 交替规则约束
+ */
+const CONTEXT_SUMMARY_PROMPT = `你负责压缩一段较长的对话历史。请把它压缩成一段摘要，规则：
+- 保留：用户的核心诉求、关键约束、已确认的结论、已提供的事实数据、未完成事项
+- 丢弃：寒暄、重复表达、工具执行的中间细节
+- 用简洁的中文输出，200 字以内
+- 只输出摘要本身，不要任何前缀或解释`
+
+/**
  * 动作 → 专用提示词映射
  * sidepanel 可通过 user_prompt 携带 action 字段触发固定动作（总结/翻译/解释/改写等）
  */
@@ -238,6 +280,7 @@ const ACTION_PROMPTS = {
   explain: EXPLAIN_PROMPT,
   rewrite: REWRITE_PROMPT,
   ask: ASK_PROMPT,
+  extract: EXTRACT_PROMPT,
 }
 
 module.exports = {
@@ -248,6 +291,8 @@ module.exports = {
   REWRITE_PROMPT,
   SELECTION_SUMMARY_PROMPT,
   ASK_PROMPT,
+  EXTRACT_PROMPT,
+  CONTEXT_SUMMARY_PROMPT,
   RESEARCH_PLAN_PROMPT,
   RESEARCH_TOPIC_PROMPT,
   RESEARCH_REPORT_PROMPT,

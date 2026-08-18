@@ -100,7 +100,9 @@ import { Readability } from '@mozilla/readability'
   async function handleGetPageContent(request, sender, sendResponse) {
     try {
       const { content, title, charCount } = extractPageContent(request.maxChars || 12000)
-      console.log('Page content extracted, chars:', charCount)
+      // F7 结构化提取：表格/列表 DOM 数据随正文一起返回（供 extract 动作格式化）
+      const structured = extractStructuredContent()
+      console.log('Page content extracted, chars:', charCount, 'structured:', structured?.type || 'none')
       sendResponse({
         success: true,
         type: 'page_content',
@@ -110,6 +112,7 @@ import { Readability } from '@mozilla/readability'
           title,
           content,
           charCount,
+          structured,
         },
       })
     } catch (error) {
@@ -153,6 +156,50 @@ import { Readability } from '@mozilla/readability'
       content = content.slice(0, maxChars)
     }
     return { content, title, charCount }
+  }
+
+  /**
+   * 提取页面结构化数据（F7 结构化提取）
+   * 优先级：表格 > 列表。确定性 DOM 提取（JS 做），格式化交给 LLM（EXTRACT_PROMPT）
+   * @returns {null|{type:'table',headers,rows}|{type:'list',items}} 无结构化内容返回 null
+   */
+  function extractStructuredContent() {
+    const MAX_ROWS = 50
+    const MAX_ITEMS = 50
+
+    // 优先表格：取第一个可见表格的表头（第一行 th/td）+ 数据行
+    const tables = Array.from(document.querySelectorAll('table'))
+    for (const table of tables) {
+      if (!isVisible(table)) continue
+      const rows = Array.from(table.querySelectorAll('tr'))
+      if (rows.length === 0) continue
+      const grid = rows
+        .map((row) => Array.from(row.querySelectorAll('th,td')).map((cell) => cell.innerText.trim()))
+        .filter((cells) => cells.length > 0)
+      if (grid.length === 0) continue
+      const headers = grid[0]
+      const body = grid.slice(1, MAX_ROWS)
+      return { type: 'table', headers, rows: body, truncated: grid.length > MAX_ROWS }
+    }
+
+    // 其次列表：取第一个可见 ul/ol 的直接 li 项
+    const lists = Array.from(document.querySelectorAll('ul,ol'))
+    for (const list of lists) {
+      if (!isVisible(list)) continue
+      const items = Array.from(list.children)
+        .filter((el) => el.tagName === 'LI')
+        .map((li) => li.innerText.trim())
+        .filter(Boolean)
+      if (items.length === 0) continue
+      return { type: 'list', items: items.slice(0, MAX_ITEMS), truncated: items.length > MAX_ITEMS }
+    }
+
+    return null
+  }
+
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect()
+    return rect.width > 0 && rect.height > 0
   }
 
   function waitForPageReady(timeoutMs = 5000) {
