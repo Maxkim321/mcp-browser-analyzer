@@ -82,6 +82,30 @@
             </div>
             <div class="selection-text">{{ msg.content }}</div>
           </div>
+          <!-- M1-F8 深度研究：进度消息（灰色小字，最新一条替换显示） -->
+          <div class="message-progress" v-if="msg.type === 'progress'">🔄 {{ msg.content }}</div>
+          <!-- M1-F8 深度研究：HITL 询问卡片（继续/停止/自定义方向） -->
+          <div class="workflow-ask-card" v-if="msg.type === 'workflow_ask'">
+            <p class="workflow-ask-question">{{ msg.question }}</p>
+            <div v-if="msg.pending" class="workflow-ask-actions">
+              <button
+                v-for="opt in msg.options"
+                :key="opt"
+                class="workflow-ask-btn"
+                :class="{ primary: opt === '继续研究' }"
+                @click="answerWorkflowAsk(msg, opt)"
+              >
+                {{ opt }}
+              </button>
+              <input
+                v-model="msg.customText"
+                class="workflow-ask-input"
+                placeholder="输入新的研究方向，回车确认..."
+                @keydown.enter="answerWorkflowAsk(msg, msg.customText)"
+              />
+            </div>
+            <p v-else class="workflow-ask-answered">已答复（{{ msg.answer }}），研究中...</p>
+          </div>
           <div class="message-performance" v-if="msg.type === 'performance'">
             <div class="performance-card">
               <h3 class="performance-title">页面性能分析</h3>
@@ -132,6 +156,14 @@
       >
         📄 总结本页
       </button>
+      <button
+        class="action-button research"
+        @click="handleResearch"
+        :disabled="thinking || !inputText.trim()"
+        title="基于输入的问题做多页深度研究，输出带来源的研究报告"
+      >
+        🔍 深度研究
+      </button>
       <input
         ref="inputRef"
         v-model="inputText"
@@ -157,6 +189,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { openOptions } from '@/utils/base'
 import { renderMarkdown } from '@/utils/markdown'
+import { getPrefs, addArticle } from '@/utils/prefs'
 
 defineOptions({
   name: 'SidePanel',
@@ -226,14 +259,34 @@ const getPageContext = async () => {
   return ctx
 }
 
-// 统一发送 user_prompt：附带 pageContext，返回是否成功发送
+// 最近一次发送的 action，用于 agent_response 完成后做后置处理（如 F5 文章索引）
+let lastSentAction = ''
+
+// 统一发送 user_prompt：附带 pageContext + F5 偏好（prefs），返回是否成功发送
 const sendPrompt = async (prompt, action) => {
-  const pageContext = await getPageContext()
+  lastSentAction = action || ''
+  const [pageContext, prefs] = await Promise.all([getPageContext(), getPrefs()])
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
     return false
   }
-  websocket.send(JSON.stringify({ type: 'user_prompt', prompt, action, pageContext }))
+  websocket.send(JSON.stringify({ type: 'user_prompt', prompt, action, pageContext, prefs }))
   return true
+}
+
+// F5-2 文章索引：总结本页成功后记录 {url,title,summary}，供 options 页检索回看
+const recordArticleIndex = async (summary) => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab || !tab.url || !/^https?:/i.test(tab.url)) return
+    await addArticle({
+      url: tab.url,
+      title: tab.title || '',
+      summary: String(summary || '').slice(0, 300),
+    })
+  } catch (e) {
+    // 索引失败不影响主流程
+    void e
+  }
 }
 
 // ===== F4 会话持久化 =====
@@ -571,12 +624,14 @@ const connectWebSocket = () => {
           case 'agent_response': {
             thinking.value = false
             const lastStreamingMsg = messages.value[messages.value.length - 1]
+            let finalContent = ''
             if (lastStreamingMsg && lastStreamingMsg.streaming) {
               // 流式已开始：用最终完整内容覆盖增量，防止分片丢失导致内容不全
               lastStreamingMsg.content = data.success
                 ? data.content
                 : `${lastStreamingMsg.content}\n\n错误: ${data.content || data.error || ''}`
               lastStreamingMsg.streaming = false
+              finalContent = lastStreamingMsg.content
             } else if (data.success) {
               messages.value.push({
                 type: 'text',
@@ -584,6 +639,7 @@ const connectWebSocket = () => {
                 content: data.content,
                 timestamp: Date.now(),
               })
+              finalContent = data.content
             } else {
               messages.value.push({
                 type: 'text',
@@ -592,6 +648,11 @@ const connectWebSocket = () => {
                 timestamp: Date.now(),
               })
             }
+            // F5-2 文章索引：总结本页成功后自动记录当前页
+            if (data.success && lastSentAction === 'summarize' && finalContent) {
+              recordArticleIndex(finalContent)
+            }
+            lastSentAction = ''
             persistSession()
             break
           }
@@ -609,6 +670,74 @@ const connectWebSocket = () => {
 
           case 'thinking':
             thinking.value = true
+            break
+
+          // M1-F8 深度研究：进度推送（替换最后一条 progress，避免刷屏；也可 push）
+          case 'workflow_progress': {
+            thinking.value = false
+            const lastMsg = messages.value[messages.value.length - 1]
+            if (lastMsg && lastMsg.type === 'progress') {
+              lastMsg.content = data.message
+            } else {
+              messages.value.push({
+                type: 'progress',
+                sender: 'ai',
+                content: data.message,
+                timestamp: Date.now(),
+              })
+            }
+            persistSession()
+            break
+          }
+
+          // M1-F8 深度研究：HITL 询问（暂停等待用户答复）
+          case 'workflow_ask':
+            thinking.value = false
+            messages.value.push({
+              type: 'workflow_ask',
+              sender: 'ai',
+              taskId: data.taskId,
+              question: data.question,
+              options: data.options || ['继续研究', '停止研究'],
+              pending: true,
+              answer: '',
+              customText: '',
+              timestamp: Date.now(),
+            })
+            persistSession()
+            break
+
+          // M1-F8 深度研究：读取指定 URL（经 background 后台开 tab，不打扰当前页面）
+          case 'fetch_url':
+            chrome.runtime
+              .sendMessage({
+                type: 'fetch_url',
+                requestId: data.requestId,
+                url: data.url,
+                maxChars: data.maxChars,
+              })
+              .then((response) => {
+                if (response.success && response.payload) {
+                  sendToolResponse(
+                    'fetch_url_result',
+                    data.requestId,
+                    response.payload,
+                    'Fetch url completed'
+                  )
+                } else {
+                  const err = response?.error || 'Failed to fetch url'
+                  sendToolResponse('fetch_url_result', data.requestId, { error: err }, err)
+                }
+              })
+              .catch((error) => {
+                console.error('Error fetching url:', error)
+                sendToolResponse(
+                  'fetch_url_result',
+                  data.requestId,
+                  { error: error.message },
+                  error.message
+                )
+              })
             break
 
           case 'welcome':
@@ -854,6 +983,54 @@ const handleSendMessage = async () => {
 
   // 发送消息到服务端（附带 F1 轻量 pageContext）
   const ok = await sendPrompt(prompt, action)
+  if (!ok) {
+    thinking.value = false
+    messages.value.push({
+      type: 'text',
+      sender: 'ai',
+      content: '连接已断开，请检查服务器是否正在运行。',
+      timestamp: Date.now(),
+    })
+    persistSession()
+  }
+}
+
+// M1-F8 深度研究：用户答复 HITL 询问（继续/停止/自定义方向）
+const answerWorkflowAsk = (msg, answer) => {
+  const text = String(answer || '').trim()
+  if (!msg.pending || !text) return
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) return
+  msg.pending = false
+  msg.answer = text
+  websocket.send(
+    JSON.stringify({
+      type: 'workflow_answer',
+      taskId: msg.taskId,
+      answer: text,
+      cancel: text === '停止研究',
+    })
+  )
+  persistSession()
+}
+
+// M1-F8 深度研究：以输入框内容为研究问题，显式触发深度研究工作流
+const handleResearch = async () => {
+  if (thinking.value) return
+  const text = inputText.value.trim()
+  if (!text) return
+
+  messages.value.push({
+    type: 'text',
+    sender: 'user',
+    content: text,
+    timestamp: Date.now(),
+  })
+  persistSession()
+
+  inputText.value = ''
+  thinking.value = true
+
+  const ok = await sendPrompt(text, 'research')
   if (!ok) {
     thinking.value = false
     messages.value.push({
@@ -1387,6 +1564,95 @@ onUnmounted(() => {
   white-space: pre-wrap;
   max-height: 160px;
   overflow-y: auto;
+}
+
+/* M1-F8 深度研究：进度消息（灰色小字） */
+.message-progress {
+  font-size: 12px;
+  color: #8a94a6;
+  padding: 4px 12px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+/* M1-F8 深度研究：HITL 询问卡片 */
+.workflow-ask-card {
+  background-color: #ffffff;
+  border: 1px solid #e1e8ed;
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.workflow-ask-question {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1a1a1a;
+}
+
+.workflow-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflow-ask-btn {
+  padding: 6px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 16px;
+  background: #f7f9fc;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.workflow-ask-btn:hover {
+  background: #edf2f7;
+}
+
+.workflow-ask-btn.primary {
+  background: #4299e1;
+  border-color: #4299e1;
+  color: white;
+}
+
+.workflow-ask-btn.primary:hover {
+  background: #3182ce;
+}
+
+.workflow-ask-input {
+  flex: 1;
+  min-width: 140px;
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 16px;
+  font-size: 13px;
+  outline: none;
+}
+
+.workflow-ask-input:focus {
+  border-color: #4299e1;
+}
+
+.workflow-ask-answered {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* 深度研究按钮（区别于总结按钮） */
+.action-button.research {
+  background-color: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.action-button.research:hover:not(:disabled) {
+  background-color: #dcfce7;
+  border-color: #86efac;
 }
 
 /* 性能数据展示 */

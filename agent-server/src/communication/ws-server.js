@@ -5,6 +5,7 @@ const { LLMClient } = require('../core/llm.js')
 const { ResearchWorkflow } = require('../core/workflow.js')
 const config = require('../config/index.js')
 const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
+const { appendPageContext, appendPrefs } = require('../core/prompt-context.js')
 
 const connectionAgents = new Map()
 
@@ -200,10 +201,13 @@ async function handleMessage(id, msg, agent) {
         }
         manager.send(id, { type: 'thinking' })
         // 固定动作（总结/翻译/解释等）使用专用提示词驱动结构化输出
-        // F1 轻量 pageContext：仅普通对话注入（固定动作的 prompt 是严格模板，塞上下文会破坏结构化输出）
+        // F1 轻量 pageContext + F5 偏好：仅普通对话注入（固定动作的 prompt 是严格模板，塞上下文会破坏结构化输出）
         let systemPrompt = msg.action ? ACTION_PROMPTS[msg.action] : SYSTEM_PROMPT
         if (!msg.action && msg.pageContext) {
           systemPrompt = appendPageContext(systemPrompt, msg.pageContext)
+        }
+        if (!msg.action && msg.prefs) {
+          systemPrompt = appendPrefs(systemPrompt, msg.prefs)
         }
         // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
         // onToken：LLM 文本增量实时分片推送（流式输出），最终结果仍由 agent_response 兜底
@@ -347,24 +351,8 @@ async function runResearch(id, question) {
 }
 
 /**
- * 把轻量页面上下文附加到系统提示词（F1）
- * 只追加 {url,title,selection}，token 开销极小；与问题无关时模型会忽略
- * @param {string} systemPrompt - 原始系统提示词
- * @param {object} pageContext - 插件随 user_prompt 附带的页面上下文
- * @returns {string} 追加后的系统提示词
+ * 把轻量页面上下文附加到系统提示词（F1）——见 ../core/prompt-context.js
  */
-function appendPageContext(systemPrompt, pageContext) {
-  if (!pageContext || typeof pageContext !== 'object') return systemPrompt
-  const lines = []
-  const title = String(pageContext.title || '').trim()
-  const url = String(pageContext.url || '').trim()
-  const selection = String(pageContext.selection || '').trim()
-  if (title) lines.push(`- 页面标题：${title.slice(0, 200)}`)
-  if (url) lines.push(`- 页面地址：${url.slice(0, 500)}`)
-  if (selection) lines.push(`- 用户选中文本：${selection.slice(0, 500)}`)
-  if (lines.length === 0) return systemPrompt
-  return `${systemPrompt}\n\n## 当前页面上下文（用户提问时参考，与问题无关则忽略）\n${lines.join('\n')}`
-}
 
 module.exports = {
   manager,
@@ -373,4 +361,5 @@ module.exports = {
   broadcast: (cmd) => manager.broadcast(cmd),
   getPerformance: (id) => manager.send(id, { type: 'get_performance' }),
   appendPageContext,
+  appendPrefs,
 }

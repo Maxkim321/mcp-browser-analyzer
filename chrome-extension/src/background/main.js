@@ -106,6 +106,57 @@ const getSelectionWithRetry = async () => {
   }
 }
 
+// M1-F8 深度研究：后台新开 tab 读取指定 URL 正文，读完自动关闭，不打扰用户当前页面
+const waitTabComplete = (tabId, timeoutMs = 30000) => {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const cleanup = () => {
+      c.tabs.onUpdated.removeListener(listener)
+      clearTimeout(timer)
+    }
+    const finish = (tab) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(tab)
+    }
+    const listener = (updatedTabId, changeInfo, tab) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        finish(tab)
+      }
+    }
+    c.tabs.onUpdated.addListener(listener)
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true
+        cleanup()
+        reject(new Error('Tab load timeout'))
+      }
+    }, timeoutMs)
+  })
+}
+
+const fetchUrlInBackgroundTab = async (url, maxChars) => {
+  // active: false 后台静默打开，用户当前浏览不受打扰
+  const tab = await c.tabs.create({ url, active: false })
+  try {
+    await waitTabComplete(tab.id, 30000)
+    // 注入重试：新开 tab 可能尚未注入 content-script
+    try {
+      return await sendToContentScript(tab.id, { type: 'get_page_content', maxChars })
+    } catch (error) {
+      const message = String(error?.message || '')
+      if (!message.includes('Receiving end does not exist')) {
+        throw error
+      }
+      await ensureContentScriptInjected(tab.id)
+      return await sendToContentScript(tab.id, { type: 'get_page_content', maxChars })
+    }
+  } finally {
+    c.tabs.remove(tab.id).catch(() => void 0)
+  }
+}
+
 // 划词动作：打开侧边栏并把选中文本+动作转发给 sidepanel
 // 注意：sidePanel.open() 只能在用户手势的同步调用链中执行，因此这里不能有任何 await
 const handleTextAction = (payload, sender) => {
@@ -163,6 +214,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })
       .catch(error => {
         console.error('Error getting page content:', error)
+        sendResponse({
+          success: false,
+          error: error.message
+        })
+      })
+
+    return true
+  }
+
+  if (request.type === 'fetch_url') {
+    // M1-F8 深度研究：后台新开 tab 读取指定 URL 正文（不打扰用户当前页面）
+    fetchUrlInBackgroundTab(request.url, request.maxChars)
+      .then(response => {
+        console.log('Background fetch_url result:', response)
+        sendResponse(response)
+      })
+      .catch(error => {
+        console.error('Error fetching url:', error)
         sendResponse({
           success: false,
           error: error.message
