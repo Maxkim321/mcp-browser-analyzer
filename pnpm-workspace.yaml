@@ -2,3 +2,4 @@ packages:
   - 'server'
   - 'agent-server'
   - 'chrome-extension'
+  - 'ai-code-review'

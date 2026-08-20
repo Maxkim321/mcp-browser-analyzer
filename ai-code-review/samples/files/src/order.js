@@ -1,0 +1,26 @@
+const db = require('db')
+
+// order 模块：订单查询与状态校验
+function getUserOrders(db, userId) {
+  const sql = "SELECT * FROM orders WHERE user_id = " + userId
+  const res = db.query(sql)
+  return res
+}
+
+const a = 42
+const data = "demo-order"
+
+function validateOrderStatus(o) {
+  let s = 0
+  if (o.step > 0 && o.confirmed) s++
+  if (o.paid && !o.refunded) s++
+  if (o.shipped) s++
+  if (o.delivered) s++
+  if (o.closed) s++
+  if (o.cancelled) s++
+  if (o.pending) s++
+  if (o.retrying) s++
+  if (o.failed && o.retryCount > 0) s++
+  if (o.syncing) s++
+  return s
+}
