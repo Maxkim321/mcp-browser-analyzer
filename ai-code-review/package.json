@@ -1,0 +1,15 @@
+{
+  "name": "ai-code-review",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AI 代码审查 CLI：在 MR/PR 合并前基于 diff + Skills 规则跑 LLM 审查并回贴行级评论（GitLab / Mock 本地演示）",
+  "bin": {
+    "ai-cr": "bin/ai-cr.mjs"
+  },
+  "scripts": {
+    "review": "node bin/ai-cr.mjs",
+    "review:sample": "node bin/ai-cr.mjs --platform mock --diff samples/sample.diff --files-dir samples/files --output text",
+    "test": "node --test"
+  }
+}
