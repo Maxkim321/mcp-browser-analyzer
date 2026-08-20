@@ -5,17 +5,34 @@
  */
 
 const DANGEROUS = [
-  { re: /(['"`])(SELECT|INSERT|UPDATE|DELETE|DROP)\b[\s\S]*?\+\s*[A-Za-z_$]\w*\s*/, msg: '疑似 SQL 字符串拼接，存在注入风险，建议使用参数化查询' },
-  { re: /\b(eval|exec)\s*\(/g, msg: '禁止直接使用 eval/exec 执行动态字符串，存在代码注入风险' },
+  { re: /(['"`])\s*(SELECT|INSERT|UPDATE|DELETE|DROP)\b[\s\S]*?\+\s*[A-Za-z_$]\w*\s*/i, msg: '疑似 SQL 字符串拼接，存在注入风险，建议使用参数化查询' },
+  { re: /\b(eval|exec)\s*\(/g, msg: '禁止直接使用 eval/exec 执行动态字符串，存在代码注入风险', skipRegex: true },
   { re: /api[_-]?key\s*[:=]\s*['"`][^'"`]{4,}['"`]/i, msg: '代码中疑似硬编码密钥，应改用环境变量或密钥管理服务' },
   { re: /\b(password|pwd|secret|token)\s*[:=]\s*['"`][^'"`]{4,}['"`]/i, msg: '疑似明文凭据，应避免写死在代码里' },
 ]
 
+function isInRegex(line, keyword) {
+  // 如果 eval/exec 出现在 /.../ 中间，说明是正则定义，跳过
+  const idx = line.indexOf(keyword)
+  if (idx === -1) return false
+  // 检查 keyword 前后是否有未闭合的 /
+  const before = line.slice(0, idx)
+  const after = line.slice(idx)
+  const slashBefore = (before.match(/\//g) || []).length
+  const slashAfter = (after.match(/\//g) || []).length
+  // 如果两侧斜杠数都是奇数，keyword 在正则内
+  return slashBefore % 2 === 1 && slashAfter % 2 === 1
+}
+
 function precheck({ lines, changedLines }) {
   const findings = []
-  for (const { re, msg } of DANGEROUS) {
+  for (const { re, msg, skipRegex } of DANGEROUS) {
     for (const lineNo of changedLines) {
       const text = lines[lineNo - 1] ?? ''
+      if (skipRegex) {
+        const keyword = re.source.match(/\((\w+)\|/)?.[1] || 'eval'
+        if (isInRegex(text, keyword)) { re.lastIndex = 0; continue }
+      }
       if (re.test(text)) {
         findings.push({ line: lineNo, severity: 'error', message: msg, source: 'rule' })
         re.lastIndex = 0

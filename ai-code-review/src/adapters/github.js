@@ -44,7 +44,9 @@ export class GitHubAdapter {
     const result = []
     for (const f of files) {
       if (!f.patch) continue // 二进制/超大文件无 patch，跳过
-      const parsed = parseDiff(f.patch)[0]
+      // GitHub 的 patch 不带文件头（直接以 @@ 开头），需补标准头让 parser 能定位路径/Hunk
+      const fullDiff = `diff --git a/${f.filename} b/${f.filename}\n--- a/${f.filename}\n+++ b/${f.filename}\n${f.patch}`
+      const parsed = parseDiff(fullDiff)[0]
       if (!parsed) continue
       const changedLines = new Set()
       const addLines = new Set()
@@ -78,24 +80,52 @@ export class GitHubAdapter {
     }
   }
 
-  /** 把评论回贴到 PR 行内 */
+  /** 把评论回贴到 PR 行内（带延时和重试，规避 GitHub 422 限流） */
   async postComments(comments) {
     const count = { posted: 0, failed: 0 }
+    // 按文件分组，同一文件的评论连续提交最易触发 "was submitted too quickly"
+    // 策略：每文件之间加 800ms 延时，每条评论之间加 100ms 延时
+    const byFile = new Map()
     for (const c of comments) {
-      const body = {
-        body: `${severityTag(c.severity)} ${c.message}\n\n> 由 ai-code-review 的「${c.skill}」Skill 自动生成`,
-        commit_id: c.file.headSha,
-        path: c.file.path,
-        line: c.line,
-        side: 'RIGHT',
+      const key = c.file.path
+      if (!byFile.has(key)) byFile.set(key, [])
+      byFile.get(key).push(c)
+    }
+
+    const fileDelays = []
+    for (const [, fileComments] of byFile) {
+      for (let i = 0; i < fileComments.length; i++) {
+        const c = fileComments[i]
+        const body = {
+          body: `${severityTag(c.severity)} ${c.message}\n\n> 由 ai-code-review 的「${c.skill}」Skill 自动生成`,
+          commit_id: c.file.headSha,
+          path: c.file.path,
+          line: c.line,
+          side: 'RIGHT',
+        }
+        let ok = false
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            await this._api(`/repos/${this.repo}/pulls/${this.pr}/comments`, 'POST', body)
+            count.posted++
+            ok = true
+            break
+          } catch (e) {
+            if (e.message.includes('was submitted too quickly') && attempt < 2) {
+              await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+            } else {
+              count.failed++
+              console.error(`评论失败 line=${c.line} ${c.file.path}: ${e.message}`)
+              break
+            }
+          }
+        }
+        // 同一文件内评论间延时
+        if (i < fileComments.length - 1) await new Promise((r) => setTimeout(r, 100))
       }
-      try {
-        await this._api(`/repos/${this.repo}/pulls/${this.pr}/comments`, 'POST', body)
-        count.posted++
-      } catch (e) {
-        count.failed++
-        console.error(`评论失败 line=${c.line} ${c.file.path}: ${e.message}`)
-      }
+      // 文件间延时
+      fileDelays.push(new Promise((r) => setTimeout(r, 800)))
+      if (byFile.size > 1) await Promise.all(fileDelays.splice(-1))
     }
     return count
   }
