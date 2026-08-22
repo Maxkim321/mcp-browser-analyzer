@@ -302,7 +302,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { openOptions } from '@/utils/base'
 import { renderMarkdown } from '@/utils/markdown'
-import { getPrefs, addArticle } from '@/utils/prefs'
+import { getPrefs, addArticle, buildLLMConfigPayload } from '@/utils/prefs'
 
 defineOptions({
   name: 'SidePanel',
@@ -378,10 +378,14 @@ const getPageContext = async () => {
 // 最近一次发送的 action，用于 agent_response 完成后做后置处理（如 F5 文章索引）
 let lastSentAction = ''
 
-// 统一发送 user_prompt：附带 pageContext + F5 偏好（prefs）+ dph-B sessionId，返回是否成功发送
+// 统一发送 user_prompt：附带 pageContext + F5 偏好（prefs）+ llmConfig + dph-B sessionId，返回是否成功发送
 const sendPrompt = async (prompt, action) => {
   lastSentAction = action || ''
-  const [pageContext, prefs] = await Promise.all([getPageContext(), getPrefs()])
+  const [pageContext, prefs, llmConfig] = await Promise.all([
+    getPageContext(),
+    getPrefs(),
+    buildLLMConfigPayload(),
+  ])
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
     return false
   }
@@ -392,6 +396,7 @@ const sendPrompt = async (prompt, action) => {
       action,
       pageContext,
       prefs,
+      llmConfig,
       sessionId: sessionId.value,
     })
   )

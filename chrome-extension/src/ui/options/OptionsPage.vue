@@ -39,6 +39,85 @@
       <p v-if="saved" class="saved-tip">已保存 ✓</p>
     </section>
 
+    <!-- LLM 模型配置 -->
+    <section class="card">
+      <h2>模型配置</h2>
+      <p class="hint">
+        留空的项会自动跟随服务端 <code>.env</code> 配置，只有填写了的项才会覆盖下发
+      </p>
+
+      <div class="field">
+        <label for="preset">服务商预设</label>
+        <select id="preset" @change="applyPreset($event.target.value)">
+          <option value="">-- 选择后自动填充地址和模型 --</option>
+          <option v-for="(p, i) in LLM_PRESETS" :key="i" :value="i">{{ p.label }}</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="baseURL">API 地址</label>
+        <input
+          id="baseURL"
+          v-model="llmConfig.baseURL"
+          class="text-input"
+          placeholder="如 https://api.deepseek.com（留空用服务端配置）"
+        />
+      </div>
+
+      <div class="field">
+        <label for="apiKey">API Key</label>
+        <div class="input-with-btn">
+          <input
+            id="apiKey"
+            v-model="llmConfig.apiKey"
+            :type="showApiKey ? 'text' : 'password'"
+            class="text-input"
+            placeholder="留空用服务端配置"
+            autocomplete="off"
+          />
+          <button class="toggle-btn" type="button" @click="showApiKey = !showApiKey">
+            {{ showApiKey ? '隐藏' : '显示' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="model">模型名称</label>
+        <input
+          id="model"
+          v-model="llmConfig.model"
+          class="text-input"
+          placeholder="如 deepseek-chat（留空用服务端配置）"
+        />
+      </div>
+
+      <div class="field">
+        <label for="temperature">Temperature</label>
+        <input
+          id="temperature"
+          v-model="llmConfig.temperature"
+          type="number"
+          min="0"
+          max="2"
+          step="0.1"
+          class="text-input"
+          placeholder="0 ~ 2，留空用服务端配置（0.7）"
+        />
+      </div>
+
+      <p class="warn">
+        ⚠️ API Key 以明文保存在
+        <code>chrome.storage.local</code>，任何能打开本浏览器开发者工具的人都可读取。
+        公用电脑上建议留空、改用服务端 <code>.env</code> 配置。
+      </p>
+
+      <button class="save-btn" :disabled="savingLLM" @click="saveLLM">
+        {{ savingLLM ? '保存中...' : '保存模型配置' }}
+      </button>
+      <button class="reset-btn" type="button" @click="resetLLM">清空</button>
+      <p v-if="savedLLM" class="saved-tip">已保存 ✓ 下次提问生效</p>
+    </section>
+
     <!-- F5-2 文章索引 -->
     <section class="card">
       <h2>已总结 / 收藏文章</h2>
@@ -63,7 +142,16 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { getPrefs, savePrefs as persistPrefs, getArticles, removeArticle } from '@/utils/prefs'
+import {
+  getPrefs,
+  savePrefs as persistPrefs,
+  getArticles,
+  removeArticle,
+  getLLMConfig,
+  saveLLMConfig,
+  DEFAULT_LLM_CONFIG,
+  LLM_PRESETS,
+} from '@/utils/prefs'
 
 defineOptions({ name: 'OptionsPage' })
 
@@ -71,13 +159,43 @@ const prefs = ref({ summaryStyle: 'concise', translateLang: 'zh', replyStyle: 'p
 const saving = ref(false)
 const saved = ref(false)
 
+const llmConfig = ref({ ...DEFAULT_LLM_CONFIG })
+const savingLLM = ref(false)
+const savedLLM = ref(false)
+const showApiKey = ref(false)
+
 const articles = ref([])
 const keyword = ref('')
 
 onMounted(async () => {
   prefs.value = await getPrefs()
+  llmConfig.value = await getLLMConfig()
   articles.value = await getArticles()
 })
+
+// 选预设只填充 baseURL/model，不动已填的 apiKey（换服务商时 key 通常也要换，但保留让用户自己判断）
+const applyPreset = (index) => {
+  const preset = LLM_PRESETS[Number(index)]
+  if (!preset) return
+  llmConfig.value.baseURL = preset.baseURL
+  llmConfig.value.model = preset.model
+}
+
+const saveLLM = async () => {
+  savingLLM.value = true
+  savedLLM.value = false
+  try {
+    llmConfig.value = await saveLLMConfig(llmConfig.value)
+    savedLLM.value = true
+    setTimeout(() => (savedLLM.value = false), 2000)
+  } finally {
+    savingLLM.value = false
+  }
+}
+
+const resetLLM = async () => {
+  llmConfig.value = await saveLLMConfig({ ...DEFAULT_LLM_CONFIG })
+}
 
 const savePrefs = async () => {
   saving.value = true
@@ -111,7 +229,10 @@ const formatTime = (ts) => {
   const d = new Date(ts)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
     d.getDate()
-  ).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  ).padStart(
+    2,
+    '0'
+  )} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 </script>
 
@@ -179,6 +300,80 @@ const formatTime = (ts) => {
   border-radius: 8px;
   font-size: 14px;
   background: #fff;
+}
+
+.text-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  font-family: inherit;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
+}
+
+.input-with-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.toggle-btn {
+  flex-shrink: 0;
+  padding: 0 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f6f8fa;
+  font-size: 13px;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.toggle-btn:hover {
+  background: #eef1f4;
+}
+
+.warn {
+  margin: 4px 0 14px;
+  padding: 10px 12px;
+  background: #fff8e6;
+  border: 1px solid #f0d69a;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #7a5c14;
+}
+
+.warn code,
+.hint code {
+  padding: 1px 5px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.reset-btn {
+  margin: 8px 0 0 8px;
+  padding: 8px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.reset-btn:hover {
+  color: #d1242f;
+  border-color: #d1242f;
 }
 
 .save-btn {

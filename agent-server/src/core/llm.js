@@ -17,6 +17,20 @@ class LLMClient {
   }
 
   /**
+   * 运行时覆盖配置
+   * 用于插件配置页下发的 llmConfig：Agent 实例在连接建立时就创建了，
+   * 不能重新 new，只能就地更新；传空对象则保持当前配置不变
+   * @param {object} customConfig - 已校验过的配置片段
+   */
+  applyConfig(customConfig = {}) {
+    if (customConfig.apiKey) this.apiKey = customConfig.apiKey
+    if (customConfig.baseURL) this.baseURL = customConfig.baseURL
+    if (customConfig.model) this.model = customConfig.model
+    // temperature 允许 0，必须用 isFinite 判断
+    if (Number.isFinite(customConfig.temperature)) this.temperature = customConfig.temperature
+  }
+
+  /**
    * 调用大模型生成回复
    * 自动在消息列表开头添加系统提示词
    * @param {Array} messages - 对话消息列表
@@ -127,7 +141,8 @@ class LLMClient {
               if (tc.id) toolCalls[index].id = tc.id
               if (tc.type) toolCalls[index].type = tc.type
               if (tc.function?.name) toolCalls[index].function.name += tc.function.name
-              if (tc.function?.arguments) toolCalls[index].function.arguments += tc.function.arguments
+              if (tc.function?.arguments)
+                toolCalls[index].function.arguments += tc.function.arguments
             }
           }
         } catch (error) {
@@ -136,7 +151,9 @@ class LLMClient {
       }
     }
 
-    console.log(`[LLM] Stream finished, content chars: ${content.length}, tool_calls: ${toolCalls.length}`)
+    console.log(
+      `[LLM] Stream finished, content chars: ${content.length}, tool_calls: ${toolCalls.length}`
+    )
 
     const message = { role: 'assistant', content }
     if (toolCalls.length > 0) {
