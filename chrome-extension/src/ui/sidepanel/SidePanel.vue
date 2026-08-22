@@ -1,23 +1,51 @@
 <template>
   <div class="chat-container">
     <!-- 头部 -->
-    <div class="chat-header">
-      <div class="logo">
-        <img src="./assets/logo.png" alt="logo" />
-      </div>
-      <div class="header-info">
-        <h1 class="title">浏览器 AI 助手</h1>
-        <div class="connection-status">
-          <span class="status-label">连接状态:</span>
-          <span class="status-badge" :class="connectionStatus">{{ statusText }}</span>
+    <header class="chat-header">
+      <div class="brand">
+        <div class="logo">
+          <img src="./assets/logo.png" alt="logo" />
+        </div>
+        <div class="brand-text">
+          <h1 class="title">浏览器 AI 助手</h1>
+          <div class="connection-status" :class="connectionStatus">
+            <span class="status-dot"></span>
+            <span class="status-text">{{ statusText }}</span>
+          </div>
         </div>
       </div>
-      <!-- F4 会话持久化：历史切换 + 新会话 -->
       <div class="header-actions">
-        <button class="header-btn" title="会话历史" @click="toggleHistoryList">🕘</button>
-        <button class="header-btn" title="新会话" @click="startNewSession">＋</button>
+        <button class="icon-btn" title="会话历史" @click="toggleHistoryList">
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+        </button>
+        <button class="icon-btn" title="新会话" @click="startNewSession">
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
       </div>
-    </div>
+    </header>
 
     <!-- 会话历史下拉（F4 + F6：搜索/重命名） -->
     <div v-if="showHistoryList" class="history-panel">
@@ -29,7 +57,12 @@
           placeholder="搜索会话..."
           @keydown.stop
         />
-        <div v-for="s in filteredSessions" :key="s.id" class="history-item" :class="{ active: s.id === sessionId }">
+        <div
+          v-for="s in filteredSessions"
+          :key="s.id"
+          class="history-item"
+          :class="{ active: s.id === sessionId }"
+        >
           <template v-if="renamingId === s.id">
             <input
               v-model="renameDraft"
@@ -43,7 +76,9 @@
           <template v-else>
             <span class="history-title" @click="switchSession(s.id)">{{ s.title }}</span>
             <span class="history-time">{{ formatShortTime(s.updatedAt) }}</span>
-            <button class="history-rename" title="重命名该会话" @click.stop="startRename(s)">✏️</button>
+            <button class="history-rename" title="重命名该会话" @click.stop="startRename(s)">
+              ✏️
+            </button>
             <button class="history-delete" title="删除该会话" @click.stop="deleteSession(s.id)">
               ×
             </button>
@@ -54,11 +89,17 @@
     </div>
 
     <!-- 消息列表 -->
-    <div class="chat-messages">
+    <main class="chat-messages">
       <!-- 欢迎消息 -->
       <div v-if="messages.length === 0" class="welcome-message">
-        <p class="welcome-text">👋 欢迎使用浏览器 AI 助手</p>
-        <p class="welcome-desc">我可以总结当前页面、回答基于页面内容的问题，以及分析页面性能。</p>
+        <div class="welcome-icon">✨</div>
+        <p class="welcome-text">欢迎使用浏览器 AI 助手</p>
+        <p class="welcome-desc">我可以总结当前页面、回答基于页面内容的问题，并帮你分析页面性能。</p>
+        <div class="welcome-tips">
+          <div class="tip-item">💡 选中网页文字快速翻译 / 解释 / 改写</div>
+          <div class="tip-item">🔍 输入问题做多页深度研究</div>
+          <div class="tip-item">📊 一键提取页面表格 / 列表数据</div>
+        </div>
       </div>
 
       <!-- 消息列表 -->
@@ -69,36 +110,54 @@
         :class="{ 'user-message': msg.sender === 'user', 'ai-message': msg.sender === 'ai' }"
       >
         <div class="message-avatar">
-          {{ msg.sender === 'user' ? '👤' : '🤖' }}
+          <span v-if="msg.sender === 'user'">我</span>
+          <span v-else>AI</span>
         </div>
-        <div class="message-content">
-          <div class="message-sender">
-            {{ msg.sender === 'user' ? '我' : 'AI 助手' }}
+        <div class="message-body">
+          <div class="message-meta">
+            <span class="message-sender">{{ msg.sender === 'user' ? '我' : 'AI 助手' }}</span>
             <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
             <button
               v-if="msg.type === 'text' && msg.sender === 'ai'"
               class="message-copy-button"
               @click="copyText(msg.content)"
+              title="复制"
             >
-              复制
+              <svg
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              <span>复制</span>
             </button>
           </div>
           <div
-            class="message-text markdown-content"
+            class="message-bubble markdown-content"
             v-if="msg.type === 'text' && msg.sender === 'ai'"
             v-html="renderMarkdown(msg.content)"
           ></div>
-          <div class="message-text" v-else-if="msg.type === 'text'">{{ msg.content }}</div>
-          <div class="message-selection" v-if="msg.type === 'selection'">
+          <div class="message-bubble" v-else-if="msg.type === 'text'">{{ msg.content }}</div>
+          <div class="message-bubble selection-bubble" v-if="msg.type === 'selection'">
             <div class="selection-header">
               <span class="selection-action">📝 {{ msg.action }} · 选中内容</span>
             </div>
             <div class="selection-text">{{ msg.content }}</div>
           </div>
           <!-- M1-F8 深度研究：进度消息（灰色小字，最新一条替换显示） -->
-          <div class="message-progress" v-if="msg.type === 'progress'">🔄 {{ msg.content }}</div>
+          <div class="message-bubble progress-bubble" v-if="msg.type === 'progress'">
+            <span class="spinner"></span>
+            <span>{{ msg.content }}</span>
+          </div>
           <!-- M1-F8 深度研究：HITL 询问卡片（继续/停止/自定义方向） -->
-          <div class="workflow-ask-card" v-if="msg.type === 'workflow_ask'">
+          <div class="message-bubble ask-bubble" v-if="msg.type === 'workflow_ask'">
             <p class="workflow-ask-question">{{ msg.question }}</p>
             <div v-if="msg.pending" class="workflow-ask-actions">
               <button
@@ -119,25 +178,27 @@
             </div>
             <p v-else class="workflow-ask-answered">已答复（{{ msg.answer }}），研究中...</p>
           </div>
-          <div class="message-performance" v-if="msg.type === 'performance'">
+          <div class="message-bubble perf-bubble" v-if="msg.type === 'performance'">
             <div class="performance-card">
-              <h3 class="performance-title">页面性能分析</h3>
+              <h3 class="performance-title">📊 页面性能分析</h3>
               <div class="performance-details">
                 <div class="detail-item">
-                  <span class="detail-label">页面地址:</span>
-                  <span class="detail-value">{{ msg.data.url }}</span>
+                  <span class="detail-label">页面地址</span>
+                  <span class="detail-value" :title="msg.data.url">{{
+                    truncateUrl(msg.data.url)
+                  }}</span>
                 </div>
                 <div class="detail-item">
-                  <span class="detail-label">加载时间:</span>
-                  <span class="detail-value">{{ msg.data.loadTime }}ms</span>
+                  <span class="detail-label">加载时间</span>
+                  <span class="detail-value highlight">{{ msg.data.loadTime }}ms</span>
                 </div>
                 <div class="detail-item">
-                  <span class="detail-label">首次内容绘制(FCP):</span>
-                  <span class="detail-value">{{ msg.data.fcp }}ms</span>
+                  <span class="detail-label">FCP</span>
+                  <span class="detail-value highlight">{{ msg.data.fcp }}ms</span>
                 </div>
                 <div class="detail-item">
-                  <span class="detail-label">最大内容绘制(LCP):</span>
-                  <span class="detail-value">{{ msg.data.lcp }}ms</span>
+                  <span class="detail-label">LCP</span>
+                  <span class="detail-value highlight">{{ msg.data.lcp }}ms</span>
                 </div>
               </div>
             </div>
@@ -147,65 +208,93 @@
 
       <!-- 思考中动画（dph-A：显示 Step 进度 + 停止按钮） -->
       <div v-if="thinking" class="message-item ai-message">
-        <div class="message-avatar">🤖</div>
-        <div class="message-content">
-          <div class="thinking-indicator">
-            <span class="thinking-dot"></span>
-            <span class="thinking-dot"></span>
-            <span class="thinking-dot"></span>
+        <div class="message-avatar"><span>AI</span></div>
+        <div class="message-body">
+          <div class="message-meta">
+            <span class="message-sender">AI 助手</span>
           </div>
-          <p class="thinking-text">
-            {{ agentStep ? stepLabel(agentStep) : 'AI 助手正在思考...' }}
-          </p>
-          <button v-if="agentStep" class="stop-btn" @click="cancelAgentTask">⏹ 停止</button>
+          <div class="message-bubble thinking-bubble">
+            <div class="thinking-indicator">
+              <span class="thinking-dot"></span>
+              <span class="thinking-dot"></span>
+              <span class="thinking-dot"></span>
+            </div>
+            <p class="thinking-text">
+              {{ agentStep ? stepLabel(agentStep) : 'AI 助手正在思考...' }}
+            </p>
+          </div>
+          <button v-if="agentStep" class="stop-btn" @click="cancelAgentTask">⏹ 停止生成</button>
         </div>
       </div>
-    </div>
+    </main>
 
     <!-- 输入区域 -->
-    <div class="chat-input">
-      <button
-        class="action-button"
-        @click="handleSummarize"
-        :disabled="thinking"
-        title="总结当前页面核心内容"
-      >
-        📄 总结本页
-      </button>
-      <button
-        class="action-button research"
-        @click="handleResearch"
-        :disabled="thinking || !inputText.trim()"
-        title="基于输入的问题做多页深度研究，输出带来源的研究报告"
-      >
-        🔍 深度研究
-      </button>
-      <button
-        class="action-button extract"
-        @click="handleExtract"
-        :disabled="thinking"
-        title="提取当前页面的表格/列表为 Markdown 和 CSV"
-      >
-        📊 提取表格
-      </button>
-      <input
-        ref="inputRef"
-        v-model="inputText"
-        type="text"
-        class="input-field"
-        :placeholder="
-          pendingSelection ? '基于选中内容提问，如：let 和 var 的区别' : '输入您的问题或指令...'
-        "
-        @keydown.enter="handleSendMessage"
-      />
-      <button
-        class="send-button"
-        @click="handleSendMessage"
-        :disabled="!inputText.trim() || thinking"
-      >
-        {{ thinking ? '发送中...' : '发送' }}
-      </button>
-    </div>
+    <footer class="chat-input-area">
+      <!-- 快捷动作工具栏 -->
+      <div class="quick-actions">
+        <button
+          class="quick-action"
+          @click="handleSummarize"
+          :disabled="thinking"
+          title="总结当前页面核心内容"
+        >
+          <span class="qa-icon">📄</span>
+          <span class="qa-label">总结本页</span>
+        </button>
+        <button
+          class="quick-action research"
+          @click="handleResearch"
+          :disabled="thinking || !inputText.trim()"
+          title="基于输入的问题做多页深度研究，输出带来源的研究报告"
+        >
+          <span class="qa-icon">🔍</span>
+          <span class="qa-label">深度研究</span>
+        </button>
+        <button
+          class="quick-action extract"
+          @click="handleExtract"
+          :disabled="thinking"
+          title="提取当前页面的表格/列表为 Markdown 和 CSV"
+        >
+          <span class="qa-icon">📊</span>
+          <span class="qa-label">提取表格</span>
+        </button>
+      </div>
+
+      <!-- 输入框 -->
+      <div class="input-row">
+        <input
+          ref="inputRef"
+          v-model="inputText"
+          type="text"
+          class="input-field"
+          :placeholder="
+            pendingSelection ? '基于选中内容提问，如：let 和 var 的区别' : '输入您的问题或指令...'
+          "
+          @keydown.enter="handleSendMessage"
+        />
+        <button
+          class="send-button"
+          @click="handleSendMessage"
+          :disabled="!inputText.trim() || thinking"
+          title="发送"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+      </div>
+    </footer>
   </div>
 </template>
 
@@ -297,7 +386,14 @@ const sendPrompt = async (prompt, action) => {
     return false
   }
   websocket.send(
-    JSON.stringify({ type: 'user_prompt', prompt, action, pageContext, prefs, sessionId: sessionId.value })
+    JSON.stringify({
+      type: 'user_prompt',
+      prompt,
+      action,
+      pageContext,
+      prefs,
+      sessionId: sessionId.value,
+    })
   )
   return true
 }
@@ -350,7 +446,10 @@ const updateSessionIndex = async () => {
   const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
   const prev = sessions.find((s) => s.id === sessionId.value)
   const firstUserMsg = messages.value.find((m) => m.sender === 'user')
-  const autoTitle = (firstUserMsg && firstUserMsg.content ? firstUserMsg.content : '新对话').slice(0, 20)
+  const autoTitle = (firstUserMsg && firstUserMsg.content ? firstUserMsg.content : '新对话').slice(
+    0,
+    20
+  )
   const entry = {
     id: sessionId.value,
     title: prev?.customTitle || autoTitle,
@@ -554,6 +653,17 @@ const formatShortTime = (ts) => {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+const truncateUrl = (url) => {
+  if (!url) return ''
+  try {
+    const u = new URL(url)
+    const path = u.pathname.length > 18 ? u.pathname.slice(0, 18) + '…' : u.pathname
+    return `${u.hostname}${path}`
+  } catch {
+    return url.length > 30 ? url.slice(0, 30) + '…' : url
+  }
+}
+
 const getActiveTab = async () => {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
   if (!tabs.length || !tabs[0].id) {
@@ -631,8 +741,7 @@ const formatTime = (timestamp) => {
   const date = new Date(timestamp)
   const hours = String(date.getHours()).padStart(2, '0')
   const minutes = String(date.getMinutes()).padStart(2, '0')
-  const seconds = String(date.getSeconds()).padStart(2, '0')
-  return `${hours}:${minutes}:${seconds}`
+  return `${hours}:${minutes}`
 }
 
 // 复制选中原文（划词原文展示块）
@@ -1300,71 +1409,213 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ===== 基础 ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 .chat-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: #f7f9fc;
+  width: 100%;
+  min-width: 0;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  color: #0f172a;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
   position: relative;
+  overflow: hidden;
 }
 
-/* 头部 */
+/* ===== 头部 ===== */
 .chat-header {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
-  background-color: #ffffff;
-  border-bottom: 1px solid #e1e8ed;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: saturate(180%) blur(10px);
+  -webkit-backdrop-filter: saturate(180%) blur(10px);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  flex-shrink: 0;
+  min-height: 56px;
 }
 
-/* F4 会话持久化：头部操作按钮 */
-.header-actions {
+.brand {
   display: flex;
-  gap: 6px;
-  margin-left: 8px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 
-.header-btn {
+.logo {
   width: 32px;
   height: 32px;
-  border: 1px solid #e1e8ed;
   border-radius: 8px;
-  background: #f7f9fc;
-  font-size: 15px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.brand-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #64748b;
   line-height: 1;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  transition: background 0.2s;
+}
+
+.connection-status.connected .status-dot {
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+  animation: pulse-dot 2s infinite;
+}
+
+.connection-status.connecting .status-dot {
+  background: #f59e0b;
+  animation: pulse-dot 1.2s infinite;
+}
+
+.connection-status.disconnected .status-dot,
+.connection-status.error .status-dot {
+  background: #ef4444;
+}
+
+.connection-status.connected {
+  color: #047857;
+}
+.connection-status.connecting {
+  color: #b45309;
+}
+.connection-status.disconnected,
+.connection-status.error {
+  color: #b91c1c;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
+  }
+}
+
+.header-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
   cursor: pointer;
-  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
-.header-btn:hover {
-  background: #edf2f7;
+.icon-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #e2e8f0;
 }
 
-/* 会话历史下拉面板 */
+.icon-btn:active {
+  background: #e2e8f0;
+}
+
+/* ===== 会话历史面板 ===== */
 .history-panel {
   position: absolute;
-  top: 64px;
-  right: 12px;
+  top: 60px;
+  right: 8px;
+  left: 8px;
   z-index: 100;
-  width: 260px;
-  max-height: 320px;
+  max-height: 60vh;
   overflow-y: auto;
   background: #ffffff;
-  border: 1px solid #e1e8ed;
-  border-radius: 10px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-  padding: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow:
+    0 4px 6px rgba(15, 23, 42, 0.05),
+    0 12px 24px rgba(15, 23, 42, 0.1);
+  padding: 8px;
+  animation: panelFade 0.15s ease;
+}
+
+@keyframes panelFade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .history-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
+  transition: background-color 0.15s;
 }
 
 .history-item:hover {
@@ -1372,14 +1623,14 @@ onUnmounted(() => {
 }
 
 .history-item.active {
-  background: #ebf4ff;
+  background: #eff6ff;
 }
 
 .history-title {
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  color: #1a1a1a;
+  color: #0f172a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1387,53 +1638,52 @@ onUnmounted(() => {
 
 .history-time {
   font-size: 11px;
-  color: #9ca3af;
+  color: #94a3b8;
   flex-shrink: 0;
 }
 
 .history-empty {
-  padding: 16px;
+  padding: 24px 16px;
   text-align: center;
   font-size: 13px;
-  color: #9ca3af;
+  color: #94a3b8;
 }
 
-/* F6 会话搜索框 */
 .history-search {
   width: 100%;
-  box-sizing: border-box;
   margin-bottom: 6px;
-  padding: 6px 10px;
-  border: 1px solid #e1e8ed;
+  padding: 7px 10px;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 13px;
   outline: none;
+  transition: border-color 0.15s;
 }
 
 .history-search:focus {
-  border-color: #60a5fa;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-/* F6 会话重命名 */
-.history-rename {
-  width: 20px;
-  height: 20px;
+.history-rename,
+.history-delete {
+  width: 22px;
+  height: 22px;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
-  color: #9ca3af;
-  font-size: 12px;
-  line-height: 1;
+  color: #94a3b8;
   cursor: pointer;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0;
-  transition:
-    opacity 0.15s,
-    background-color 0.15s,
-    color 0.15s;
+  transition: all 0.15s;
 }
 
-.history-item:hover .history-rename {
+.history-item:hover .history-rename,
+.history-item:hover .history-delete {
   opacity: 1;
 }
 
@@ -1442,45 +1692,22 @@ onUnmounted(() => {
   color: #4f46e5;
 }
 
-.history-rename-input {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 6px;
-  border: 1px solid #60a5fa;
-  border-radius: 6px;
-  font-size: 13px;
-  outline: none;
-}
-
-/* 历史项删除按钮 */
-.history-delete {
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: #9ca3af;
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-  flex-shrink: 0;
-  opacity: 0;
-  transition:
-    opacity 0.15s,
-    background-color 0.15s,
-    color 0.15s;
-}
-
-.history-item:hover .history-delete {
-  opacity: 1;
-}
-
 .history-delete:hover {
   background: #fee2e2;
   color: #dc2626;
 }
 
-/* 清空全部历史 */
+.history-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+}
+
 .history-clear {
   margin-top: 4px;
   padding: 8px;
@@ -1490,117 +1717,87 @@ onUnmounted(() => {
   border-radius: 8px;
   cursor: pointer;
   border-top: 1px solid #f1f5f9;
+  transition: background-color 0.15s;
 }
 
 .history-clear:hover {
   background: #fef2f2;
 }
 
-.logo {
-  width: 40px;
-  height: 40px;
-  margin-right: 16px;
-}
-
-.logo img {
-  width: 100%;
-  height: 100%;
-}
-
-.header-info {
-  flex: 1;
-}
-
-.title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: #1a1a1a;
-  margin-bottom: 4px;
-}
-
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-label {
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.status-badge {
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.status-badge.connected {
-  background-color: #d1fae5;
-  color: #065f46;
-}
-
-.status-badge.connecting {
-  background-color: #fef3c7;
-  color: #92400e;
-}
-
-.status-badge.disconnected {
-  background-color: #fee2e2;
-  color: #991b1b;
-}
-
-.status-badge.error {
-  background-color: #fee2e2;
-  color: #991b1b;
-}
-
-/* 消息区域 */
+/* ===== 消息区域 ===== */
 .chat-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 16px;
+  overflow-x: hidden;
+  padding: 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  scroll-behavior: smooth;
 }
 
-/* 欢迎消息 */
+/* ===== 欢迎消息 ===== */
 .welcome-message {
+  margin: 8px 4px;
+  padding: 24px 18px;
   text-align: center;
-  padding: 40px 20px;
-  background-color: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.welcome-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.06));
 }
 
 .welcome-text {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
-  color: #1a1a1a;
-  margin-bottom: 8px;
+  color: #0f172a;
+  margin: 0 0 4px;
 }
 
 .welcome-desc {
-  font-size: 14px;
-  color: #6b7280;
-  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+  margin: 0 0 14px;
+  line-height: 1.5;
 }
 
-/* 消息项 */
+.welcome-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.tip-item {
+  font-size: 12px;
+  color: #475569;
+  padding: 7px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+
+/* ===== 消息项 ===== */
 .message-item {
   display: flex;
-  gap: 12px;
-  max-width: 80%;
-  animation: messageSlideIn 0.3s ease;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  animation: messageSlideIn 0.25s ease;
 }
 
 @keyframes messageSlideIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -1614,394 +1811,438 @@ onUnmounted(() => {
 }
 
 .message-avatar {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background-color: #e1e8ed;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 11px;
+  font-weight: 600;
   flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.25);
 }
 
 .message-item.user-message .message-avatar {
-  background-color: #4299e1;
-  color: white;
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  box-shadow: 0 1px 3px rgba(71, 85, 105, 0.25);
 }
 
-.message-content {
+.message-body {
   flex: 1;
   min-width: 0;
+  max-width: calc(100% - 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.message-sender {
+.message-item.user-message .message-body {
+  align-items: flex-end;
+}
+
+.message-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  padding: 0 2px;
 }
 
-.message-sender span:first-child {
-  font-size: 14px;
+.message-sender {
+  font-size: 12px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #475569;
+  letter-spacing: 0.01em;
 }
 
 .message-time {
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.message-text {
-  background-color: #ffffff;
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: #1a1a1a;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.message-item.user-message .message-text {
-  background-color: #4299e1;
-  color: white;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .message-copy-button {
   margin-left: auto;
   border: none;
   background: transparent;
-  color: #4299e1;
-  font-size: 12px;
+  color: #94a3b8;
+  font-size: 11px;
   cursor: pointer;
-  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
 }
 
 .message-copy-button:hover {
-  color: #2b6cb0;
+  color: #4f46e5;
+  background: #eef2ff;
 }
 
-/* Markdown 渲染内容样式（v-html 插入，需 :deep 生效） */
+/* ===== 消息气泡 ===== */
+.message-bubble {
+  background: #ffffff;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  min-width: 0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.message-item.user-message .message-bubble {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.2);
+}
+
+/* ===== Markdown 渲染内容（v-html 插入，需 :deep 生效） ===== */
+.markdown-content :deep(h1),
 .markdown-content :deep(h2),
 .markdown-content :deep(h3),
 .markdown-content :deep(h4) {
-  margin: 10px 0 6px;
-  font-size: 15px;
+  margin: 12px 0 6px;
   font-weight: 600;
   line-height: 1.4;
-  color: #1a1a1a;
+  color: #0f172a;
 }
 
+.markdown-content :deep(h1) {
+  font-size: 17px;
+}
 .markdown-content :deep(h2) {
-  font-size: 16px;
-  border-bottom: 1px solid #e1e8ed;
+  font-size: 15.5px;
+  border-bottom: 1px solid #e2e8f0;
   padding-bottom: 4px;
+}
+.markdown-content :deep(h3) {
+  font-size: 14px;
+}
+.markdown-content :deep(h4) {
+  font-size: 13.5px;
 }
 
 .markdown-content :deep(p) {
   margin: 6px 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .markdown-content :deep(ul),
 .markdown-content :deep(ol) {
   margin: 6px 0;
-  padding-left: 20px;
+  padding-left: 22px;
 }
 
 .markdown-content :deep(li) {
-  margin: 4px 0;
+  margin: 3px 0;
 }
 
 .markdown-content :deep(strong) {
   font-weight: 600;
+  color: #0f172a;
 }
 
-/* 划词原文展示块 */
-.message-selection {
-  margin-top: 4px;
-  border: 1px solid #e1e8ed;
+.markdown-content :deep(code) {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  padding: 1px 5px;
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.markdown-content :deep(pre) {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: #0f172a;
+  color: #e2e8f0;
   border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.markdown-content :deep(pre code) {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+}
+
+.markdown-content :deep(blockquote) {
+  margin: 8px 0;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border-left: 3px solid #6366f1;
+  border-radius: 0 6px 6px 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.markdown-content :deep(a) {
+  color: #4f46e5;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.markdown-content :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.markdown-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 12.5px;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown-content :deep(th),
+.markdown-content :deep(td) {
+  border: 1px solid #e2e8f0;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.markdown-content :deep(th) {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+/* ===== 划词原文展示 ===== */
+.selection-bubble {
+  padding: 0;
   overflow: hidden;
-  background: #f7fafc;
 }
 
 .selection-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 10px;
-  background: #edf2f7;
+  padding: 6px 10px;
+  background: #f1f5f9;
   border-bottom: 1px solid #e2e8f0;
 }
 
 .selection-action {
-  font-size: 12px;
-  color: #4a5568;
+  font-size: 11.5px;
+  color: #4f46e5;
+  font-weight: 500;
 }
 
 .selection-text {
   padding: 8px 10px;
-  font-size: 13px;
-  color: #2d3748;
+  font-size: 12.5px;
+  color: #334155;
   line-height: 1.6;
-  word-break: break-all;
+  word-break: break-word;
   white-space: pre-wrap;
   max-height: 160px;
   overflow-y: auto;
+  background: #fafbfc;
 }
 
-/* M1-F8 深度研究：进度消息（灰色小字） */
-.message-progress {
-  font-size: 12px;
-  color: #8a94a6;
-  padding: 4px 12px;
+/* ===== M1-F8 深度研究：进度消息 ===== */
+.progress-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
   background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  margin-top: 4px;
-  line-height: 1.5;
+  font-size: 12px;
+  color: #64748b;
+  align-self: flex-start;
 }
 
-/* M1-F8 深度研究：HITL 询问卡片 */
-.workflow-ask-card {
-  background-color: #ffffff;
-  border: 1px solid #e1e8ed;
-  border-radius: 12px;
-  padding: 12px 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #cbd5e1;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== M1-F8 深度研究：HITL 询问卡片 ===== */
+.ask-bubble {
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #c7d2fe;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);
 }
 
 .workflow-ask-question {
   margin: 0 0 10px 0;
   font-size: 13px;
   line-height: 1.5;
-  color: #1a1a1a;
+  color: #1e1b4b;
+  font-weight: 500;
 }
 
 .workflow-ask-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .workflow-ask-btn {
-  padding: 6px 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 16px;
-  background: #f7f9fc;
-  font-size: 13px;
+  padding: 5px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  font-size: 12px;
+  color: #475569;
   cursor: pointer;
-  transition: background-color 0.15s;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
 
 .workflow-ask-btn:hover {
-  background: #edf2f7;
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
 }
 
 .workflow-ask-btn.primary {
-  background: #4299e1;
-  border-color: #4299e1;
-  color: white;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.3);
 }
 
 .workflow-ask-btn.primary:hover {
-  background: #3182ce;
+  filter: brightness(1.1);
 }
 
 .workflow-ask-input {
   flex: 1;
-  min-width: 140px;
-  padding: 6px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 16px;
-  font-size: 13px;
+  min-width: 120px;
+  padding: 5px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  font-size: 12px;
   outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+  background: #ffffff;
 }
 
 .workflow-ask-input:focus {
-  border-color: #4299e1;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .workflow-ask-answered {
   margin: 0;
   font-size: 12px;
-  color: #6b7280;
+  color: #16a34a;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-/* 深度研究按钮（区别于总结按钮） */
-.action-button.research {
-  background-color: #f0fdf4;
-  color: #15803d;
-  border-color: #bbf7d0;
-}
-
-.action-button.research:hover:not(:disabled) {
-  background-color: #dcfce7;
-  border-color: #86efac;
-}
-
-/* 提取表格按钮（区别于总结/深度研究） */
-.action-button.extract {
-  background-color: #eff6ff;
-  color: #1d4ed8;
-  border-color: #bfdbfe;
-}
-
-.action-button.extract:hover:not(:disabled) {
-  background-color: #dbeafe;
-  border-color: #93c5fd;
-}
-
-/* dph-A 停止生成按钮 */
-.stop-btn {
-  margin-top: 8px;
-  padding: 4px 12px;
-  border: 1px solid #fca5a5;
-  border-radius: 6px;
-  background: #fef2f2;
-  color: #dc2626;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.stop-btn:hover {
-  background: #fee2e2;
-}
-
-/* 性能数据展示 */
-.message-performance {
-  background-color: #ffffff;
-  padding: 16px;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+/* ===== 性能数据展示 ===== */
+.perf-bubble {
+  padding: 0;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
 }
 
 .performance-card {
-  border: 1px solid #e1e8ed;
-  border-radius: 8px;
   padding: 12px;
 }
 
 .performance-title {
-  margin: 0 0 12px 0;
-  font-size: 16px;
+  margin: 0 0 10px 0;
+  font-size: 14px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .performance-details {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
 
 .detail-item {
   display: flex;
-  justify-content: space-between;
-  padding: 8px;
-  background-color: #f7fafc;
-  border-radius: 6px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  min-width: 0;
 }
 
 .detail-label {
-  font-size: 13px;
-  color: #6b7280;
+  font-size: 11px;
+  color: #64748b;
 }
 
 .detail-value {
   font-size: 13px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #0f172a;
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
-/* 输入区域 */
-.chat-input {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px;
-  background-color: #ffffff;
-  border-top: 1px solid #e1e8ed;
+.detail-value.highlight {
+  color: #4f46e5;
 }
 
-/* 快捷动作按钮（总结本页等） */
-.action-button {
+/* ===== 思考中动画 ===== */
+.thinking-bubble {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   padding: 10px 12px;
-  background-color: #ebf4ff;
-  color: #1e5fb4;
-  border: 1px solid #b3d0f2;
-  border-radius: 24px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background-color 0.2s,
-    border-color 0.2s;
-  white-space: nowrap;
 }
 
-.action-button:hover:not(:disabled) {
-  background-color: #dbeafe;
-  border-color: #7fb0e8;
-}
-
-.action-button:disabled {
-  background-color: #f1f5f9;
-  color: #9ca3af;
-  border-color: #e2e8f0;
-  cursor: not-allowed;
-}
-
-.input-field {
-  flex: 1;
-  padding: 12px 16px;
-  border: 1px solid #d1d5db;
-  border-radius: 24px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.input-field:focus {
-  border-color: #4299e1;
-  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
-}
-
-.send-button {
-  padding: 12px 24px;
-  background-color: #4299e1;
-  color: white;
-  border: none;
-  border-radius: 24px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  white-space: nowrap;
-}
-
-.send-button:hover:not(:disabled) {
-  background-color: #3182ce;
-}
-
-.send-button:disabled {
-  background-color: #a0aec0;
-  cursor: not-allowed;
-}
-
-/* 思考中动画 */
 .thinking-indicator {
   display: flex;
   gap: 4px;
-  padding: 8px;
+  align-items: center;
 }
 
 .thinking-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background-color: #6b7280;
-  animation: thinkingAnimation 1.4s infinite ease-in-out;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  animation: thinkingAnimation 1.4s infinite ease-in-out both;
 }
 
 .thinking-dot:nth-child(2) {
@@ -2017,37 +2258,256 @@ onUnmounted(() => {
   80%,
   100% {
     opacity: 0.3;
-    transform: scale(1);
+    transform: scale(0.85);
   }
   40% {
     opacity: 1;
-    transform: scale(1.2);
+    transform: scale(1.1);
   }
 }
 
 .thinking-text {
-  font-size: 14px;
-  color: #6b7280;
+  font-size: 12.5px;
+  color: #64748b;
   margin: 0;
-  padding: 8px;
+  line-height: 1.4;
 }
 
-/* 滚动条样式 */
-.chat-messages::-webkit-scrollbar {
-  width: 6px;
+.stop-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 3px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
 }
 
-.chat-messages::-webkit-scrollbar-track {
+.stop-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+/* ===== 输入区域 ===== */
+.chat-input-area {
+  flex-shrink: 0;
+  padding: 10px 12px 12px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: saturate(180%) blur(10px);
+  -webkit-backdrop-filter: saturate(180%) blur(10px);
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-actions {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.quick-action {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.15s;
+}
+
+.quick-action .qa-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.quick-action .qa-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-action:hover:not(:disabled) {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+  transform: translateY(-1px);
+}
+
+.quick-action:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.quick-action:disabled {
   background: #f1f5f9;
-  border-radius: 3px;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
 }
 
-.chat-messages::-webkit-scrollbar-thumb {
+.quick-action.research:not(:disabled) {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.quick-action.research:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.quick-action.extract:not(:disabled) {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.quick-action.extract:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.input-field {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-size: 13px;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.input-field::placeholder {
+  color: #94a3b8;
+}
+
+.input-field:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.send-button {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
+}
+
+.send-button:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(79, 70, 229, 0.35);
+}
+
+.send-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.send-button:disabled {
   background: #cbd5e1;
-  border-radius: 3px;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
-.chat-messages::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+/* ===== 滚动条 ===== */
+.chat-messages::-webkit-scrollbar,
+.history-panel::-webkit-scrollbar,
+.selection-text::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track,
+.history-panel::-webkit-scrollbar-track,
+.selection-text::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-messages::-webkit-scrollbar-thumb,
+.history-panel::-webkit-scrollbar-thumb,
+.selection-text::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 3px;
+  transition: background 0.15s;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover,
+.history-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}
+
+/* Firefox */
+.chat-messages,
+.history-panel,
+.selection-text {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+
+/* ===== 极窄宽度适配（< 360px） ===== */
+@media (max-width: 360px) {
+  .chat-header {
+    padding: 10px;
+  }
+  .title {
+    font-size: 13px;
+  }
+  .logo {
+    width: 28px;
+    height: 28px;
+  }
+  .quick-action .qa-label {
+    display: none;
+  }
+  .quick-action {
+    padding: 7px 6px;
+  }
+  .quick-action .qa-icon {
+    font-size: 14px;
+  }
+  .message-bubble {
+    font-size: 13px;
+  }
+  .performance-details {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

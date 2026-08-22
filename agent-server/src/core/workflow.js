@@ -96,17 +96,17 @@ class ResearchWorkflow {
     const subQuestions = Array.isArray(parsed?.subQuestions) ? parsed.subQuestions : []
     if (subQuestions.length === 0) {
       // plan 失败兜底：无法拆解时按原问题单主题继续，不让整个研究挂掉
-      state.plan = [{ question: state.question, urls: [], points: [], sufficient: false, attempts: 0 }]
+      state.plan = [
+        { question: state.question, urls: [], points: [], sufficient: false, attempts: 0 },
+      ]
     } else {
-      state.plan = subQuestions
-        .slice(0, this.maxTopics)
-        .map((t) => ({
-          question: String(t.question || '').slice(0, 200),
-          urls: Array.isArray(t.urls) ? t.urls.map(String).slice(0, this.maxPagesPerTopic) : [],
-          points: [],
-          sufficient: false,
-          attempts: 0,
-        }))
+      state.plan = subQuestions.slice(0, this.maxTopics).map((t) => ({
+        question: String(t.question || '').slice(0, 200),
+        urls: Array.isArray(t.urls) ? t.urls.map(String).slice(0, this.maxPagesPerTopic) : [],
+        points: [],
+        sufficient: false,
+        attempts: 0,
+      }))
     }
     state.currentTopic = 0
     state.step = 'research'
@@ -138,7 +138,11 @@ class ResearchWorkflow {
 
     // 重试次数超限 → 条件边兜底：带着已有信息进下一主题，不阻塞整个研究
     if (topic.attempts >= this.maxAttempts) {
-      this.emit(state, onProgress, `主题 ${topicLabel}：多次尝试后信息仍不足（不阻塞，继续后续主题）`)
+      this.emit(
+        state,
+        onProgress,
+        `主题 ${topicLabel}：多次尝试后信息仍不足（不阻塞，继续后续主题）`
+      )
       this.advanceTopic(state)
       return
     }
@@ -164,7 +168,12 @@ class ResearchWorkflow {
     }
 
     // HITL：每完成一个主题暂停，询问用户是否继续（对应 LangGraph human-in-the-loop interrupt）
-    if (this.hitlEnabled && onAsk && state.step === 'research' && state.currentTopic < state.plan.length) {
+    if (
+      this.hitlEnabled &&
+      onAsk &&
+      state.step === 'research' &&
+      state.currentTopic < state.plan.length
+    ) {
       const next = state.plan[state.currentTopic]
       const answer = await this.askUser(
         onAsk,
@@ -203,11 +212,7 @@ class ResearchWorkflow {
       let page = null
       try {
         // 复用工具封装：fetch_url 由插件在后台 tab 读取正文，不打扰用户当前页面
-        const result = await this.toolCall(
-          'fetch_url',
-          { url, connectionId },
-          { connectionId }
-        )
+        const result = await this.toolCall('fetch_url', { url, connectionId }, { connectionId })
         page = parseJSON(result.content?.[0]?.text || '')
       } catch (error) {
         console.warn(`[Workflow] fetch_url failed for ${url}:`, error.message)
@@ -244,7 +249,10 @@ class ResearchWorkflow {
 
       if (grade) {
         const points = Array.isArray(grade.points)
-          ? grade.points.map(String).filter(Boolean).map((p) => p.slice(0, 120))
+          ? grade.points
+              .map(String)
+              .filter(Boolean)
+              .map((p) => p.slice(0, 120))
           : []
         topic.points = topic.points.concat(points)
         topic.sufficient = grade.sufficient === true
@@ -277,7 +285,10 @@ class ResearchWorkflow {
       )
       const urls = parseJSON(response.content)
       if (Array.isArray(urls) && urls.length > 0) {
-        const fresh = urls.map(String).filter((u) => !topic.urls.includes(u)).slice(0, this.maxPagesPerTopic)
+        const fresh = urls
+          .map(String)
+          .filter((u) => !topic.urls.includes(u))
+          .slice(0, this.maxPagesPerTopic)
         topic.urls = topic.urls.concat(fresh)
       }
     } catch (error) {
@@ -346,7 +357,10 @@ class ResearchWorkflow {
       const answer = await Promise.race([
         onAsk(question, options),
         new Promise((resolve) => {
-          timer = setTimeout(() => resolve({ cancel: false, text: '继续研究', timeout: true }), this.hitlTimeoutMs)
+          timer = setTimeout(
+            () => resolve({ cancel: false, text: '继续研究', timeout: true }),
+            this.hitlTimeoutMs
+          )
         }),
       ])
       clearTimeout(timer)
