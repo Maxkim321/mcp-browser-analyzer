@@ -133,7 +133,26 @@ const waitTabComplete = (tabId, timeoutMs = 30000) => {
         reject(new Error('Tab load timeout'))
       }
     }, timeoutMs)
+    // 竞态兜底：tab 可能在监听注册前就已 complete（缓存页/极快加载），
+    // 此时 onUpdated 永远不再触发，只靠监听会白等到超时
+    c.tabs.get(tabId).then((tab) => {
+      if (tab && tab.status === 'complete') finish(tab)
+    }).catch(() => void 0)
   })
+}
+
+const getPageContentFromTab = async (tabId, maxChars) => {
+  // 注入重试：新开 tab 可能尚未注入 content-script
+  try {
+    return await sendToContentScript(tabId, { type: 'get_page_content', maxChars })
+  } catch (error) {
+    const message = String(error?.message || '')
+    if (!message.includes('Receiving end does not exist')) {
+      throw error
+    }
+    await ensureContentScriptInjected(tabId)
+    return await sendToContentScript(tabId, { type: 'get_page_content', maxChars })
+  }
 }
 
 const fetchUrlInBackgroundTab = async (url, maxChars) => {
@@ -141,20 +160,50 @@ const fetchUrlInBackgroundTab = async (url, maxChars) => {
   const tab = await c.tabs.create({ url, active: false })
   try {
     await waitTabComplete(tab.id, 30000)
-    // 注入重试：新开 tab 可能尚未注入 content-script
-    try {
-      return await sendToContentScript(tab.id, { type: 'get_page_content', maxChars })
-    } catch (error) {
-      const message = String(error?.message || '')
-      if (!message.includes('Receiving end does not exist')) {
-        throw error
-      }
-      await ensureContentScriptInjected(tab.id)
-      return await sendToContentScript(tab.id, { type: 'get_page_content', maxChars })
-    }
+    return await getPageContentFromTab(tab.id, maxChars)
   } finally {
     c.tabs.remove(tab.id).catch(() => void 0)
   }
+}
+
+// M1-F8 深度研究：后台新开搜索结果页，提取真实结果链接
+// 复用浏览器网络与登录态，避免让 LLM 凭记忆编造不存在的 URL
+const SEARCH_ENGINES = [
+  { name: 'bing', url: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` },
+  { name: 'sogou', url: (q) => `https://www.sogou.com/web?query=${encodeURIComponent(q)}` },
+]
+
+const searchInBackgroundTab = async (query, maxResults = 5) => {
+  const errors = []
+  for (const engine of SEARCH_ENGINES) {
+    const tab = await c.tabs.create({ url: engine.url(query), active: false })
+    try {
+      await waitTabComplete(tab.id, 30000)
+      let response
+      try {
+        response = await sendToContentScript(tab.id, { type: 'get_search_results', maxResults })
+      } catch (error) {
+        const message = String(error?.message || '')
+        if (!message.includes('Receiving end does not exist')) throw error
+        await ensureContentScriptInjected(tab.id)
+        response = await sendToContentScript(tab.id, { type: 'get_search_results', maxResults })
+      }
+      const results = response?.payload?.results || []
+      if (results.length > 0) {
+        return {
+          success: true,
+          type: 'search_results',
+          payload: { query, engine: engine.name, results },
+        }
+      }
+      errors.push(`${engine.name}: 未解析到结果链接`)
+    } catch (error) {
+      errors.push(`${engine.name}: ${error.message}`)
+    } finally {
+      c.tabs.remove(tab.id).catch(() => void 0)
+    }
+  }
+  return { success: false, error: `搜索失败（${errors.join('；')}）` }
 }
 
 // 划词动作：打开侧边栏并把选中文本+动作转发给 sidepanel
@@ -232,6 +281,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })
       .catch(error => {
         console.error('Error fetching url:', error)
+        sendResponse({
+          success: false,
+          error: error.message
+        })
+      })
+
+    return true
+  }
+
+  if (request.type === 'web_search') {
+    // M1-F8 深度研究：后台新开搜索结果页，返回真实结果链接
+    searchInBackgroundTab(request.query, request.maxResults)
+      .then(response => {
+        console.log('Background web_search result:', response)
+        sendResponse(response)
+      })
+      .catch(error => {
+        console.error('Error searching web:', error)
         sendResponse({
           success: false,
           error: error.message

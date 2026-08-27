@@ -198,20 +198,35 @@ get_page_content 返回的 payload.structured 已包含由 DOM 提取的结构�
 - structured.truncated 为 true 时，开头注明"数据过长已截断，仅展示前 50 行/项"
 - CSV 字段含逗号/引号时按 RFC 4180 转义（用双引号包裹并加倍内部引号）
 - 表格列数多于 6 列时，Markdown 表格照常输出，但 CSV 必须完整保留所有列`
-const RESEARCH_PLAN_PROMPT = `你是一个深度研究规划助手。请把一个研究问题拆解成 2-3 个子问题，并为每个子问题推荐 1-2 个可访问的权威 URL（优先官方文档、Wikipedia、MDN、知名技术博客），用于后续逐个抓取页面研究。
+const RESEARCH_PLAN_PROMPT = `你是一个深度研究规划助手。请把一个研究问题拆解成 2-3 个子问题，并为每个子问题给出 1-2 个搜索引擎检索词，用于后续搜索并抓取真实网页。
 
 严格输出 JSON，不要输出任何其他内容：
 {
   "subQuestions": [
-    { "question": "子问题1", "urls": ["https://...", "https://..."] },
-    { "question": "子问题2", "urls": ["https://..."] }
+    { "question": "子问题1", "queries": ["检索词1", "检索词2"] },
+    { "question": "子问题2", "queries": ["检索词1"] }
   ]
 }
 
 规则：
 - 子问题之间尽量互斥、合起来覆盖原问题
-- URL 必须是真实存在的知名站点地址（不要编造不存在的域名）
+- queries 是给搜索引擎用的关键词，不是 URL；每条 3-12 个字词，包含关键实体与年份等限定条件
+- 严禁凭记忆编造 URL；来源一律由后续搜索获得
 - 只输出 JSON 对象本身`
+
+/**
+ * 深度研究：信息不足时重写检索词（对应"重写查询再搜"）
+ * 与 RESEARCH_TOPIC_PROMPT 分开，避免输出格式冲突（此处只要检索词数组）
+ */
+const RESEARCH_QUERY_PROMPT = `你是一个检索词优化助手。给定一个研究子问题和当前的信息缺口，请给出新的搜索引擎检索词，用来补齐缺口。
+
+严格输出 JSON 数组，不要输出任何其他内容：
+["检索词1", "检索词2"]
+
+规则：
+- 1-2 条，必须与已尝试过的检索词有明显差异（换角度、换措辞、加限定词或去掉过窄限定）
+- 输出检索词，不是 URL
+- 只输出 JSON 数组本身`
 
 /**
  * 深度研究：单页面调研 + 信息量评估（F8 research 节点 + grade 条件边）
@@ -252,10 +267,12 @@ const RESEARCH_REPORT_PROMPT = `你是一个深度研究分析师。基于下面
 ## 数据可信度说明
 - 每个来源标注：页面标题 / URL / 是否截断
 - 信息不足的主题要明确标注"该主题信息可能不完整"
+- 如果提供了"抓取失败记录"，必须逐条列出失败的 URL 与失败原因（这是排查依据，不得省略）
 
 规则：
 - 只基于提供的调研要点，严禁编造数据
 - 来源列表必须如实引用
+- 来源为空时，直接说明"未获取到任何可用网页来源"并给出失败原因，不要输出任何推测性结论
 - 用中文输出`
 
 /**
@@ -294,6 +311,7 @@ module.exports = {
   EXTRACT_PROMPT,
   CONTEXT_SUMMARY_PROMPT,
   RESEARCH_PLAN_PROMPT,
+  RESEARCH_QUERY_PROMPT,
   RESEARCH_TOPIC_PROMPT,
   RESEARCH_REPORT_PROMPT,
   ACTION_PROMPTS,

@@ -133,6 +133,29 @@ const tools = [
     },
   },
   {
+    name: 'web_search',
+    description:
+      '用浏览器搜索引擎检索关键词，返回真实存在的结果链接列表（不打扰用户当前页面，读完自动关闭）。深度研究必须先用它拿到真实 URL，再用 fetch_url 读正文。返回 {query, engine, results:[{title, url}]}',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: '搜索关键词，例如 2027 秋招 前端 岗位 竞争',
+        },
+        maxResults: {
+          type: 'number',
+          description: '返回结果条数上限，默认 5',
+        },
+        connectionId: {
+          type: 'number',
+          description: '浏览器插件连接ID，可选；缺省时默认使用当前会话连接',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'todo_write',
     description: '创建或更新任务列表，用于管理多步骤操作。使用这个工具来规划和跟踪你的工作进度。',
     inputSchema: {

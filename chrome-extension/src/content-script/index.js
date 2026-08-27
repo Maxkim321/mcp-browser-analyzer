@@ -49,6 +49,10 @@ import { Readability } from '@mozilla/readability'
         handleGetPageContent(request, sender, sendResponse)
         return true
 
+      case 'get_search_results':
+        handleGetSearchResults(request, sender, sendResponse)
+        return true
+
       case 'get_selection':
         // F1 轻量 pageContext：同步返回当前选中文本（无选中返回空串）
         // 纯同步操作，无需保持消息通道
@@ -156,6 +160,152 @@ import { Readability } from '@mozilla/readability'
       content = content.slice(0, maxChars)
     }
     return { content, title, charCount }
+  }
+
+  /**
+   * 处理搜索结果提取请求（M1-F8 深度研究）
+   * 从搜索引擎结果页 DOM 提取真实结果链接，供后续 fetch_url 抓正文
+   */
+  async function handleGetSearchResults(request, sender, sendResponse) {
+    try {
+      const results = extractSearchResults(request.maxResults || 5)
+      console.log('Search results extracted:', results.length)
+      sendResponse({
+        success: true,
+        type: 'search_results',
+        requestId: request.requestId,
+        payload: {
+          url: window.location.href,
+          results,
+        },
+      })
+    } catch (error) {
+      console.error('Failed to extract search results:', error)
+      sendResponse({
+        success: false,
+        type: 'search_results',
+        requestId: request.requestId,
+        error: error.message,
+      })
+    }
+  }
+
+  /**
+   * 从搜索结果页提取 {title, url} 列表
+   * 各引擎结构差异大：优先用引擎专属选择器，取不到再降级为「页面内所有外链」兜底
+   * @param {number} maxResults - 最多返回条数
+   */
+  function extractSearchResults(maxResults) {
+    const host = window.location.hostname
+    // 结果标题链接的选择器（按引擎），顺序即优先级
+    const selectorMap = [
+      { match: 'bing.com', selectors: ['#b_results li.b_algo h2 a', '#b_results li.b_algo a.tilk'] },
+      { match: 'sogou.com', selectors: ['.results .vrwrap h3 a', '.results h3 a'] },
+      { match: 'baidu.com', selectors: ['#content_left .result h3 a'] },
+    ]
+
+    const matched = selectorMap.find((item) => host.includes(item.match))
+    const selectors = matched ? matched.selectors : ['h2 a[href^="http"]', 'h3 a[href^="http"]']
+
+    const results = []
+    const seen = new Set()
+
+    const push = (title, rawHref, anchor) => {
+      const url = normalizeResultUrl(rawHref, anchor)
+      if (!url || !title) return
+      if (seen.has(url)) return
+      seen.add(url)
+      results.push({ title: title.slice(0, 200), url })
+    }
+
+    for (const selector of selectors) {
+      for (const anchor of document.querySelectorAll(selector)) {
+        if (results.length >= maxResults) return results
+        push(anchor.innerText.trim(), anchor.getAttribute('href'), anchor)
+      }
+      if (results.length > 0) break
+    }
+
+    return results.slice(0, maxResults)
+  }
+
+  /**
+   * 把结果页链接还原成可直接抓取的真实 URL
+   * 搜索引擎常用跳转链接（Bing 的 /ck/a?u=a1<base64>、搜狗的 /link?url=...），
+   * 直接抓跳转链接会拿到空白中转页，必须先还原
+   */
+  function normalizeResultUrl(rawHref, anchor) {
+    if (!rawHref) return ''
+
+    let absolute = ''
+    try {
+      absolute = new URL(rawHref, window.location.href).href
+    } catch (error) {
+      void error
+      return ''
+    }
+    if (!/^https?:/.test(absolute)) return ''
+
+    let parsed
+    try {
+      parsed = new URL(absolute)
+    } catch (error) {
+      void error
+      return ''
+    }
+
+    // Bing 跳转链接：u 参数为 "a1" + base64url(真实地址)
+    if (parsed.hostname.includes('bing.com') && parsed.pathname.startsWith('/ck/')) {
+      const decoded = decodeBingRedirect(parsed.searchParams.get('u'))
+      if (decoded) return decoded
+    }
+
+    // 搜狗跳转链接：无法在此还原真实地址，回退到结果条上的 data-url / 展示域名
+    if (parsed.hostname.includes('sogou.com') && parsed.pathname.startsWith('/link')) {
+      const fallback = findResultFallbackUrl(anchor)
+      return fallback || ''
+    }
+
+    // 过滤搜索引擎自身的站内链接（登录/设置/相关搜索等）
+    if (parsed.hostname === window.location.hostname) return ''
+
+    return absolute
+  }
+
+  function decodeBingRedirect(uParam) {
+    if (!uParam || !uParam.startsWith('a1')) return ''
+    try {
+      const base64 = uParam.slice(2).replace(/-/g, '+').replace(/_/g, '/')
+      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+      const decoded = atob(padded)
+      return /^https?:\/\//.test(decoded) ? decoded : ''
+    } catch (error) {
+      void error
+      return ''
+    }
+  }
+
+  /**
+   * 从结果条目上找可用的真实地址：优先 data-url 属性，其次展示出来的域名文本
+   */
+  function findResultFallbackUrl(anchor) {
+    if (!anchor) return ''
+    let node = anchor
+    for (let depth = 0; node && depth < 5; depth += 1) {
+      const dataUrl = node.getAttribute?.('data-url')
+      if (dataUrl && /^https?:\/\//.test(dataUrl)) return dataUrl
+      node = node.parentElement
+    }
+
+    const container = anchor.closest('.vrwrap') || anchor.parentElement
+    const citeText = container?.querySelector('cite, .citeurl, .fz-mid')?.innerText?.trim()
+    if (citeText) {
+      const domain = citeText.split(/[\s>]/)[0]
+      if (/^[\w.-]+\.[a-z]{2,}/i.test(domain)) {
+        return domain.startsWith('http') ? domain : `https://${domain}`
+      }
+    }
+    return ''
   }
 
   /**

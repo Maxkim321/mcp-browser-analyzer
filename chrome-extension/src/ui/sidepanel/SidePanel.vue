@@ -348,6 +348,22 @@ const sendToolResponse = (type, requestId, payload = {}, message = '') => {
   )
 }
 
+// 查找当前未收尾的流式气泡（从尾部回溯，跳过进度等非流式消息）
+// 深度研究会在报告流式输出后再推进度消息，只看最后一条会漏判
+const findStreamingMessage = () => {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    if (messages.value[i].streaming) return messages.value[i]
+  }
+  return null
+}
+
+// background 侧失败归因：service worker 未加载新代码 / 分支未命中时，
+// sendMessage 会静默 resolve 为 undefined（而非 reject），只报"操作失败"会掩盖真因
+const describeBackgroundFailure = (response, toolType) => {
+  if (response && response.error) return response.error
+  return `插件后台未响应 ${toolType}（可能运行的是旧版 service worker）：请到 chrome://extensions 点击扩展的「重新加载」，并查看 service worker 控制台是否报错`
+}
+
 // ===== F1 轻量 pageContext：{url, title, selection} 随 user_prompt 附带 =====
 // selection 经 background→content-script 获取，带 800ms 超时兜底；任何失败都不阻塞主流程
 const getPageContext = async () => {
@@ -813,8 +829,8 @@ const connectWebSocket = () => {
             // 注意：必须从 messages.value 取元素（reactive proxy）再修改，
             // 不能持有外部普通对象引用直接改（不触发 Vue 响应式更新）
             thinking.value = false
-            const lastMsg = messages.value[messages.value.length - 1]
-            if (lastMsg && lastMsg.streaming) {
+            const lastMsg = findStreamingMessage()
+            if (lastMsg) {
               lastMsg.content += data.content
             } else {
               messages.value.push({
@@ -831,9 +847,12 @@ const connectWebSocket = () => {
           case 'agent_response': {
             thinking.value = false
             agentStep.value = null
-            const lastStreamingMsg = messages.value[messages.value.length - 1]
+            // 回溯查找流式气泡：不能只看最后一条。深度研究会在报告流式结束后
+            // 再推一条 workflow_progress（"研究报告生成完毕"），若只看最后一条会误判为
+            // "没有流式内容"而重新 push 一份完整报告，导致同一份报告显示两遍
+            const lastStreamingMsg = findStreamingMessage()
             let finalContent = ''
-            if (lastStreamingMsg && lastStreamingMsg.streaming) {
+            if (lastStreamingMsg) {
               // 流式已开始：用最终完整内容覆盖增量，防止分片丢失导致内容不全
               lastStreamingMsg.content = data.success
                 ? data.content
@@ -893,13 +912,19 @@ const connectWebSocket = () => {
           case 'workflow_progress': {
             thinking.value = false
             const lastMsg = messages.value[messages.value.length - 1]
-            if (lastMsg && lastMsg.type === 'progress') {
+            // 失败类进度必须单独留痕：否则被下一条进度覆盖后，
+            // 用户只看到"报告没有来源"，看不到到底哪一步失败、为什么失败
+            const isFailure = /失败|错误|不足|跳过|超时|未响应/.test(data.message || '')
+            // lastMsg 本身是失败进度时同样不可覆盖，否则每个主题只剩最后一条失败，
+            // 前面那条真正的原因（如"插件后台未响应"）会被"搜索：xxx"顶掉
+            if (!isFailure && lastMsg && lastMsg.type === 'progress' && !lastMsg.sticky) {
               lastMsg.content = data.message
             } else {
               messages.value.push({
                 type: 'progress',
                 sender: 'ai',
                 content: data.message,
+                sticky: isFailure,
                 timestamp: Date.now(),
               })
             }
@@ -934,7 +959,7 @@ const connectWebSocket = () => {
                 maxChars: data.maxChars,
               })
               .then((response) => {
-                if (response.success && response.payload) {
+                if (response?.success && response.payload) {
                   sendToolResponse(
                     'fetch_url_result',
                     data.requestId,
@@ -942,7 +967,7 @@ const connectWebSocket = () => {
                     'Fetch url completed'
                   )
                 } else {
-                  const err = response?.error || 'Failed to fetch url'
+                  const err = describeBackgroundFailure(response, 'fetch_url')
                   sendToolResponse('fetch_url_result', data.requestId, { error: err }, err)
                 }
               })
@@ -950,6 +975,39 @@ const connectWebSocket = () => {
                 console.error('Error fetching url:', error)
                 sendToolResponse(
                   'fetch_url_result',
+                  data.requestId,
+                  { error: error.message },
+                  error.message
+                )
+              })
+            break
+
+          // M1-F8 深度研究：浏览器内搜索，返回真实结果链接
+          case 'web_search':
+            chrome.runtime
+              .sendMessage({
+                type: 'web_search',
+                requestId: data.requestId,
+                query: data.query,
+                maxResults: data.maxResults,
+              })
+              .then((response) => {
+                if (response?.success && response.payload) {
+                  sendToolResponse(
+                    'web_search_result',
+                    data.requestId,
+                    response.payload,
+                    'Web search completed'
+                  )
+                } else {
+                  const err = describeBackgroundFailure(response, 'web_search')
+                  sendToolResponse('web_search_result', data.requestId, { error: err }, err)
+                }
+              })
+              .catch((error) => {
+                console.error('Error searching web:', error)
+                sendToolResponse(
+                  'web_search_result',
                   data.requestId,
                   { error: error.message },
                   error.message
