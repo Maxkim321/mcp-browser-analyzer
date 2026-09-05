@@ -89,7 +89,7 @@
     </div>
 
     <!-- 消息列表 -->
-    <main class="chat-messages">
+    <main ref="messagesRef" class="chat-messages" @scroll="onMessagesScroll" @click="onMessagesClick">
       <!-- 欢迎消息 -->
       <div v-if="messages.length === 0" class="welcome-message">
         <div class="welcome-icon">✨</div>
@@ -230,6 +230,23 @@
 
     <!-- 输入区域 -->
     <footer class="chat-input-area">
+      <!-- 未贴底时显示：一键回到最新消息 -->
+      <button v-if="!autoFollow" class="scroll-bottom-btn" title="回到最新" @click="scrollToBottom">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <polyline points="19 12 12 19 5 12" />
+        </svg>
+      </button>
+
       <!-- 快捷动作工具栏 -->
       <div class="quick-actions">
         <button
@@ -261,18 +278,21 @@
         </button>
       </div>
 
-      <!-- 输入框 -->
+      <!-- 输入框：多行自适应，Enter 发送 / Shift+Enter 换行 -->
       <div class="input-row">
-        <input
+        <textarea
           ref="inputRef"
           v-model="inputText"
-          type="text"
+          rows="1"
           class="input-field"
           :placeholder="
-            pendingSelection ? '基于选中内容提问，如：let 和 var 的区别' : '输入您的问题或指令...'
+            pendingSelection
+              ? '基于选中内容提问，如：let 和 var 的区别'
+              : '输入您的问题或指令...（Shift + Enter 换行）'
           "
-          @keydown.enter="handleSendMessage"
-        />
+          @input="autoResizeInput"
+          @keydown.enter.exact.prevent="handleSendMessage"
+        ></textarea>
         <button
           class="send-button"
           @click="handleSendMessage"
@@ -333,6 +353,78 @@ let saveTimer = null
 
 // dph-A Turn/Step 可观测：当前 Step 事件 {step, iteration, phase, status, tool?}
 const agentStep = ref(null)
+
+// ===== 滚动跟随：贴底时自动跟随流式输出，用户上滑后交还控制权（仿豆包） =====
+const messagesRef = ref(null)
+const autoFollow = ref(true)
+const BOTTOM_THRESHOLD = 40
+// 自动滚动本身会触发 scroll 事件，用标记避免被误判成"用户上滑"
+let autoScrolling = false
+
+const isNearBottom = () => {
+  const el = messagesRef.value
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_THRESHOLD
+}
+
+const scrollToBottom = (behavior = 'smooth') => {
+  const el = messagesRef.value
+  if (!el) return
+  autoScrolling = true
+  el.scrollTo({ top: el.scrollHeight, behavior })
+  autoFollow.value = true
+  setTimeout(() => {
+    autoScrolling = false
+  }, 200)
+}
+
+const onMessagesScroll = () => {
+  if (autoScrolling) return
+  autoFollow.value = isNearBottom()
+}
+
+// 代码块复制：事件委托，从按钮所在 .code-block 里取 pre 的原文
+const onMessagesClick = async (event) => {
+  const btn = event.target.closest?.('.code-copy-btn')
+  if (!btn) return
+  const code = btn.closest('.code-block')?.querySelector('pre')?.textContent || ''
+  try {
+    await navigator.clipboard.writeText(code)
+    btn.textContent = '已复制'
+    setTimeout(() => {
+      btn.textContent = '复制'
+    }, 1500)
+  } catch (error) {
+    console.warn('Copy code failed:', error)
+  }
+}
+
+// 输入框自适应高度（最多 6 行左右）
+const INPUT_MAX_HEIGHT = 140
+const autoResizeInput = () => {
+  const el = inputRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, INPUT_MAX_HEIGHT)}px`
+}
+
+// 发送后重置高度
+const resetInputHeight = () => {
+  nextTick(() => {
+    const el = inputRef.value
+    if (el) el.style.height = 'auto'
+  })
+}
+
+// 消息内容/思考状态变化时，只在跟随模式下滚到底
+watch(
+  [messages, thinking, agentStep],
+  () => {
+    if (!autoFollow.value) return
+    nextTick(() => scrollToBottom('auto'))
+  },
+  { deep: true }
+)
 
 const sendToolResponse = (type, requestId, payload = {}, message = '') => {
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
@@ -551,6 +643,7 @@ const switchSession = async (id) => {
   messages.value = (await loadSessionMessages(id)).filter((m) => !m.streaming)
   pendingSelection.value = ''
   showHistoryList.value = false
+  autoFollow.value = true
   await chrome.storage.local.set({ ba_current_session: id })
   // 服务端内存 Agent 还挂着旧会话：先清空再重放新会话历史
   if (websocket && websocket.readyState === WebSocket.OPEN) {
@@ -1254,6 +1347,7 @@ const handleSendMessage = async () => {
   persistSession()
 
   inputText.value = ''
+  resetInputHeight()
   thinking.value = true
 
   // 发送消息到服务端（附带 F1 轻量 pageContext）
@@ -1303,6 +1397,7 @@ const handleResearch = async () => {
   persistSession()
 
   inputText.value = ''
+  resetInputHeight()
   thinking.value = true
 
   const ok = await sendPrompt(text, 'research')
@@ -1440,6 +1535,7 @@ const onRuntimeMessage = (request) => {
 onMounted(async () => {
   // F4：先恢复最近会话（UI + 后续 WS onopen 时重放给服务端）
   await restoreCurrentSession()
+  nextTick(() => scrollToBottom('auto'))
   connectWebSocket()
   chrome.runtime.onMessage.addListener(onRuntimeMessage)
   // 兜底：sidepanel 刚打开时可能错过广播（监听器未就绪），从 storage.session 补取
@@ -1797,7 +1893,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  scroll-behavior: smooth;
+  overscroll-behavior: contain;
 }
 
 /* ===== 欢迎消息 ===== */
@@ -2027,14 +2123,54 @@ onUnmounted(() => {
 }
 
 .markdown-content :deep(pre) {
-  margin: 8px 0;
+  margin: 0;
   padding: 10px 12px;
   background: #0f172a;
   color: #e2e8f0;
-  border-radius: 8px;
+  border-radius: 0 0 8px 8px;
   overflow-x: auto;
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* 代码块：顶部语言标签 + 复制按钮 */
+.markdown-content :deep(.code-block) {
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.markdown-content :deep(.code-block-bar) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: #1e293b;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.markdown-content :deep(.code-lang) {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  text-transform: lowercase;
+}
+
+.markdown-content :deep(.code-copy-btn) {
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 5px;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.markdown-content :deep(.code-copy-btn:hover) {
+  background: rgba(148, 163, 184, 0.18);
+  color: #ffffff;
 }
 
 .markdown-content :deep(pre code) {
@@ -2356,6 +2492,7 @@ onUnmounted(() => {
 
 /* ===== 输入区域 ===== */
 .chat-input-area {
+  position: relative;
   flex-shrink: 0;
   padding: 10px 12px 12px;
   background: rgba(255, 255, 255, 0.85);
@@ -2365,6 +2502,34 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* 回到最新：悬浮在输入区上方 */
+.scroll-bottom-btn {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+  z-index: 20;
+}
+
+.scroll-bottom-btn:hover {
+  background: #eef2ff;
+  color: #4338ca;
 }
 
 .quick-actions {
@@ -2449,7 +2614,7 @@ onUnmounted(() => {
 
 .input-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   width: 100%;
 }
@@ -2457,13 +2622,19 @@ onUnmounted(() => {
 .input-field {
   flex: 1;
   min-width: 0;
-  padding: 9px 14px;
+  min-height: 36px;
+  max-height: 140px;
+  padding: 8px 14px;
   border: 1px solid #e2e8f0;
-  border-radius: 20px;
+  border-radius: 18px;
   font-size: 13px;
+  line-height: 1.5;
+  font-family: inherit;
   background: #ffffff;
   color: #0f172a;
   outline: none;
+  resize: none;
+  overflow-y: auto;
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
