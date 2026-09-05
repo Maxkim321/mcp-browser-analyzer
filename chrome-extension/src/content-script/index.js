@@ -501,8 +501,11 @@ import { Readability } from '@mozilla/readability'
       const btn = document.createElement('button')
       btn.className = 'selection-btn'
       btn.textContent = label
+      // 阻止按钮抢焦点/清空页面选区，否则 click 时选区已丢失
+      btn.addEventListener('mousedown', (event) => event.preventDefault())
       btn.addEventListener('click', () => {
-        const selectedText = getSelectionText()
+        // 用工具条弹出时缓存的文本，不再依赖点击时刻的实时选区
+        const selectedText = text
         hideSelectionBar()
         if (!selectedText) return
         // isolated world 下 chrome.* 完整可用，直接发给 background（无需 postMessage 桥）
