@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid')
 const { handleToolCall } = require('../tools/handler.js')
 const {
   RESEARCH_PLAN_PROMPT,
+  RESEARCH_QUERY_PROMPT,
   RESEARCH_TOPIC_PROMPT,
   RESEARCH_REPORT_PROMPT,
 } = require('../config/prompts.js')
@@ -96,17 +97,32 @@ class ResearchWorkflow {
     const subQuestions = Array.isArray(parsed?.subQuestions) ? parsed.subQuestions : []
     if (subQuestions.length === 0) {
       // plan 失败兜底：无法拆解时按原问题单主题继续，不让整个研究挂掉
-      state.plan = [{ question: state.question, urls: [], points: [], sufficient: false, attempts: 0 }]
-    } else {
-      state.plan = subQuestions
-        .slice(0, this.maxTopics)
-        .map((t) => ({
-          question: String(t.question || '').slice(0, 200),
-          urls: Array.isArray(t.urls) ? t.urls.map(String).slice(0, this.maxPagesPerTopic) : [],
+      state.plan = [
+        {
+          question: state.question,
+          queries: [state.question],
+          urls: [],
           points: [],
           sufficient: false,
           attempts: 0,
-        }))
+        },
+      ]
+    } else {
+      state.plan = subQuestions.slice(0, this.maxTopics).map((t) => {
+        const question = String(t.question || '').slice(0, 200)
+        // 只接受检索词：URL 一律由 web_search 得到，避免 LLM 凭记忆编造不存在的链接
+        const queries = Array.isArray(t.queries)
+          ? t.queries.map(String).filter(Boolean).slice(0, 2)
+          : []
+        return {
+          question,
+          queries: queries.length > 0 ? queries : [question],
+          urls: [],
+          points: [],
+          sufficient: false,
+          attempts: 0,
+        }
+      })
     }
     state.currentTopic = 0
     state.step = 'research'
@@ -133,18 +149,36 @@ class ResearchWorkflow {
     if (topic.sufficient) {
       this.emit(state, onProgress, `主题 ${topicLabel}：信息已足够`)
       this.advanceTopic(state)
+      await this.askContinue(state, { onProgress, onAsk })
       return
     }
 
     // 重试次数超限 → 条件边兜底：带着已有信息进下一主题，不阻塞整个研究
     if (topic.attempts >= this.maxAttempts) {
-      this.emit(state, onProgress, `主题 ${topicLabel}：多次尝试后信息仍不足（不阻塞，继续后续主题）`)
+      this.emit(
+        state,
+        onProgress,
+        `主题 ${topicLabel}：多次尝试后信息仍不足（不阻塞，继续后续主题）`
+      )
       this.advanceTopic(state)
+      await this.askContinue(state, { onProgress, onAsk })
       return
     }
 
     topic.attempts++
     this.emit(state, onProgress, `正在调研主题 ${topicLabel}（第 ${topic.attempts} 轮）`)
+
+    // 先搜后抓：本轮没有待抓 URL 时，用检索词去搜索引擎拿真实链接
+    if (this.pendingUrls(topic).length === 0) {
+      await this.searchTopicUrls(state, topic, connectionId, onProgress)
+    }
+
+    if (this.pendingUrls(topic).length === 0) {
+      this.emit(state, onProgress, `主题 ${topicLabel}：搜索未获得可用链接（跳过本主题）`)
+      this.advanceTopic(state)
+      await this.askContinue(state, { onProgress, onAsk })
+      return
+    }
 
     const sources = await this.fetchAndGradeTopic(state, connectionId, onProgress)
     state.sources = state.sources.concat(sources)
@@ -154,38 +188,90 @@ class ResearchWorkflow {
       this.emit(state, onProgress, `主题 ${topicLabel}：调研完成（${topic.points.length} 条要点）`)
       this.advanceTopic(state)
     } else if (topic.attempts < this.maxAttempts) {
-      // 信息不足且还有余量：让 LLM 基于缺口补充候选 URL（对应"重写查询再搜"）
+      // 信息不足且还有余量：让 LLM 基于缺口重写检索词，下一轮重新搜索（"重写查询再搜"）
       const gap = topic.gap || '信息不足'
       this.emit(state, onProgress, `主题 ${topicLabel}：信息不足（${gap}），尝试补充来源...`)
-      await this.suggestMoreUrls(topic)
+      await this.suggestMoreQueries(topic)
+      // 同主题重试不询问用户：否则同一个"已完成 N/M"会连问多次，用户以为卡死
+      return
     } else {
       this.emit(state, onProgress, `主题 ${topicLabel}：达到重试上限，使用已有信息`)
       this.advanceTopic(state)
     }
 
-    // HITL：每完成一个主题暂停，询问用户是否继续（对应 LangGraph human-in-the-loop interrupt）
-    if (this.hitlEnabled && onAsk && state.step === 'research' && state.currentTopic < state.plan.length) {
-      const next = state.plan[state.currentTopic]
-      const answer = await this.askUser(
-        onAsk,
-        `已完成 ${state.currentTopic}/${state.plan.length} 个主题调研。是否继续研究下一个主题「${next.question}」？`,
-        ['继续研究', '停止研究']
-      )
-      if (answer.cancel) {
-        this.emit(state, onProgress, '用户选择停止，基于已收集资料生成报告')
-        state.step = 'compare'
-        return
-      }
-      if (answer.text && !['继续研究', '继续'].includes(answer.text.trim())) {
-        // 用户自定义方向：插入为下一个待调研主题（HITL 真正的"调方向"价值）
-        state.plan.splice(state.currentTopic, 0, {
-          question: answer.text.trim().slice(0, 200),
-          urls: [],
-          points: [],
-          sufficient: false,
-          attempts: 0,
-        })
-        this.emit(state, onProgress, `已加入新调研方向：「${answer.text.trim()}」`)
+    await this.askContinue(state, { onProgress, onAsk })
+  }
+
+  /**
+   * HITL：仅在主题推进后询问一次（对应 LangGraph human-in-the-loop interrupt）
+   * 用户可继续、停止，或输入自定义方向插入为下一个待调研主题
+   */
+  async askContinue(state, { onProgress, onAsk }) {
+    if (!this.hitlEnabled || !onAsk) return
+    if (state.step !== 'research' || state.currentTopic >= state.plan.length) return
+
+    const next = state.plan[state.currentTopic]
+    const answer = await this.askUser(
+      onAsk,
+      `已完成 ${state.currentTopic}/${state.plan.length} 个主题调研。是否继续研究下一个主题「${next.question}」？`,
+      ['继续研究', '停止研究']
+    )
+    if (answer.cancel) {
+      this.emit(state, onProgress, '用户选择停止，基于已收集资料生成报告')
+      state.step = 'compare'
+      return
+    }
+    if (answer.text && !['继续研究', '继续'].includes(answer.text.trim())) {
+      // 用户自定义方向：插入为下一个待调研主题（HITL 真正的"调方向"价值）
+      const question = answer.text.trim().slice(0, 200)
+      state.plan.splice(state.currentTopic, 0, {
+        question,
+        queries: [question],
+        urls: [],
+        points: [],
+        sufficient: false,
+        attempts: 0,
+      })
+      this.emit(state, onProgress, `已加入新调研方向：「${question}」`)
+    }
+  }
+
+  /** 该主题还没抓过的 URL（去重：同一 URL 不重复抓，省时间也省 token） */
+  pendingUrls(topic) {
+    const fetched = new Set(topic.fetchedUrls || [])
+    return (topic.urls || []).filter((u) => !fetched.has(u))
+  }
+
+  /**
+   * 用检索词搜索真实链接（浏览器内搜索：插件后台打开搜索引擎结果页并提取链接）
+   * 这是"报告零来源"的根因修复：此前 URL 全靠 LLM 凭记忆写，几乎必然 404
+   */
+  async searchTopicUrls(state, topic, connectionId, onProgress) {
+    const queries = (topic.queries || []).slice(0, 2)
+    for (const query of queries) {
+      this.emit(state, onProgress, `  搜索：${query}`)
+      try {
+        const result = await this.toolCall(
+          'web_search',
+          { query, maxResults: this.maxPagesPerTopic, connectionId },
+          { connectionId }
+        )
+        const payload = parseJSON(result.content?.[0]?.text || '')
+        const results = Array.isArray(payload?.results) ? payload.results : []
+        const urls = results
+          .map((r) => String(r?.url || ''))
+          .filter((u) => /^https?:\/\//.test(u))
+          .filter((u) => !topic.urls.includes(u))
+        if (urls.length === 0) {
+          this.recordFailure(state, `search:${query}`, '搜索未返回可用链接')
+          this.emit(state, onProgress, `  搜索未返回可用链接：${query}`)
+          continue
+        }
+        topic.urls = topic.urls.concat(urls).slice(0, this.maxPagesPerTopic * 2)
+        this.emit(state, onProgress, `  搜索到 ${urls.length} 个来源`)
+      } catch (error) {
+        this.recordFailure(state, `search:${query}`, error.message)
+        this.emit(state, onProgress, `  搜索失败：${query}（${error.message}）`)
       }
     }
   }
@@ -198,23 +284,28 @@ class ResearchWorkflow {
   async fetchAndGradeTopic(state, connectionId, onProgress) {
     const topic = state.plan[state.currentTopic]
     const newSources = []
-    for (const url of topic.urls) {
+    topic.fetchedUrls = topic.fetchedUrls || []
+    // 只抓本轮新增的 URL，且限制单轮页数上限（硬约束，不靠 LLM 自觉）
+    const targets = this.pendingUrls(topic).slice(0, this.maxPagesPerTopic)
+    for (const url of targets) {
       this.emit(state, onProgress, `  读取页面：${url}`)
+      topic.fetchedUrls.push(url)
       let page = null
+      let fetchError = null
       try {
         // 复用工具封装：fetch_url 由插件在后台 tab 读取正文，不打扰用户当前页面
-        const result = await this.toolCall(
-          'fetch_url',
-          { url, connectionId },
-          { connectionId }
-        )
+        const result = await this.toolCall('fetch_url', { url, connectionId }, { connectionId })
         page = parseJSON(result.content?.[0]?.text || '')
       } catch (error) {
+        fetchError = error.message
         console.warn(`[Workflow] fetch_url failed for ${url}:`, error.message)
       }
 
       if (!page || !page.content) {
-        this.emit(state, onProgress, `  页面读取失败：${url}（跳过）`)
+        const reason = fetchError || '页面无可提取正文'
+        // 失败必须显性记录进 State：报告里逐条披露，用户才能看出"没来源"是抓取失败而非无信息
+        this.recordFailure(state, url, reason)
+        this.emit(state, onProgress, `  页面读取失败：${url}（${reason}）`)
         continue
       }
 
@@ -244,7 +335,10 @@ class ResearchWorkflow {
 
       if (grade) {
         const points = Array.isArray(grade.points)
-          ? grade.points.map(String).filter(Boolean).map((p) => p.slice(0, 120))
+          ? grade.points
+              .map(String)
+              .filter(Boolean)
+              .map((p) => p.slice(0, 120))
           : []
         topic.points = topic.points.concat(points)
         topic.sufficient = grade.sufficient === true
@@ -261,28 +355,46 @@ class ResearchWorkflow {
   }
 
   /**
-   * 信息不足时补充候选 URL（"重写查询再搜"的轻量版：LLM 基于缺口重新生成 URL）
+   * 信息不足时重写检索词（"重写查询再搜"）：下一轮用新检索词重新走 web_search
    */
-  async suggestMoreUrls(topic) {
+  async suggestMoreQueries(topic) {
     try {
       const response = await this.llm.chat(
         [
           {
             role: 'user',
-            content: `研究子问题：${topic.question}\n\n目前信息不足：${topic.gap}\n\n请给出 1-2 个能补充该主题信息的权威 URL，严格输出 JSON 数组：["https://..."]`,
+            content:
+              `研究子问题：${topic.question}\n\n` +
+              `已尝试过的检索词：${(topic.queries || []).join('、') || '（无）'}\n\n` +
+              `目前信息缺口：${topic.gap || '信息不足'}`,
           },
         ],
         [],
-        RESEARCH_TOPIC_PROMPT
+        RESEARCH_QUERY_PROMPT
       )
-      const urls = parseJSON(response.content)
-      if (Array.isArray(urls) && urls.length > 0) {
-        const fresh = urls.map(String).filter((u) => !topic.urls.includes(u)).slice(0, this.maxPagesPerTopic)
-        topic.urls = topic.urls.concat(fresh)
+      const queries = parseJSON(response.content)
+      if (Array.isArray(queries) && queries.length > 0) {
+        const fresh = queries
+          .map(String)
+          .map((q) => q.trim())
+          .filter(Boolean)
+          .filter((q) => !/^https?:\/\//.test(q)) // 只要检索词，URL 一律丢弃
+          .filter((q) => !(topic.queries || []).includes(q))
+          .slice(0, 2)
+        if (fresh.length > 0) {
+          topic.queries = fresh
+        }
       }
     } catch (error) {
-      console.warn('[Workflow] suggestMoreUrls failed:', error.message)
+      console.warn('[Workflow] suggestMoreQueries failed:', error.message)
     }
+  }
+
+  /** 记录抓取/搜索失败（去重），供报告如实披露 */
+  recordFailure(state, target, reason) {
+    state.failures = state.failures || []
+    if (state.failures.some((f) => f.target === target)) return
+    state.failures.push({ target: String(target).slice(0, 300), reason: String(reason).slice(0, 200) })
   }
 
   // ===== 节点：compare（交叉对比） =====
@@ -315,11 +427,17 @@ class ResearchWorkflow {
     const sourcesText = state.sources
       .map((s) => `- ${s.title}（${s.url}）${s.truncated ? ' [正文已截断]' : ''}`)
       .join('\n')
+    const failuresText = (state.failures || [])
+      .map((f) => `- ${f.target}：${f.reason}`)
+      .join('\n')
 
     const messages = [
       {
         role: 'user',
-        content: `原始研究问题：${state.question}\n\n${topicsText}\n\n来源列表：\n${sourcesText || '- 无来源'}`,
+        content:
+          `原始研究问题：${state.question}\n\n${topicsText}\n\n` +
+          `来源列表：\n${sourcesText || '- 无来源'}\n\n` +
+          `抓取失败记录：\n${failuresText || '- 无'}`,
       },
     ]
 
@@ -346,7 +464,10 @@ class ResearchWorkflow {
       const answer = await Promise.race([
         onAsk(question, options),
         new Promise((resolve) => {
-          timer = setTimeout(() => resolve({ cancel: false, text: '继续研究', timeout: true }), this.hitlTimeoutMs)
+          timer = setTimeout(
+            () => resolve({ cancel: false, text: '继续研究', timeout: true }),
+            this.hitlTimeoutMs
+          )
         }),
       ])
       clearTimeout(timer)
@@ -391,6 +512,7 @@ class ResearchWorkflow {
       plan: [],
       currentTopic: 0,
       sources: [],
+      failures: [], // 搜索/抓取失败记录，报告中如实披露
       comparePoints: [],
       report: null,
       step: 'plan', // 状态机当前所在节点

@@ -144,5 +144,8 @@ chrome-extension/extension
 # 深度研究 checkpoint（运行时产物，崩溃恢复用，不提交）
 agent-server/checkpoint/
 
+# 会话事件日志（运行时产物，含用户对话内容，不提交）
+agent-server/data/
+
 # 本地规划/面试文档（不公开）
 docs/

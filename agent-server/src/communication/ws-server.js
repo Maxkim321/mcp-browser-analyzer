@@ -99,6 +99,52 @@ class ConnectionManager {
 
 const manager = new ConnectionManager()
 
+/**
+ * 校验并清洗插件下发的 LLM 配置
+ * 插件端配置页可覆盖服务端 .env，但不能信任前端数据：
+ *  - 只接受白名单字段，避免把 stream / messages 之类的字段混进 LLMClient
+ *  - baseURL 必须是 http(s)，防止 file:// 之类的协议
+ *  - 空字符串视为「不覆盖」，让服务端保留自己的默认值
+ * @param {object} raw - 插件传来的 llmConfig
+ * @returns {object} 清洗后的配置，无有效字段时返回空对象（即完全用服务端默认）
+ */
+function sanitizeLLMConfig(raw) {
+  if (!raw || typeof raw !== 'object') return {}
+  const clean = {}
+
+  const baseURL = String(raw.baseURL || '')
+    .trim()
+    .replace(/\/+$/, '')
+  if (baseURL && /^https?:\/\//i.test(baseURL)) clean.baseURL = baseURL
+
+  const apiKey = String(raw.apiKey || '').trim()
+  if (apiKey) clean.apiKey = apiKey
+
+  const model = String(raw.model || '').trim()
+  if (model) clean.model = model
+
+  // temperature 允许 0，必须用 isFinite 判断而非真值判断
+  const temperature = Number(raw.temperature)
+  if (Number.isFinite(temperature) && temperature >= 0 && temperature <= 2) {
+    clean.temperature = temperature
+  }
+
+  return clean
+}
+
+/**
+ * 日志脱敏：apiKey 绝不能明文进日志（终端记录/日志文件都可能被他人看到）
+ * @param {object} msg - 原始消息
+ * @returns {object} 可安全打印的副本
+ */
+function redactForLog(msg) {
+  if (!msg?.llmConfig?.apiKey) return msg
+  return {
+    ...msg,
+    llmConfig: { ...msg.llmConfig, apiKey: '***redacted***' },
+  }
+}
+
 toolHandler.init({
   manager,
   send: (id, cmd) => manager.send(id, cmd),
@@ -127,7 +173,7 @@ wss.on('connection', (ws) => {
   ws.on('message', async (data) => {
     try {
       const msg = JSON.parse(data.toString())
-      console.log(`[Receive] From ${connectionId}:`, msg)
+      console.log(`[Receive] From ${connectionId}:`, redactForLog(msg))
       await handleMessage(connectionId, msg, agent)
     } catch (err) {
       console.error('[Error] Parse message:', err)
@@ -200,10 +246,13 @@ async function handleMessage(id, msg, agent) {
     case 'user_prompt':
       console.log('[Agent] Processing prompt:', msg.prompt)
       try {
+        // 插件配置页下发的模型配置：校验后覆盖服务端 .env 默认值（空字段仍用服务端默认）
+        const llmOverride = sanitizeLLMConfig(msg.llmConfig)
+        agent.llm.applyConfig(llmOverride)
         // M1-F8 深度研究：显式 action 或研究型提问 → 走 LangGraph 式状态机工作流
         const isResearch = msg.action === 'research' || isResearchPrompt(msg.prompt)
         if (isResearch) {
-          await runResearch(id, msg.prompt)
+          await runResearch(id, msg.prompt, llmOverride)
           break
         }
         if (activeWorkflows.has(id)) {
@@ -239,7 +288,10 @@ async function handleMessage(id, msg, agent) {
         const controller = new AbortController()
         connectionAborts.set(id, controller)
         // dph-B：记录本次用户提问事件（append-only）
-        if (sessionId) eventLog.appendEvent(sessionId, 'user', String(msg.prompt || '').trim(), { action: msg.action })
+        if (sessionId)
+          eventLog.appendEvent(sessionId, 'user', String(msg.prompt || '').trim(), {
+            action: msg.action,
+          })
         try {
           const result = await agent.process(msg.prompt, {
             connectionId: id,
@@ -336,7 +388,9 @@ async function handleMessage(id, msg, agent) {
  */
 function isResearchPrompt(prompt) {
   if (typeof prompt !== 'string' || prompt.trim().length < 8) return false
-  return /研究|调研|调查|对比|搞清楚|查明白|分析报告|研究报告|区别|差异|来龙去脉|原理|机制/.test(prompt)
+  return /研究|调研|调查|对比|搞清楚|查明白|分析报告|研究报告|区别|差异|来龙去脉|原理|机制/.test(
+    prompt
+  )
 }
 
 /**
@@ -345,8 +399,11 @@ function isResearchPrompt(prompt) {
  * - 推送 workflow_progress（进度）
  * - HITL：workflow_ask 推送 + 等待 workflow_answer
  * - 完成/失败后发 agent_response（报告即最终答复），并清理 checkpoint
+ * @param {number} id - 连接 ID
+ * @param {string} question - 研究问题
+ * @param {object} [llmOverride] - 插件配置页下发的模型配置（已校验）
  */
-async function runResearch(id, question) {
+async function runResearch(id, question, llmOverride = {}) {
   if (activeWorkflows.has(id)) {
     manager.send(id, {
       type: 'agent_response',
@@ -356,7 +413,8 @@ async function runResearch(id, question) {
     return
   }
 
-  const workflow = new ResearchWorkflow(new LLMClient(), {
+  // 工作流用独立的 LLMClient，同样要应用插件下发的配置，否则深度研究会走服务端默认模型
+  const workflow = new ResearchWorkflow(new LLMClient(llmOverride), {
     maxTopics: 3,
     maxPagesPerTopic: 3,
     maxAttempts: 2,

@@ -468,6 +468,49 @@ async function handleFetchUrl(args, traceId, context = {}) {
   })
 }
 
+/**
+ * 处理 web_search 工具（深度研究 M1-F8）
+ * 向插件发送"后台新开搜索结果页并提取结果链接"指令，等待响应
+ * 深度研究必须先搜到真实 URL 再抓正文，避免让 LLM 凭记忆编造不存在的链接
+ * @param {object} args - 工具参数
+ * @param {string} args.query - 搜索关键词
+ * @param {number} [args.maxResults] - 返回结果条数上限
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP响应格式
+ */
+async function handleWebSearch(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { query } = args
+  const { maxResults = 5 } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('Web search timeout'))
+    }, 45000)
+
+    pendingRequests.set(requestId, {
+      resolve,
+      reject,
+      timeout,
+      traceId,
+    })
+
+    traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'web_search', query, maxResults })
+    const sendSuccess = ws.send(connectionId, { type: 'web_search', requestId, query, maxResults })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
 const toolHandlers = {
   navigate_to: handleNavigateTo,
   reload_page: handleReloadPage,
@@ -476,6 +519,7 @@ const toolHandlers = {
   get_browser_performance: handleGetPerformance,
   get_page_content: handleGetPageContent,
   fetch_url: handleFetchUrl,
+  web_search: handleWebSearch,
   broadcast_message: handleBroadcastMessage,
   todo_write: handleTodoWrite,
 }
@@ -523,7 +567,17 @@ function handlePluginResponse(connectionId, msg) {
     if (pending) {
       clearTimeout(pending.timeout)
       pendingRequests.delete(msg.requestId)
-      
+
+      // 插件明确报错时必须 reject：否则失败会被伪装成"成功但没内容"，
+      // 上层（深度研究）无法区分"页面没正文"和"抓取压根失败"，最终报出无来源空报告
+      const pluginError = msg.payload?.error || (msg.success === false ? msg.error : null)
+      if (pluginError) {
+        traceManager.addEvent(pending.traceId, 'error', { message: String(pluginError) })
+        traceManager.complete(pending.traceId, 'error')
+        pending.reject(new Error(String(pluginError)))
+        return
+      }
+
       // 根据消息类型添加不同的追踪事件
       let eventType = 'receive_response'
       let responseText = 'Operation completed successfully'

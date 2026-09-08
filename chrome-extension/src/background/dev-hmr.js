@@ -1,3 +1,7 @@
+// dev service worker = 完整 background 逻辑 + HMR 自动重载
+// 必须复用 main.js：否则 dev 模式下 text_action / get_page_content 等处理器全部缺失
+import './main.js'
+
 const url = globalThis.__EXT_HMR__
 let es
 const connect = () => {
@@ -20,20 +24,3 @@ const connect = () => {
   }
 }
 connect()
-
-/*
- * 监听 action 点击事件，打开侧边栏
- */
-
-const c = globalThis.chrome
-if (c && c.action && c.sidePanel) {
-  c.action.onClicked.addListener(async (tab) => {
-    try {
-      if (tab && tab.windowId != null) {
-        await c.sidePanel.open({ windowId: tab.windowId })
-      }
-    } catch (e) {
-      console.error('sidePanel.open on action click error', e)
-    }
-  })
-}
