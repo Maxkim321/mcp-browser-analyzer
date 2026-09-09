@@ -47,17 +47,21 @@ class ResearchWorkflow {
   /**
    * 启动/恢复一次深度研究
    * @param {string} question - 研究问题
-   * @param {object} [opts] - { connectionId, onProgress, onAsk, onToken }
+   * @param {object} [opts] - { connectionId, onProgress, onAsk, onToken, signal }
    * @returns {Promise<{success:boolean, content:string, state:object}>}
    */
   async start(question, opts = {}) {
-    const { connectionId, onProgress, onAsk, onToken } = opts
+    const { connectionId, onProgress, onAsk, onToken, signal } = opts
+    // dph-A 可取消：保存 abort signal，贯穿整个工作流（LLM 调用 + 工具调用）
+    this.signal = signal
     const state = await this.loadOrCreate(question)
 
     this.emit(state, onProgress, `开始深度研究：「${question}」`)
 
     // 状态机主循环：step 字段驱动（等价于 LangGraph 图执行到终止节点的过程）
     while (true) {
+      // dph-A 可取消：节点边界检查，用户点停止立即中止整个工作流
+      if (this.isAborted()) throw this.abortError()
       switch (state.step) {
         case 'plan':
           await this.planNode(state, onProgress)
@@ -91,7 +95,8 @@ class ResearchWorkflow {
     const response = await this.llm.chat(
       [{ role: 'user', content: `研究问题：${state.question}` }],
       [],
-      RESEARCH_PLAN_PROMPT
+      RESEARCH_PLAN_PROMPT,
+      this.signal
     )
     const parsed = parseJSON(response.content)
     const subQuestions = Array.isArray(parsed?.subQuestions) ? parsed.subQuestions : []
@@ -254,7 +259,7 @@ class ResearchWorkflow {
         const result = await this.toolCall(
           'web_search',
           { query, maxResults: this.maxPagesPerTopic, connectionId },
-          { connectionId }
+          { connectionId, signal: this.signal }
         )
         const payload = parseJSON(result.content?.[0]?.text || '')
         const results = Array.isArray(payload?.results) ? payload.results : []
@@ -270,6 +275,7 @@ class ResearchWorkflow {
         topic.urls = topic.urls.concat(urls).slice(0, this.maxPagesPerTopic * 2)
         this.emit(state, onProgress, `  搜索到 ${urls.length} 个来源`)
       } catch (error) {
+        if (this.isAborted()) throw this.abortError()
         this.recordFailure(state, `search:${query}`, error.message)
         this.emit(state, onProgress, `  搜索失败：${query}（${error.message}）`)
       }
@@ -294,9 +300,13 @@ class ResearchWorkflow {
       let fetchError = null
       try {
         // 复用工具封装：fetch_url 由插件在后台 tab 读取正文，不打扰用户当前页面
-        const result = await this.toolCall('fetch_url', { url, connectionId }, { connectionId })
+        const result = await this.toolCall('fetch_url', { url, connectionId }, {
+          connectionId,
+          signal: this.signal,
+        })
         page = parseJSON(result.content?.[0]?.text || '')
       } catch (error) {
+        if (this.isAborted()) throw this.abortError()
         fetchError = error.message
         console.warn(`[Workflow] fetch_url failed for ${url}:`, error.message)
       }
@@ -326,10 +336,12 @@ class ResearchWorkflow {
             },
           ],
           [],
-          RESEARCH_TOPIC_PROMPT
+          RESEARCH_TOPIC_PROMPT,
+          this.signal
         )
         grade = parseJSON(response.content)
       } catch (error) {
+        if (this.isAborted()) throw this.abortError()
         console.warn('[Workflow] grade failed:', error.message)
       }
 
@@ -370,7 +382,8 @@ class ResearchWorkflow {
           },
         ],
         [],
-        RESEARCH_QUERY_PROMPT
+        RESEARCH_QUERY_PROMPT,
+        this.signal
       )
       const queries = parseJSON(response.content)
       if (Array.isArray(queries) && queries.length > 0) {
@@ -386,6 +399,7 @@ class ResearchWorkflow {
         }
       }
     } catch (error) {
+      if (this.isAborted()) throw this.abortError()
       console.warn('[Workflow] suggestMoreQueries failed:', error.message)
     }
   }
@@ -442,13 +456,23 @@ class ResearchWorkflow {
     ]
 
     // 流式生成报告：研究报告可能较长，用打字机效果推送，最终 report 兜底
-    const response = await this.llm.chatStream(messages, [], RESEARCH_REPORT_PROMPT, onToken)
+    const response = await this.llm.chatStream(messages, [], RESEARCH_REPORT_PROMPT, onToken, this.signal)
     state.report = response.content || '（未能生成报告）'
     state.step = 'done'
     this.emit(state, onProgress, '研究报告生成完毕')
   }
 
   // ===== 基础设施 =====
+
+  // dph-A 可取消：判断是否已被用户中止
+  isAborted() {
+    return this.signal?.aborted === true
+  }
+
+  // dph-A 可取消：统一的中止错误（ws-server 据此回"已停止"而非系统错误）
+  abortError() {
+    return Object.assign(new Error('工作流已取消'), { code: 'ABORTED' })
+  }
 
   // 每完成一个主题推进游标（研究循环的条件边：全部完成退出）
   advanceTopic(state) {
@@ -460,20 +484,34 @@ class ResearchWorkflow {
   async askUser(onAsk, question, options) {
     if (!onAsk) return { cancel: false, text: '继续研究' }
     let timer
-    try {
-      const answer = await Promise.race([
-        onAsk(question, options),
+    const races = [
+      onAsk(question, options),
+      new Promise((resolve) => {
+        timer = setTimeout(
+          () => resolve({ cancel: false, text: '继续研究', timeout: true }),
+          this.hitlTimeoutMs
+        )
+      }),
+    ]
+    // dph-A 可取消：HITL 等待答复期间用户点停止 → 立即以 cancel 收尾，不等答复/超时
+    let onAbort
+    if (this.signal) {
+      races.push(
         new Promise((resolve) => {
-          timer = setTimeout(
-            () => resolve({ cancel: false, text: '继续研究', timeout: true }),
-            this.hitlTimeoutMs
-          )
-        }),
-      ])
+          if (this.signal.aborted) return resolve({ cancel: true, text: '' })
+          onAbort = () => resolve({ cancel: true, text: '' })
+          this.signal.addEventListener('abort', onAbort, { once: true })
+        })
+      )
+    }
+    try {
+      const answer = await Promise.race(races)
       clearTimeout(timer)
+      if (onAbort) this.signal.removeEventListener('abort', onAbort)
       return answer || { cancel: false, text: '继续研究' }
     } catch (error) {
       clearTimeout(timer)
+      if (onAbort) this.signal.removeEventListener('abort', onAbort)
       console.warn('[Workflow] HITL ask failed:', error.message)
       return { cancel: false, text: '继续研究' }
     }

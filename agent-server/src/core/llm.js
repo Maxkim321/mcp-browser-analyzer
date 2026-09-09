@@ -36,9 +36,10 @@ class LLMClient {
    * @param {Array} messages - 对话消息列表
    * @param {Array} tools - 可用的工具列表
    * @param {string} [systemPrompt] - 可选的系统提示词，覆盖默认值（用于总结/翻译等专用动作）
+   * @param {AbortSignal} [signal] - 取消信号（dph-A 可取消），abort 后立即中断并抛 AbortError
    * @returns {Promise<object>} 大模型响应
    */
-  async chat(messages, tools = [], systemPrompt) {
+  async chat(messages, tools = [], systemPrompt, signal) {
     console.log(`[LLM] Calling model: ${this.model}`)
 
     const body = this.buildBody(messages, tools, systemPrompt, false)
@@ -51,6 +52,7 @@ class LLMClient {
           Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(body),
+        signal,
       })
 
       if (!response.ok) {

@@ -61,7 +61,12 @@ class Agent {
     const maxIterations = options.maxIterations || this.config.maxIterations
     let iteration = 0
     // 工具上下文在整个 process 生命周期内共享，避免每轮迭代被重置
-    const toolContext = { connectionId: options.connectionId, todoWriteCount: 0 }
+    const toolContext = {
+      connectionId: options.connectionId,
+      todoWriteCount: 0,
+      // dph-A 可取消：工具等待插件响应期间也能被 abort（与深度研究同一套取消机制）
+      signal: options.signal,
+    }
     // dph-A Turn/Step 执行模型：step 计数器贯穿整个 Turn（一次用户请求 = 一个 Turn），
     // 每个 Step（LLM 推理 / 工具执行）都通过 onStep 下发事件，前端可观测；signal 支持取消
     let step = 0

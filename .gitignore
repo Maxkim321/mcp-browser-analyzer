@@ -141,6 +141,9 @@ vite.config.ts.timestamp-*
 # Chrome extension build output
 chrome-extension/extension
 
+# Chrome 预览产生的运行 profile 缓存（开发时临时生成，不提交）
+chrome-extension/.preview/
+
 # 深度研究 checkpoint（运行时产物，崩溃恢复用，不提交）
 agent-server/checkpoint/
 

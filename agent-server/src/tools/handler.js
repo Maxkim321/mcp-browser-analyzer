@@ -545,7 +545,39 @@ async function handleToolCall(name, args, context = {}) {
       throw new Error(`Unknown tool: ${name}`)
     }
 
-    const result = await handler(args, traceId, context)
+    // dph-A 可取消：等待插件响应期间若 signal abort，立即 reject 并清理 pending
+    const abortError = () => Object.assign(new Error('Tool cancelled'), { code: 'ABORTED' })
+    const signal = context.signal
+
+    let result
+    if (signal) {
+      if (signal.aborted) throw abortError()
+      result = await new Promise((resolve, reject) => {
+        const onAbort = () => {
+          // 清理本 trace 尚未完成的 pending request，避免残留 timeout 与后台任务
+          for (const [requestId, entry] of pendingRequests) {
+            if (entry.traceId === traceId) {
+              clearTimeout(entry.timeout)
+              pendingRequests.delete(requestId)
+            }
+          }
+          reject(abortError())
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+        handler(args, traceId, context).then(
+          (value) => {
+            signal.removeEventListener('abort', onAbort)
+            resolve(value)
+          },
+          (err) => {
+            signal.removeEventListener('abort', onAbort)
+            reject(err)
+          }
+        )
+      })
+    } else {
+      result = await handler(args, traceId, context)
+    }
     traceManager.complete(traceId, 'success')
     return result
   } catch (error) {

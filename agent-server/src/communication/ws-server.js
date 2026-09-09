@@ -421,6 +421,11 @@ async function runResearch(id, question, llmOverride = {}) {
   })
   activeWorkflows.set(id, workflow)
 
+  // dph-A 可取消：深度研究也注册 AbortController，cancel_request 才能中止整个工作流
+  // （此前这里没注册，导致点"停止"时 connectionAborts 取不到 controller，取消空转）
+  const controller = new AbortController()
+  connectionAborts.set(id, controller)
+
   const sendAsk = (askQuestion, options) =>
     new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -441,6 +446,7 @@ async function runResearch(id, question, llmOverride = {}) {
       onProgress: (progress) => manager.send(id, { type: 'workflow_progress', ...progress }),
       onAsk: sendAsk,
       onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
+      signal: controller.signal,
     })
     manager.send(id, {
       type: 'agent_response',
@@ -451,14 +457,25 @@ async function runResearch(id, question, llmOverride = {}) {
     // 研究结束：清理 checkpoint，避免重复恢复
     workflow.clearCheckpoint(result.state?.taskId)
   } catch (error) {
-    console.error('[Workflow] Error:', error)
-    manager.send(id, {
-      type: 'agent_response',
-      success: false,
-      content: '深度研究执行出错。',
-      error: error.message,
-    })
+    // dph-A 可取消：识别取消信号，回复"已停止"，不当作系统错误
+    if (error?.code === 'ABORTED' || error?.name === 'AbortError') {
+      manager.send(id, {
+        type: 'agent_response',
+        success: false,
+        content: '已停止本次回答。',
+        error: 'cancelled',
+      })
+    } else {
+      console.error('[Workflow] Error:', error)
+      manager.send(id, {
+        type: 'agent_response',
+        success: false,
+        content: '深度研究执行出错。',
+        error: error.message,
+      })
+    }
   } finally {
+    connectionAborts.delete(id)
     activeWorkflows.delete(id)
     const pendingAsk = pendingWorkflowAsks.get(id)
     if (pendingAsk) {

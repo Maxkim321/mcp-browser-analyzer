@@ -89,7 +89,12 @@
     </div>
 
     <!-- 消息列表 -->
-    <main ref="messagesRef" class="chat-messages" @scroll="onMessagesScroll" @click="onMessagesClick">
+    <main
+      ref="messagesRef"
+      class="chat-messages"
+      @scroll="onMessagesScroll"
+      @click="onMessagesClick"
+    >
       <!-- 欢迎消息 -->
       <div v-if="messages.length === 0" class="welcome-message">
         <div class="welcome-icon">✨</div>
@@ -139,6 +144,14 @@
               <span>复制</span>
             </button>
           </div>
+          <!-- Agent 执行轨迹：随该条回答一起持久化，刷新后仍可回看做过哪些步骤 -->
+          <AgentTrace v-if="msg.trace && msg.trace.length" :nodes="msg.trace" />
+          <!-- Agent 执行轨迹（当前流式回答，实时追踪） -->
+          <AgentTrace
+            v-if="msg.streaming && traceNodes.length"
+            :nodes="traceNodes"
+            :active="traceActive"
+          />
           <div
             class="message-bubble markdown-content"
             v-if="msg.type === 'text' && msg.sender === 'ai'"
@@ -206,24 +219,27 @@
         </div>
       </div>
 
-      <!-- 思考中动画（dph-A：显示 Step 进度 + 停止按钮） -->
-      <div v-if="thinking" class="message-item ai-message">
+      <!-- 思考中 / 实时执行轨迹（仅在流式回答尚未开始前展示） -->
+      <div v-if="(thinking || traceActive) && !streamingActive" class="message-item ai-message">
         <div class="message-avatar"><span>AI</span></div>
         <div class="message-body">
           <div class="message-meta">
             <span class="message-sender">AI 助手</span>
           </div>
-          <div class="message-bubble thinking-bubble">
+          <!-- 初始思考动画（轨迹节点尚未到达时） -->
+          <div v-if="!traceNodes.length" class="message-bubble thinking-bubble">
             <div class="thinking-indicator">
               <span class="thinking-dot"></span>
               <span class="thinking-dot"></span>
               <span class="thinking-dot"></span>
             </div>
-            <p class="thinking-text">
-              {{ agentStep ? stepLabel(agentStep) : 'AI 助手正在思考...' }}
-            </p>
+            <p class="thinking-text">AI 助手正在思考...</p>
           </div>
-          <button v-if="agentStep" class="stop-btn" @click="cancelAgentTask">⏹ 停止生成</button>
+          <!-- 实时轨迹 -->
+          <AgentTrace v-if="traceNodes.length" :nodes="traceNodes" :active="traceActive" />
+          <button v-if="traceNodes.length" class="stop-btn" @click="cancelAgentTask">
+            ⏹ 停止生成
+          </button>
         </div>
       </div>
     </main>
@@ -323,6 +339,8 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { openOptions } from '@/utils/base'
 import { renderMarkdown } from '@/utils/markdown'
 import { getPrefs, addArticle, buildLLMConfigPayload } from '@/utils/prefs'
+import AgentTrace from '@/components/AgentTrace.vue'
+import { useAgentTrace, TRACE_STATUS } from '@/composables/useAgentTrace'
 
 defineOptions({
   name: 'SidePanel',
@@ -351,8 +369,36 @@ const sessionList = ref([])
 const showHistoryList = ref(false)
 let saveTimer = null
 
-// dph-A Turn/Step 可观测：当前 Step 事件 {step, iteration, phase, status, tool?}
-const agentStep = ref(null)
+// dph-A Turn/Step 可观测：把离散的 agent_step / workflow_progress 事件
+// 归约成结构化执行轨迹（原实现是单帧覆盖，回答出现后整块丢弃，无法回看）
+const {
+  nodes: traceNodes,
+  active: traceActive,
+  begin: beginTrace,
+  reset: resetTrace,
+  applyStep: applyTraceStep,
+  applyWorkflow: applyTraceWorkflow,
+  complete: completeTrace,
+  snapshot: snapshotTrace,
+} = useAgentTrace()
+
+/**
+ * Turn 收尾：轨迹收敛到终态后落到对应的 AI 消息上，随会话一起持久化。
+ * 必须走 messages.value 里的元素（reactive proxy），持有外部普通对象引用改不动 UI。
+ */
+const finishTrace = (message, status = TRACE_STATUS.SUCCESS) => {
+  completeTrace(status)
+  if (message && traceNodes.value.length) {
+    message.trace = snapshotTrace()
+  }
+  resetTrace()
+}
+
+/**
+ * 执行中的轨迹挂在流式气泡上方渲染（而不是列表末尾）：
+ * 流式回答一开始输出，轨迹若还留在末尾就会跑到回答下面，结束时又跳回上面。
+ */
+const streamingActive = computed(() => messages.value.some((m) => m.streaming))
 
 // ===== 滚动跟随：贴底时自动跟随流式输出，用户上滑后交还控制权（仿豆包） =====
 const messagesRef = ref(null)
@@ -418,7 +464,7 @@ const resetInputHeight = () => {
 
 // 消息内容/思考状态变化时，只在跟随模式下滚到底
 watch(
-  [messages, thinking, agentStep],
+  [messages, thinking, traceNodes],
   () => {
     if (!autoFollow.value) return
     nextTick(() => scrollToBottom('auto'))
@@ -841,15 +887,6 @@ const cancelAgentTask = () => {
   persistSession()
 }
 
-// 把 Step 事件转成可读文案（前端展示用）
-const stepLabel = (s) => {
-  if (!s) return ''
-  if (s.phase === 'reasoning') return `第 ${s.step} 步：正在推理...`
-  if (s.phase === 'tool') return `第 ${s.step} 步：调用工具 ${s.tool || ''}...`
-  if (s.phase === 'done') return `第 ${s.step} 步：完成`
-  return `第 ${s.step} 步...`
-}
-
 // 格式化时间
 const formatTime = (timestamp) => {
   const date = new Date(timestamp)
@@ -939,7 +976,13 @@ const connectWebSocket = () => {
 
           case 'agent_response': {
             thinking.value = false
-            agentStep.value = null
+            // 用户主动停止时，正在 running 的节点要落 cancelled，
+            // 否则轨迹会永久停在转圈状态，看起来像卡死
+            const traceStatus = data.success
+              ? TRACE_STATUS.SUCCESS
+              : data.error === 'cancelled'
+                ? TRACE_STATUS.CANCELLED
+                : TRACE_STATUS.FAILED
             // 回溯查找流式气泡：不能只看最后一条。深度研究会在报告流式结束后
             // 再推一条 workflow_progress（"研究报告生成完毕"），若只看最后一条会误判为
             // "没有流式内容"而重新 push 一份完整报告，导致同一份报告显示两遍
@@ -952,6 +995,7 @@ const connectWebSocket = () => {
                 : `${lastStreamingMsg.content}\n\n错误: ${data.content || data.error || ''}`
               lastStreamingMsg.streaming = false
               finalContent = lastStreamingMsg.content
+              finishTrace(lastStreamingMsg, traceStatus)
             } else if (data.success) {
               messages.value.push({
                 type: 'text',
@@ -960,6 +1004,7 @@ const connectWebSocket = () => {
                 timestamp: Date.now(),
               })
               finalContent = data.content
+              finishTrace(messages.value[messages.value.length - 1], traceStatus)
             } else {
               messages.value.push({
                 type: 'text',
@@ -967,6 +1012,7 @@ const connectWebSocket = () => {
                 content: `错误: ${data.content}`,
                 timestamp: Date.now(),
               })
+              finishTrace(messages.value[messages.value.length - 1], traceStatus)
             }
             // F5-2 文章索引：总结本页成功后自动记录当前页
             if (data.success && lastSentAction === 'summarize' && finalContent) {
@@ -990,40 +1036,26 @@ const connectWebSocket = () => {
 
           case 'thinking':
             thinking.value = true
+            beginTrace()
             break
 
-          // dph-A Turn/Step 执行模型：Agent 每完成一个 Step（推理/工具执行）推送事件，前端展示可观测进度
+          // dph-A Turn/Step 执行模型：Agent 每完成一个 Step（推理/工具执行）推送事件，
+          // 前端归约成轨迹节点而非单帧覆盖，用户可看到完整执行过程
           case 'agent_step':
-            agentStep.value = data
+            applyTraceStep(data)
             break
 
           case 'cancel_ack':
             // 取消已受理，等待 agent_response(已停止) 收尾
             break
 
-          // M1-F8 深度研究：进度推送（替换最后一条 progress，避免刷屏；也可 push）
-          case 'workflow_progress': {
+          // M1-F8 深度研究：进度推送 → 归约进执行轨迹
+          // 原实现把每条进度当消息 push，几十条进度会把对话流冲掉，
+          // 且失败步骤需要靠 sticky 标记硬留痕；改由轨迹层做分层与状态标记
+          case 'workflow_progress':
             thinking.value = false
-            const lastMsg = messages.value[messages.value.length - 1]
-            // 失败类进度必须单独留痕：否则被下一条进度覆盖后，
-            // 用户只看到"报告没有来源"，看不到到底哪一步失败、为什么失败
-            const isFailure = /失败|错误|不足|跳过|超时|未响应/.test(data.message || '')
-            // lastMsg 本身是失败进度时同样不可覆盖，否则每个主题只剩最后一条失败，
-            // 前面那条真正的原因（如"插件后台未响应"）会被"搜索：xxx"顶掉
-            if (!isFailure && lastMsg && lastMsg.type === 'progress' && !lastMsg.sticky) {
-              lastMsg.content = data.message
-            } else {
-              messages.value.push({
-                type: 'progress',
-                sender: 'ai',
-                content: data.message,
-                sticky: isFailure,
-                timestamp: Date.now(),
-              })
-            }
-            persistSession()
+            applyTraceWorkflow(data)
             break
-          }
 
           // M1-F8 深度研究：HITL 询问（暂停等待用户答复）
           case 'workflow_ask':
