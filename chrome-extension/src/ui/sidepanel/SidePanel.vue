@@ -398,6 +398,24 @@
             </div>
             <p v-else class="workflow-ask-answered">已答复（{{ msg.answer }}），研究中...</p>
           </div>
+          <!-- P4 分级权限 HITL：写操作审批卡片——AI 要动你的页面，先给你看清它要干什么 -->
+          <div class="message-bubble ask-bubble" v-if="msg.type === 'write_approval'">
+            <p class="workflow-ask-question">🔐 AI 请求执行写操作：{{ writeToolLabel(msg.tool) }}</p>
+            <div class="ask-evidence">
+              <div class="ask-evidence-item">目标：{{ msg.args?.selector }}</div>
+              <div v-if="msg.args?.value" class="ask-evidence-item">内容：{{ msg.args.value }}</div>
+              <div v-if="msg.args?.description" class="ask-evidence-item">说明：{{ msg.args.description }}</div>
+            </div>
+            <div v-if="msg.pending" class="workflow-ask-actions">
+              <button class="workflow-ask-btn primary" @click="answerWriteApproval(msg, true)">
+                允许执行
+              </button>
+              <button class="workflow-ask-btn" @click="answerWriteApproval(msg, false)">拒绝</button>
+            </div>
+            <p v-else class="workflow-ask-answered">
+              {{ msg.approved ? '✅ 已放行' : '❌ 已拒绝' }}
+            </p>
+          </div>
           <div class="message-bubble perf-bubble" v-if="msg.type === 'performance'">
             <div class="performance-card">
               <h3 class="performance-title">📊 页面性能分析</h3>
@@ -1005,7 +1023,11 @@ const flushSession = async () => {
     saveTimer = null
   }
   if (!sessionId.value) return
-  const snapshot = messages.value.map((m) => ({ ...m }))
+  const snapshot = messages.value
+    // P4 审批卡片是瞬态消息：服务端等待态不落盘——重放出的僵尸卡片 requestId 已死，
+    // 用户会看到一个永远无法答复的按钮；审批只在会话内存态中生存
+    .filter((m) => m.type !== 'write_approval')
+    .map((m) => ({ ...m }))
   await chrome.storage.local.set({
     [`ba_session_${sessionId.value}`]: { id: sessionId.value, messages: snapshot },
   })
@@ -1570,6 +1592,28 @@ const connectWebSocket = () => {
             persistSession()
             break
 
+          // P4 分级权限 HITL：写操作审批请求（卡片展示工具/目标/值，等用户放行或拒绝）
+          case 'write_approval':
+            thinking.value = false
+            messages.value.push({
+              type: 'write_approval',
+              sender: 'ai',
+              requestId: data.requestId,
+              tool: data.tool,
+              args: data.args || {},
+              pending: true,
+              approved: false,
+              timestamp: Date.now(),
+            })
+            scrollToBottom()
+            break
+
+          // P4 写操作链路：审批通过后真实执行 / 只读枚举可交互元素，经 background 到 content script
+          case 'write_action':
+          case 'get_interactive_elements':
+            forwardWriteChain(data)
+            break
+
           // 会话用量汇总：每次回答/研究结束后推送，驱动输入区上方的用量条
           case 'usage_summary':
             usageSummary.value = { session: data.session, total: data.total }
@@ -1913,6 +1957,73 @@ const answerWorkflowAsk = (msg, answer) => {
     })
   )
   persistSession()
+}
+
+// P4 分级权限 HITL：用户对写操作审批的答复（放行/拒绝），服务端据此放行或拒绝执行
+const answerWriteApproval = (msg, approved) => {
+  if (!msg.pending) return
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) return
+  msg.pending = false
+  msg.approved = approved
+  websocket.send(
+    JSON.stringify({
+      type: 'write_approval_answer',
+      requestId: msg.requestId,
+      approved,
+      note: approved ? undefined : '用户在侧边栏拒绝了该写操作',
+    })
+  )
+}
+
+// P4 写操作工具的中文标签（审批卡片可读性）
+const writeToolLabel = (tool) => {
+  const labels = {
+    click_element: '点击元素',
+    fill_input: '填写输入框',
+    select_option: '选择下拉选项',
+  }
+  return labels[tool] || tool
+}
+
+// P4 写操作链路转发：write_action（已审批）与 get_interactive_elements（只读枚举）
+// 走 background → content script，回包后按 requestId 回给服务端（与其他工具同构）
+const forwardWriteChain = (data) => {
+  chrome.runtime
+    .sendMessage({
+      type: data.type,
+      requestId: data.requestId,
+      action: data.action,
+      selector: data.selector,
+      value: data.value,
+      maxElements: data.maxElements,
+    })
+    .then((response) => {
+      if (response?.success && response.payload) {
+        sendToolResponse(
+          data.type === 'write_action' ? 'write_action_result' : 'interactive_elements',
+          data.requestId,
+          response.payload,
+          'Write chain completed'
+        )
+      } else {
+        const err = response?.error || `${data.type} failed`
+        sendToolResponse(
+          data.type === 'write_action' ? 'write_action_result' : 'interactive_elements',
+          data.requestId,
+          { error: err },
+          err
+        )
+      }
+    })
+    .catch((error) => {
+      console.error('Write chain forward failed:', error)
+      sendToolResponse(
+        data.type === 'write_action' ? 'write_action_result' : 'interactive_elements',
+        data.requestId,
+        { error: error.message },
+        error.message
+      )
+    })
 }
 
 // M1-F8 深度研究：以输入框内容为研究问题，显式触发深度研究工作流

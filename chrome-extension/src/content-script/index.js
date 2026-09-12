@@ -63,6 +63,16 @@ import { Readability } from '@mozilla/readability'
         }
         return false
 
+      case 'get_interactive_elements':
+        // P4 写操作前置定位：枚举可交互元素及 CSS 选择器（只读）
+        handleGetInteractiveElements(request, sender, sendResponse)
+        return true
+
+      case 'write_action':
+        // P4 写操作执行：服务端审批通过后，在页面 DOM 上执行 click/fill/select
+        handleWriteAction(request, sender, sendResponse)
+        return true
+
       default:
         // 与本脚本无关的消息（如 background 广播给 sidepanel 的划词消息）不响应
         return false
@@ -356,6 +366,166 @@ import { Readability } from '@mozilla/readability'
   function isVisible(el) {
     const rect = el.getBoundingClientRect()
     return rect.width > 0 && rect.height > 0
+  }
+
+  /**
+   * ===== P4 写操作：DOM 原语 =====
+   * 职责边界：这里只做确定性 DOM 操作（枚举/点击/填写/选择），
+   * "该不该做"由服务端分级权限审批把关；LLM 只产出目标选择器和值。
+   */
+
+  /**
+   * 枚举页面可交互元素（写操作前的定位步骤，只读）
+   * 只回传 LLM 定位所需的最小字段，避免整页 DOM 涌入上下文
+   */
+  function handleGetInteractiveElements(request, sender, sendResponse) {
+    try {
+      const elements = collectInteractiveElements(request.maxElements || 30)
+      sendResponse({
+        success: true,
+        type: 'interactive_elements',
+        requestId: request.requestId,
+        payload: { url: window.location.href, elements },
+      })
+    } catch (error) {
+      sendResponse({
+        success: false,
+        type: 'interactive_elements',
+        requestId: request.requestId,
+        error: error.message,
+      })
+    }
+  }
+
+  function collectInteractiveElements(maxElements) {
+    const nodes = document.querySelectorAll(
+      'a[href], button, input, select, textarea, [role="button"], [onclick]'
+    )
+    const elements = []
+    for (const el of nodes) {
+      if (elements.length >= maxElements) break
+      if (!isVisible(el)) continue
+      const tag = el.tagName.toLowerCase()
+      const element = {
+        selector: buildSelector(el),
+        tag,
+        text: String(el.innerText || el.getAttribute('aria-label') || '')
+          .trim()
+          .slice(0, 60),
+      }
+      const type = el.getAttribute('type')
+      if (type) element.type = type
+      if (['input', 'textarea', 'select'].includes(tag)) {
+        element.value = String(el.value ?? '').slice(0, 60)
+      }
+      elements.push(element)
+    }
+    return elements
+  }
+
+  /**
+   * 生成可回查的 CSS 选择器：id > 唯一 name > 从最近 id/主体向上拼路径（≤4 级）
+   * 选择器确定性是写操作安全的前提——模型不许凭想象编选择器
+   */
+  function buildSelector(el) {
+    if (el.id) return `#${el.id}`
+    if (el.name) {
+      const byName = document.getElementsByName(el.name)
+      if (byName.length === 1) return `${el.tagName.toLowerCase()}[name="${el.name}"]`
+    }
+    const path = []
+    let node = el
+    while (node && node !== document.body && path.length < 4) {
+      if (node.id) {
+        path.unshift(`#${node.id}`)
+        break
+      }
+      let part = node.tagName.toLowerCase()
+      const parent = node.parentElement
+      if (parent) {
+        const siblings = Array.from(parent.children).filter((c) => c.tagName === node.tagName)
+        if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`
+      }
+      path.unshift(part)
+      node = node.parentElement
+    }
+    return path.join(' > ')
+  }
+
+  /**
+   * 执行写动作：click / fill / select
+   * 任何失败都以 error 文本回传（元素不存在/不可见/类型不符），让 LLM 能自纠重试
+   */
+  function handleWriteAction(request, sender, sendResponse) {
+    try {
+      const result = executeWriteAction(request)
+      sendResponse({
+        success: true,
+        type: 'write_action_result',
+        requestId: request.requestId,
+        payload: result,
+      })
+    } catch (error) {
+      sendResponse({
+        success: false,
+        type: 'write_action_result',
+        requestId: request.requestId,
+        error: error.message,
+      })
+    }
+  }
+
+  function executeWriteAction({ action, selector, value }) {
+    const el = selector ? document.querySelector(selector) : null
+    if (!el) throw new Error(`元素不存在: ${selector}`)
+    if (!isVisible(el)) throw new Error(`元素不可见: ${selector}`)
+
+    switch (action) {
+      case 'click': {
+        el.scrollIntoView({ block: 'center' })
+        el.focus?.()
+        el.click()
+        return { ok: true, info: `已点击 ${selector}` }
+      }
+      case 'fill': {
+        if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) {
+          throw new Error(`目标不是输入框: ${selector}（<${el.tagName.toLowerCase()}>）`)
+        }
+        setNativeValue(el, String(value ?? ''))
+        return { ok: true, info: `已填写 ${selector}`, value: String(el.value).slice(0, 120) }
+      }
+      case 'select': {
+        if (!(el instanceof HTMLSelectElement)) {
+          throw new Error(`目标不是下拉框: ${selector}（<${el.tagName.toLowerCase()}>）`)
+        }
+        const option = findSelectOption(el, String(value ?? ''))
+        if (!option) throw new Error(`下拉框中没有匹配选项: ${value}`)
+        setNativeValue(el, option.value)
+        return { ok: true, info: `已选择 ${selector}`, value: option.text.slice(0, 120) }
+      }
+      default:
+        throw new Error(`未知写动作: ${action}`)
+    }
+  }
+
+  /**
+   * 绕过框架代理的 value setter：用原型原生 setter 赋值再派发 input/change，
+   * 否则 Vue/React 的受控组件感知不到变化（表单看似填了，状态其实没变）
+   */
+  function setNativeValue(el, value) {
+    const proto =
+      el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'value')
+    descriptor.set.call(el, value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  function findSelectOption(selectEl, value) {
+    for (const option of selectEl.options) {
+      if (option.value === value || option.text.trim() === value) return option
+    }
+    return null
   }
 
   function waitForPageReady(timeoutMs = 5000) {
