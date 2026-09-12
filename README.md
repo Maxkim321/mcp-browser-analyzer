@@ -18,7 +18,8 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 | | ✍️ 划词即问 | 选中文字弹出浮动工具条（翻译/解释/改写/总结/自由提问），Shadow DOM 隔离页面样式 |
 | | 💬 多轮上下文对话 | 会话持久化（`chrome.storage.local` 分桶存储），历史会话可切换 |
 | | ⚡ 流式输出 | SSE 增量解析 + WebSocket 分片推送，打字机效果；工具调用与文本输出同通道区分 |
-| **深度研究** | 🔍 Deep Research | 自动规划子问题 → 后台静默多页读取 → 信息充分性评估 → 交叉对比 → 流式生成带来源报告；支持**人工介入（HITL）**调整方向，checkpoint 断点恢复 |
+| **深度研究** | 🔍 Deep Research | 自动规划子问题 → 后台静默多页读取 → 信息充分性评估 → 交叉对比 → 流式生成带来源报告；checkpoint 断点恢复；**分级 HITL**——正常路径全程连跑零打断，只在死胡同/预算告警时请求人工拍板（`hitlMode: on-deadend / every-topic / off`），可选计划确认（planReview）把方向调整前置到研究开始前 |
+| **模型路由** | 🎚️ 分级路由 + 多模型抽象 | Provider 适配层（当前 OpenAI 兼容协议，可扩展 Claude/Gemini）与模型选择解耦；调用点按任务标注 tier——grade 打分/检索词改写/上下文压缩走 light 便宜模型，plan/报告走 reasoning 档，未配置档位自动回落主模型；瞬时错误（限流/5xx/网络）自动指数退避重试 |
 | **可靠性** | 🛑 可取消回答 | AbortController 支持随时停止生成，不浪费 token |
 | | 📊 Step 级可观测 | 推理/工具执行进度实时下发前端，用户可看到 Agent 当前在做什么 |
 | | 📝 事件溯源 | append-only JSONL 事件日志，服务重启自动投影重建上下文（断点续跑） |
@@ -26,7 +27,7 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 | | ⏱️ 工具流水线 | 统一权限校验 + 超时控制，为写操作审批预留挂载点 |
 | **个性化** | 🎯 偏好记忆（L3） | 跨会话记住总结风格/翻译语言/回复风格，自动注入提示词 |
 | | 📚 文章收藏 | 收藏已总结的文章，支持回看检索 |
-| **额外工具** | 📊 页面性能分析 | 采集 LCP 等性能指标，供 AI 分析优化建议 |
+| **额外工具** | 📊 页面性能分析 | 双通道：插件采集 LCP 等实时指标 + 服务端 Lighthouse 完整审计（四类得分/核心指标/优化机会） |
 | **🔧 AI 代码审查** | 💻 ai-code-review | 零依赖 CLI + GitHub Actions 自动触发，对 PR/MR 生成行级评论（安全漏洞/圈复杂度/命名规范），支持适配器模式扩展平台 |
 
 ## 🏗️ 架构
@@ -189,7 +190,6 @@ npm run review:sample
 │   ├── src/adapters/          #   平台适配器（mock/github/gitlab）
 │   ├── src/skills/            #   审查技能（security/complexity/naming）
 │   └── .github/workflows/     #   GitHub Actions 自动触发配置
-├── server/                    # MCP Server（stdio，供外部 AI 助手调用）
 └── pnpm-workspace.yaml
 ```
 
@@ -206,7 +206,6 @@ npm run review:sample
 - **M1 剩余**：会话管理补全（重命名/删除/搜索）· 结构化提取
 - **M2**：写操作（Computer Use，含权限审批流水线）· MCP Client / WebMCP 接入第三方工具生态
 - **L4 记忆**：RAG 向量检索（确有需要时再加，当前 L0-L3 已满足绝大多数场景）
-- **架构优化**：server/ 与 agent-server/ 代码重复抽公共层
 
 ## 📄 License
 
