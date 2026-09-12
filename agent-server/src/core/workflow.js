@@ -413,10 +413,14 @@ class ResearchWorkflow {
       let fetchError = null
       try {
         // 复用工具封装：fetch_url 由插件在后台 tab 读取正文，不打扰用户当前页面
-        const result = await this.toolCall('fetch_url', { url, connectionId }, {
-          connectionId,
-          signal: this.signal,
-        })
+        const result = await this.toolCall(
+          'fetch_url',
+          { url, connectionId },
+          {
+            connectionId,
+            signal: this.signal,
+          }
+        )
         page = parseJSON(result.content?.[0]?.text || '')
       } catch (error) {
         if (this.isAborted()) throw this.abortError()
@@ -523,7 +527,10 @@ class ResearchWorkflow {
   recordFailure(state, target, reason) {
     state.failures = state.failures || []
     if (state.failures.some((f) => f.target === target)) return
-    state.failures.push({ target: String(target).slice(0, 300), reason: String(reason).slice(0, 200) })
+    state.failures.push({
+      target: String(target).slice(0, 300),
+      reason: String(reason).slice(0, 200),
+    })
   }
 
   // ===== 节点：compare（交叉对比） =====
@@ -556,9 +563,7 @@ class ResearchWorkflow {
     const sourcesText = state.sources
       .map((s) => `- ${s.title}（${s.url}）${s.truncated ? ' [正文已截断]' : ''}`)
       .join('\n')
-    const failuresText = (state.failures || [])
-      .map((f) => `- ${f.target}：${f.reason}`)
-      .join('\n')
+    const failuresText = (state.failures || []).map((f) => `- ${f.target}：${f.reason}`).join('\n')
 
     const messages = [
       {
@@ -571,7 +576,13 @@ class ResearchWorkflow {
     ]
 
     // 流式生成报告：研究报告可能较长，用打字机效果推送，最终 report 兜底
-    const response = await this.llm.chatStream(messages, [], RESEARCH_REPORT_PROMPT, onToken, this.signal)
+    const response = await this.llm.chatStream(
+      messages,
+      [],
+      RESEARCH_REPORT_PROMPT,
+      onToken,
+      this.signal
+    )
     state.report = response.content || '（未能生成报告）'
     state.step = 'done'
     this.emit(state, onProgress, '研究报告生成完毕')

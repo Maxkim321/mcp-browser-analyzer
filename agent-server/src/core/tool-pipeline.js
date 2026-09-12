@@ -40,7 +40,14 @@ function withTimeout(promise, ms, message) {
  * @returns {Promise<object>} 工具结果（权限拒绝时返回统一格式 {content:[{text}]}，与正常结果一致）
  * @throws {Error} 超时抛 code='TIMEOUT'；工具自身错误原样上抛
  */
-async function runToolPipeline({ toolName, args, context, run, permissionCheck, timeoutMs = DEFAULT_TIMEOUT }) {
+async function runToolPipeline({
+  toolName,
+  args,
+  context,
+  run,
+  permissionCheck,
+  timeoutMs = DEFAULT_TIMEOUT,
+}) {
   // 1. 权限校验：为写操作预留的挂载点（当前全部工具只读，默认放行）
   if (typeof permissionCheck === 'function') {
     const allowed = await permissionCheck(toolName, args, context)
@@ -54,7 +61,7 @@ async function runToolPipeline({ toolName, args, context, run, permissionCheck, 
   const result = await withTimeout(
     run(args, context),
     timeoutMs,
-    `Tool ${toolName} timed out after ${timeoutMs}ms`,
+    `Tool ${toolName} timed out after ${timeoutMs}ms`
   )
   return result
 }

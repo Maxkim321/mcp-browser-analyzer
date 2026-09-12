@@ -555,6 +555,18 @@ const toolHandlers = {
 }
 
 /**
+ * 工具覆盖表（评测用）
+ * setToolOverrides 注册后，handleToolCall 命中的工具不再经插件转发，
+ * 而是执行覆盖函数（args, context) => Promise<{content:[{type:'text',text}]}>。
+ * 用途：评测环境把 get_page_content/fetch_url 指向本地 fixture，
+ * 使黄金考题离线可复现，同时保留完整编排链路。
+ */
+let toolOverrides = {}
+function setToolOverrides(map) {
+  toolOverrides = map || {}
+}
+
+/**
  * 处理 MCP 工具调用
  * @param {string} name - 工具名称
  * @param {object} args - 工具参数
@@ -570,6 +582,13 @@ async function handleToolCall(name, args, context = {}) {
   traceManager.addEvent(traceId, 'tool_call', { name, args })
 
   try {
+    const override = toolOverrides[name]
+    if (override) {
+      const result = await override(args, context)
+      traceManager.complete(traceId, 'success')
+      return result
+    }
+
     const handler = toolHandlers[name]
     if (!handler) {
       throw new Error(`Unknown tool: ${name}`)
@@ -672,5 +691,6 @@ module.exports = {
   init,
   handleToolCall,
   handlePluginResponse,
+  setToolOverrides,
   traceManager,
 }

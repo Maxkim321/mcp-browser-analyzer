@@ -16,7 +16,9 @@ const { CONTEXT_SUMMARY_PROMPT } = require('../config/prompts.js')
 /** 取一条消息的文本内容（content 可能是字符串或结构体） */
 function contentOf(message) {
   if (!message) return ''
-  return typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')
+  return typeof message.content === 'string'
+    ? message.content
+    : JSON.stringify(message.content ?? '')
 }
 
 /**
@@ -104,7 +106,9 @@ function findCompressCount(messages, budget, keepRatio = 0.6) {
  * @returns {string} 角色标注的对话文本
  */
 function serializeMessages(messages) {
-  return (messages || []).map((m) => `${m.role === 'user' ? '用户' : '助手'}: ${contentOf(m)}`).join('\n\n')
+  return (messages || [])
+    .map((m) => `${m.role === 'user' ? '用户' : '助手'}: ${contentOf(m)}`)
+    .join('\n\n')
 }
 
 /**
