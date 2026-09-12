@@ -594,7 +594,8 @@ async function handleToolCall(name, args, context = {}) {
           reject(abortError())
         }
         signal.addEventListener('abort', onAbort, { once: true })
-        handler(args, traceId, context).then(
+        // Promise.resolve 包装：handler 可能是同步函数（如 todo_write），直接 .then 会 TypeError
+        Promise.resolve(handler(args, traceId, context)).then(
           (value) => {
             signal.removeEventListener('abort', onAbort)
             resolve(value)

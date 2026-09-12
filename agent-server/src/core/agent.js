@@ -281,11 +281,21 @@ class Agent {
 
   /**
    * 裁剪历史消息，保留最近 N 条，限制内存增长
+   * 裁剪起点对齐：不能以孤儿 tool 消息开头（它的 tool_calls 前驱可能被裁掉，
+   * 下一次 LLM 调用会 400），与 context-manager 的压缩边界对齐是同一类约束
    */
   trimHistory() {
     const historyLimit = this.config.historyLimit
     if (typeof historyLimit === 'number' && historyLimit > 0 && this.conversationHistory.length > historyLimit) {
-      this.conversationHistory = this.conversationHistory.slice(-historyLimit)
+      let start = this.conversationHistory.length - historyLimit
+      while (
+        start < this.conversationHistory.length &&
+        this.conversationHistory[start] &&
+        this.conversationHistory[start].role === 'tool'
+      ) {
+        start++
+      }
+      this.conversationHistory = this.conversationHistory.slice(start)
     }
   }
 
