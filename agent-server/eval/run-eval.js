@@ -15,6 +15,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') })
 const { Agent } = require('../src/core/agent.js')
 const handler = require('../src/tools/handler.js')
 const { judgeAnswer } = require('./judge.js')
+const { createPermissionCheck } = require('../src/core/approval.js')
 const { SYSTEM_PROMPT, ACTION_PROMPTS } = require('../src/config/prompts.js')
 const { appendPageContext } = require('../src/core/prompt-context.js')
 
@@ -101,6 +102,82 @@ function fixturePageOverride(fixtureRel) {
   }
 }
 
+// ===== 写操作评测（P4 轨迹判卷）=====
+
+/** 加载 fixture 对应的可交互元素清单（模拟 content script 的枚举结果，离线确定性） */
+function loadElements(fixtureRel) {
+  const base = path.basename(fixtureRel).replace(/\.html$/, '.json')
+  return JSON.parse(fs.readFileSync(path.join(EVAL_DIR, 'fixtures', 'elements', base), 'utf8'))
+}
+
+/**
+ * 写工具覆盖：不真执行，只把动作录进轨迹（后续与 rubric.trajectory 有序比对），
+ * 返回结构与真实 write handler 一致，模型感知不到评测环境
+ */
+function makeActionOverrides(recorder, caseDef) {
+  const record = (tool) => async (args) => {
+    recorder.push({ tool, args: { selector: args.selector, value: args.value } })
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            ok: true,
+            info: `${tool} 已执行（eval 模拟）`,
+            ...(args.value ? { value: String(args.value) } : {}),
+          }),
+        },
+      ],
+    }
+  }
+  return {
+    click_element: record('click_element'),
+    fill_input: record('fill_input'),
+    select_option: record('select_option'),
+    get_interactive_elements: async () => {
+      const data = loadElements(caseDef.fixture)
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify({ url: data.url, elements: data.elements }) },
+        ],
+      }
+    },
+  }
+}
+
+/**
+ * 轨迹判卷（确定性，零 LLM 成本）：期望动作序列按相对顺序贪心匹配。
+ * 只约束"相对顺序"而非"绝对位置"——模型中间多查一次元素列表不应判死，
+ * 但"提交按钮必须在填写之后点"这类因果顺序必须锁住
+ */
+function judgeTrajectory(expected, recorded) {
+  let ptr = 0
+  return expected.map((exp, i) => {
+    let matched = -1
+    for (let j = ptr; j < recorded.length; j++) {
+      const rec = recorded[j]
+      if (exp.tool && rec.tool !== exp.tool) continue
+      if (exp.selectorIncludes && !String(rec.args?.selector || '').includes(exp.selectorIncludes))
+        continue
+      const wantValues = Array.isArray(exp.valueIncludes)
+        ? exp.valueIncludes
+        : exp.valueIncludes
+          ? [exp.valueIncludes]
+          : null
+      if (wantValues && !wantValues.some((v) => String(rec.args?.value || '').includes(v))) continue
+      matched = j
+      break
+    }
+    if (matched >= 0) ptr = matched + 1
+    return {
+      name: `traj[${i}] ${exp.tool}`,
+      passed: matched >= 0,
+      detail:
+        matched >= 0 ? `轨迹第 ${matched + 1} 步命中` : '未命中（工具/选择器/值或相对顺序不符）',
+    }
+  })
+}
+
 async function runCase(caseDef, opts) {
   const agent = new Agent()
 
@@ -114,17 +191,28 @@ async function runCase(caseDef, opts) {
       selection: '',
     })
   }
-  // get_page_content 是"当前页"语义，按 case 绑定 fixture 动态覆盖
+  // get_page_content 是"当前页"语义，按 case 绑定 fixture 动态覆盖；
+  // action case 额外覆盖写工具为轨迹录制器，并挂真实分级权限（自动审批臂）
+  const trajectory = []
   handler.setToolOverrides({
     ...baseOverrides,
     ...(caseDef.fixture ? { get_page_content: fixturePageOverride(caseDef.fixture) } : {}),
+    ...(caseDef.type === 'action' ? makeActionOverrides(trajectory, caseDef) : {}),
   })
+  const permissionCheck =
+    caseDef.type === 'action'
+      ? createPermissionCheck({
+          requestApproval: async () => ({ approved: true }),
+          sessionId: `eval-${caseDef.id}`,
+        })
+      : undefined
 
   const t0 = Date.now()
   const result = await agent.process(caseDef.prompt, {
     connectionId: 1,
     systemPrompt,
     onStep: () => {},
+    permissionCheck,
   })
   const durationMs = Date.now() - t0
 
@@ -132,6 +220,11 @@ async function runCase(caseDef, opts) {
     useLLMJudge: opts.llmJudge,
     llm: agent.llm,
   })
+  // 轨迹判卷（确定性）：期望动作序列逐项比对，追加进 checks 参与通过判定
+  if (Array.isArray(caseDef.rubric?.trajectory)) {
+    verdict.checks.push(...judgeTrajectory(caseDef.rubric.trajectory, trajectory))
+    verdict.passed = verdict.checks.every((c) => c.passed)
+  }
 
   return {
     id: caseDef.id,
@@ -141,6 +234,7 @@ async function runCase(caseDef, opts) {
     contentChars: String(result?.content || '').length,
     error: result?.success ? undefined : result?.error,
     checks: verdict.checks,
+    ...(caseDef.type === 'action' ? { trajectory } : {}),
     contentPreview: String(result?.content || '').slice(0, 300),
   }
 }

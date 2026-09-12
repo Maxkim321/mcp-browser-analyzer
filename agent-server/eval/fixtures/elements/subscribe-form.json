@@ -1,0 +1,11 @@
+{
+  "url": "file://eval/pages/subscribe-form.html",
+  "title": "田野观察 · 订阅周报",
+  "elements": [
+    { "selector": "#name", "tag": "input", "type": "text", "text": "", "value": "" },
+    { "selector": "#email", "tag": "input", "type": "email", "text": "", "value": "" },
+    { "selector": "#frequency", "tag": "select", "text": "", "value": "" },
+    { "selector": "#agree", "tag": "input", "type": "checkbox", "text": "", "value": "" },
+    { "selector": "#submit-btn", "tag": "button", "text": "确认订阅" }
+  ]
+}
