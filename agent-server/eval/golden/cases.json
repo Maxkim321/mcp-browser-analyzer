@@ -1,0 +1,121 @@
+{
+  "cases": [
+    {
+      "id": "summary-dsh-01",
+      "type": "summary",
+      "action": "summary",
+      "prompt": "总结当前页面核心内容",
+      "fixture": "pages/dsh-architecture.html",
+      "rubric": {
+        "must_mention": [
+          "Cordis",
+          "插件"
+        ],
+        "llm_judge": {
+          "criteria": "总结是否同时涵盖：1)一切皆插件的架构理念 2)三类事件域分工 3)seam/Provider 替换机制。三点齐备得 4-5 分，缺一扣一分",
+          "min_score": 3
+        },
+        "max_chars": 2400
+      }
+    },
+    {
+      "id": "chat-dsh-events-02",
+      "type": "chat",
+      "fixture": "pages/dsh-architecture.html",
+      "prompt": "这篇文章说的三类事件域分别是什么？每个用一句话概括它的职责。",
+      "rubric": {
+        "must_mention": [
+          "会话事件",
+          "Agent 事件",
+          "能力事件"
+        ],
+        "llm_judge": {
+          "criteria": "三个事件域的职责概括是否准确（会话=持久保留事实、Agent=实时活跃状态、能力=附加策略避免导入循环）",
+          "min_score": 3
+        },
+        "max_chars": 1200
+      }
+    },
+    {
+      "id": "chat-dsh-version-03",
+      "type": "chat",
+      "fixture": "pages/dsh-architecture.html",
+      "prompt": "dsh 的版本号是多少？现在处于什么阶段，适合上生产吗？",
+      "rubric": {
+        "must_mention": [
+          "0.1.0"
+        ],
+        "llm_judge": {
+          "criteria": "是否指出 Developer Preview 阶段且给出'不适合生产依赖'类结论",
+          "min_score": 3
+        },
+        "max_chars": 1200
+      }
+    },
+    {
+      "id": "chat-dsh-subagent-04",
+      "type": "chat",
+      "fixture": "pages/dsh-architecture.html",
+      "prompt": "dsh 的 subagent 支持哪几种 Provider？能拉起哪些外部产品？",
+      "rubric": {
+        "must_mention": [
+          "claude",
+          "codex"
+        ],
+        "llm_judge": {
+          "criteria": "是否答出 6 种 Provider 中至少 4 种，且明确指出可拉起 Claude Code 与 Codex",
+          "min_score": 3
+        },
+        "max_chars": 1600
+      }
+    },
+    {
+      "id": "extract-tables-01",
+      "type": "extract",
+      "action": "extract",
+      "prompt": "提取当前页面的结构化数据",
+      "fixture": "pages/coding-assistant-compare.html",
+      "rubric": {
+        "must_mention": [
+          "CodeMate",
+          "CloudCode",
+          "AgentKit"
+        ],
+        "regex": [
+          "99"
+        ],
+        "max_chars": 2500
+      }
+    },
+    {
+      "id": "chat-compare-cheapest-02",
+      "type": "chat",
+      "fixture": "pages/coding-assistant-compare.html",
+      "prompt": "哪款产品的专业版月费最低？多少钱？它便宜的原因是什么？",
+      "rubric": {
+        "must_mention": [
+          "CodeMate",
+          "99"
+        ],
+        "llm_judge": {
+          "criteria": "是否指出 CodeMate ¥99 最低，且原因正确（专业版无限快慢混用，不限旗舰模型次数）",
+          "min_score": 3
+        },
+        "max_chars": 1200
+      }
+    },
+    {
+      "id": "chat-robust-empty-01",
+      "type": "chat",
+      "prompt": "1",
+      "rubric": {
+        "nonempty": true,
+        "llm_judge": {
+          "criteria": "面对无意义输入'1'，回复是否得体（澄清/引导而非胡编），且没有虚构页面内容",
+          "min_score": 3
+        },
+        "max_chars": 800
+      }
+    }
+  ]
+}

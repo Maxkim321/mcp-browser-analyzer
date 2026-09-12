@@ -1,0 +1,219 @@
+{
+  "ranAt": "2026-09-12T07:01:27.985Z",
+  "total": 7,
+  "passed": 7,
+  "passRate": 1,
+  "llmJudge": true,
+  "results": [
+    {
+      "id": "summary-dsh-01",
+      "type": "summary",
+      "passed": true,
+      "durationMs": 5666,
+      "contentChars": 2022,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "2022/2400"
+        },
+        {
+          "name": "must_mention",
+          "passed": true,
+          "detail": "全部命中"
+        },
+        {
+          "name": "llm_judge",
+          "passed": true,
+          "detail": "score=5 (min=3) 总结完整覆盖了『一切皆插件』理念、三类事件域（session/agent/能力事件）分工，以及 seam 的 Service Definition/Provider/Consumer 替换机制，三点齐备且表述准确。"
+        }
+      ],
+      "contentPreview": "# DeepSeek Harness 源码深度解读 — 核心内容总结\n\n这是一篇对 DeepSeek 官方开源 Agent 框架 **DeepSeek Harness（dsh）** 的架构级源码拆解文章。dsh 于 2026 年 8 月 13 日开源，口号是「**Everything is a Plugin（一切皆插件）**」，两天内 Star 破 4.1 万。\n\n## 一、仓库全景\n- **规模**：54 个包、1247 个 TS 源文件、约 20 万行代码、12293 次提交\n- **状态**：v0.1.0-rc.5，官方标注 Developer Preview（破坏性变更随时可能发生），"
+    },
+    {
+      "id": "chat-dsh-events-02",
+      "type": "chat",
+      "passed": true,
+      "durationMs": 3062,
+      "contentChars": 406,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "406/1200"
+        },
+        {
+          "name": "must_mention",
+          "passed": true,
+          "detail": "全部命中"
+        },
+        {
+          "name": "llm_judge",
+          "passed": true,
+          "detail": "score=5 (min=3) 准确概括了三个事件域的职责：会话=持久保留事实、Agent=实时活跃状态、能力=附加策略避免导入循环，表述准确且附带合理补充。"
+        }
+      ],
+      "contentPreview": "根据页面内容（第三节「事件驱动设计」），dsh 的事件分为三个域：\n\n| 事件域 | 前缀 | 特性 | 职责（一句话） |\n|---|---|---|---|\n| **会话事件** | `session/*` | 持久、追加式 | 存放必须跨重启保留的事实，作为唯一真相源，供 fork、恢复、回放、遥测派生。 |\n| **Agent 事件** | `agent/*` | 实时 | 携带活跃 Agent 的 inbox、步骤与状态，驱动 Agent Loop 的实时流转。 |\n| **能力事件** | `fs/*`、`tools/*`、`telemetry/*` | 实时 | 给 seam 附"
+    },
+    {
+      "id": "chat-dsh-version-03",
+      "type": "chat",
+      "passed": true,
+      "durationMs": 3209,
+      "contentChars": 755,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "755/1200"
+        },
+        {
+          "name": "must_mention",
+          "passed": true,
+          "detail": "全部命中"
+        },
+        {
+          "name": "llm_judge",
+          "passed": true,
+          "detail": "score=5 (min=3) 回答明确指出当前处于 Developer Preview（开发者预览版）阶段，并给出'不建议直接上生产'的结论，完全满足评分标准。"
+        }
+      ],
+      "contentPreview": "根据页面内容，回答如下：\n\n## 版本号\n**0.1.0-rc.5**\n\n## 当前阶段\n官方明确标注为 **Developer Preview（开发者预览版）**，并声明**破坏性变更随时可能发生**。\n\n补充背景：\n- 2026 年 8 月 13 日开源，仓库为 `deepseek-ai/deepseek-harness`（基于 commit `47f9438`）\n- 发布两天 Star 破 4.1 万，Fork 3283\n- 协议 MIT，技术栈 Node.js + TypeScript（全 ESM）+ pnpm workspaces\n- 规模：54 个包、1247 个 TS 源文件、约"
+    },
+    {
+      "id": "chat-dsh-subagent-04",
+      "type": "chat",
+      "passed": true,
+      "durationMs": 3621,
+      "contentChars": 1079,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "1079/1600"
+        },
+        {
+          "name": "must_mention",
+          "passed": true,
+          "detail": "全部命中"
+        },
+        {
+          "name": "llm_judge",
+          "passed": true,
+          "detail": "score=5 (min=3) 完整列出6种Provider，并明确指出可拉起真实的Codex与Claude Code，完全满足标准。"
+        }
+      ],
+      "contentPreview": "# dsh Subagent 的 Provider 与可拉起的外部产品\n\n根据《DeepSeek Harness 源码深度解读》第七节，`subagent` 能力共支持 **6 种 Provider**：\n\n| # | Provider | 运行位置 | 说明 |\n|---|----------|---------|------|\n| 1 | `spawn-in-process` | 进程内 | 新起一个子 Agent |\n| 2 | `fork-in-process` | 进程内 | 从父 Agent 的历史 fork 出来 |\n| 3 | `acp` | 进程外 | 走 ACP 协议 |\n"
+    },
+    {
+      "id": "extract-tables-01",
+      "type": "extract",
+      "passed": true,
+      "durationMs": 4177,
+      "contentChars": 948,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "948/2500"
+        },
+        {
+          "name": "must_mention",
+          "passed": true,
+          "detail": "全部命中"
+        },
+        {
+          "name": "regex",
+          "passed": true,
+          "detail": "全部命中"
+        }
+      ],
+      "contentPreview": "### 表格 1\n| 产品 | 免费版 | 专业版(月) | 旗舰版(月) | 模型额度 |\n| --- | --- | --- | --- | --- |\n| CloudCode | 每天 10 次 | ¥128 | ¥398 | 专业版每月 500 次旗舰模型 |\n| CodeMate | 每天 20 次 | ¥99 | ¥299 | 专业版无限快慢混用 |\n| DevPilot | 每天 15 次 | ¥119 | ¥349 | 专业版每月 300 次旗舰模型 |\n| AgentKit | 每天 8 次 | ¥149 | ¥459 | 专业版无限次但限速 |\n\n个人订阅方案对比维度：免费"
+    },
+    {
+      "id": "chat-compare-cheapest-02",
+      "type": "chat",
+      "passed": true,
+      "durationMs": 3084,
+      "contentChars": 614,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "614/1200"
+        },
+        {
+          "name": "must_mention",
+          "passed": true,
+          "detail": "全部命中"
+        },
+        {
+          "name": "llm_judge",
+          "passed": true,
+          "detail": "score=5 (min=3) 回答明确指出CodeMate ¥99最低，并正确解释原因是专业版无限快慢混用、不限旗舰模型次数。"
+        }
+      ],
+      "contentPreview": "根据当前页面的对比数据，答案如下：\n\n## 专业版月费最低的产品：**CodeMate**\n\n- **月费：¥99**\n- 对比其他三款：DevPilot ¥119、CloudCode ¥128、AgentKit ¥149\n\n## 它便宜的原因\n\n页面数据中能直接支撑的原因有两点：\n\n1. **模型额度策略更宽松（无限快慢混用）**——CodeMate 专业版提供\"无限快慢混用\"，即不按旗舰模型次数计费。而更贵的产品（如 CloudCode ¥128 每月仅 500 次旗舰模型、DevPilot ¥119 每月 300 次）成本主要压在旗舰模型调用次数上。CodeMate 通过\"快慢混用\"的调"
+    },
+    {
+      "id": "chat-robust-empty-01",
+      "type": "chat",
+      "passed": true,
+      "durationMs": 1916,
+      "contentChars": 391,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "nonempty",
+          "passed": true,
+          "detail": "长度 391"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "391/800"
+        },
+        {
+          "name": "llm_judge",
+          "passed": true,
+          "detail": "score=5 (min=3) 面对无意义输入'1'，回答得体地澄清并引导用户，列出了能力清单，未虚构任何页面内容，完全符合标准。"
+        }
+      ],
+      "contentPreview": "你好！我是 Browser Assistant，可以帮你分析当前浏览器页面的内容和性能。\n\n你发送了「1」，我不太确定你想做什么。以下是我能帮你做的事情：\n\n| 能力 | 说明 | 示例提问 |\n|------|------|----------|\n| 📄 **页面内容分析** | 读取当前标签页正文，总结/翻译/问答 | \"总结一下当前页面\" |\n| ⚡ **性能分析** | 获取当前页面的加载性能数据 | \"当前页面性能怎么样？\" |\n| 🔍 **Lighthouse 审计** | 对任意 URL 做完整性能/SEO/可访问性审计 | \"审计一下 https://example.com"
+    }
+  ]
+}
