@@ -310,27 +310,33 @@ import { Readability } from '@mozilla/readability'
 
   /**
    * 提取页面结构化数据（F7 结构化提取）
-   * 优先级：表格 > 列表。确定性 DOM 提取（JS 做），格式化交给 LLM（EXTRACT_PROMPT）
-   * @returns {null|{type:'table',headers,rows}|{type:'list',items}} 无结构化内容返回 null
+   * 数据对比场景页面上往往有不止一张表（每张一个对比维度），因此提取所有可见表格；
+   * 无表格时再退回第一个可见列表。确定性 DOM 提取（JS 做），格式化交给 LLM（EXTRACT_PROMPT）
+   * @returns {null|{type:'tables',tables:|{type:'list',items:}} 无结构化内容返回 null
    */
   function extractStructuredContent() {
     const MAX_ROWS = 50
     const MAX_ITEMS = 50
 
-    // 优先表格：取第一个可见表格的表头（第一行 th/td）+ 数据行
+    // 全部可见表格：每张表给出 index / headers / rows / truncated
     const tables = Array.from(document.querySelectorAll('table'))
-    for (const table of tables) {
-      if (!isVisible(table)) continue
-      const rows = Array.from(table.querySelectorAll('tr'))
-      if (rows.length === 0) continue
-      const grid = rows
-        .map((row) => Array.from(row.querySelectorAll('th,td')).map((cell) => cell.innerText.trim()))
-        .filter((cells) => cells.length > 0)
-      if (grid.length === 0) continue
-      const headers = grid[0]
-      const body = grid.slice(1, MAX_ROWS)
-      return { type: 'table', headers, rows: body, truncated: grid.length > MAX_ROWS }
-    }
+      .map((table, i) => {
+        if (!isVisible(table)) return null
+        const rows = Array.from(table.querySelectorAll('tr'))
+        if (rows.length === 0) return null
+        const grid = rows
+          .map((row) => Array.from(row.querySelectorAll('th,td')).map((cell) => cell.innerText.trim()))
+          .filter((cells) => cells.length > 0)
+        if (grid.length === 0) return null
+        return {
+          index: i,
+          headers: grid[0],
+          rows: grid.slice(1, MAX_ROWS),
+          truncated: grid.length > MAX_ROWS,
+        }
+      })
+      .filter(Boolean)
+    if (tables.length > 0) return { type: 'tables', tables, tablesCount: tables.length }
 
     // 其次列表：取第一个可见 ul/ol 的直接 li 项
     const lists = Array.from(document.querySelectorAll('ul,ol'))
@@ -436,6 +442,7 @@ import { Readability } from '@mozilla/readability'
     { action: 'explain', label: '解释' },
     { action: 'rewrite', label: '改写' },
     { action: 'ask', label: '问问' },
+    { action: 'note', label: '记笔记' },
   ]
 
   function getSelectionText(maxChars = 2000) {
@@ -470,8 +477,10 @@ import { Readability } from '@mozilla/readability'
     style.textContent = `
       .selection-bar {
         display: flex;
-        gap: 4px;
-        padding: 6px 8px;
+        flex-wrap: wrap;
+        max-width: 240px;
+        gap: 3px;
+        padding: 6px;
         background: #1f2937;
         border-radius: 8px;
         box-shadow: 0 4px 14px rgba(0,0,0,0.25);
@@ -481,8 +490,8 @@ import { Readability } from '@mozilla/readability'
         border: none;
         background: transparent;
         color: #e5e7eb;
-        font-size: 12px;
-        padding: 4px 10px;
+        font-size: 11px;
+        padding: 4px 9px;
         border-radius: 6px;
         cursor: pointer;
         white-space: nowrap;
@@ -521,8 +530,10 @@ import { Readability } from '@mozilla/readability'
     shadow.appendChild(bar)
 
     // 定位：优先放选区上方，上方空间不足则放下方
-    const x = Math.max(4, Math.min(rect.left, window.innerWidth - 180))
-    const y = rect.top - 44 >= 0 ? rect.top - 44 : rect.bottom + 8
+    const WIDTH_RESERVE = 260
+    const HEIGHT_RESERVE = 54
+    const x = Math.max(4, Math.min(rect.left, window.innerWidth - WIDTH_RESERVE))
+    const y = rect.top - HEIGHT_RESERVE >= 0 ? rect.top - HEIGHT_RESERVE : rect.bottom + 8
     host.style.left = `${x}px`
     host.style.top = `${y}px`
 

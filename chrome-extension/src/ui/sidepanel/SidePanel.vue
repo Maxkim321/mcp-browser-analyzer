@@ -15,7 +15,35 @@
         </div>
       </div>
       <div class="header-actions">
-        <button class="icon-btn" title="会话历史" @click="toggleHistoryList">
+        <button
+          class="icon-btn"
+          title="知识点"
+          :class="{ 'has-badge': knowledgePendingCount > 0 }"
+          @click="toggleKnowledgePanel"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </svg>
+          <span v-if="knowledgePendingCount > 0" class="icon-badge">{{
+            knowledgePendingCount
+          }}</span>
+        </button>
+        <button
+          class="icon-btn"
+          title="会话历史"
+          :class="{ active: showHistoryList }"
+          @click="toggleHistoryList"
+        >
           <svg
             viewBox="0 0 24 24"
             width="18"
@@ -88,6 +116,76 @@
       </template>
     </div>
 
+    <!-- 知识点面板（秋招随手记 / flashcard：收藏问题 + 异步补全答案 + 回顾） -->
+    <div v-if="showKnowledgePanel" class="knowledge-panel">
+      <!-- 手动添加 -->
+      <div class="knowledge-add">
+        <input
+          v-model="newKnowledgeQuestion"
+          class="knowledge-add-input"
+          placeholder="记下你不懂的问题，回车保存..."
+          @keydown.stop
+          @keydown.enter="addKnowledgeManual"
+        />
+        <button
+          class="knowledge-add-btn"
+          :disabled="!newKnowledgeQuestion.trim()"
+          @click="addKnowledgeManual"
+        >
+          存
+        </button>
+      </div>
+
+      <!-- 列表：时间倒序，单张卡片点开可补全/回顾 -->
+      <div v-if="!knowledgeList.length" class="knowledge-empty">
+        还没有知识点。划词点「记笔记」、把 AI 回答收藏，或在上方手输问题。
+      </div>
+      <template v-else>
+        <div
+          v-for="kp in knowledgeList"
+          :key="kp.id"
+          class="knowledge-item"
+          :class="[
+            { 'knowledge-pending': kp.status === 'pending' },
+            { expanded: expandedKnowledgeId === kp.id },
+          ]"
+          @click="openKnowledge(kp)"
+        >
+          <div class="knowledge-item-top">
+            <span class="knowledge-question">{{ kp.question }}</span>
+            <button
+              class="knowledge-delete"
+              title="删除该知识点"
+              @click.stop="deleteKnowledge(kp.id)"
+            >
+              ×
+            </button>
+          </div>
+          <div class="knowledge-meta">
+            <span class="knowledge-status" :class="kp.status">
+              {{ kp.status === 'pending' ? '待补全' : '已整理' }}
+            </span>
+            <span class="knowledge-time">{{ formatShortTime(kp.createdAt) }}</span>
+            <span v-if="kp.source" class="knowledge-source">{{ kp.source }}</span>
+          </div>
+          <!-- done：markdown 渲染答案；折叠显示摘要，点开全文 -->
+          <div
+            v-if="kp.status === 'done'"
+            class="knowledge-answer markdown-content"
+            :class="{ collapsed: expandedKnowledgeId !== kp.id }"
+            @click.stop
+          >
+            <div class="knowledge-answer-body" v-html="renderMarkdown(kp.answer)"></div>
+          </div>
+          <div v-else class="knowledge-hint">
+            {{ completingId === kp.id ? '正在补全答案...' : '点击自动补全答案' }}
+          </div>
+          <!-- 复习闭环 TODO：后续在此追加「今日复习 / 遗忘曲线 / 间隔重复」能力 -->
+        </div>
+        <div class="knowledge-clear" @click="clearAllKnowledge">清空全部知识点</div>
+      </template>
+    </div>
+
     <!-- 消息列表 -->
     <main
       ref="messagesRef"
@@ -142,6 +240,27 @@
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
               <span>复制</span>
+            </button>
+            <button
+              v-if="msg.type === 'text' && msg.sender === 'ai' && !msg.streaming && msg.content"
+              class="message-copy-button"
+              @click="saveAiAnswerAsKnowledge(msg, $event)"
+              title="收藏为知识点"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+              <span>收藏</span>
             </button>
           </div>
           <!-- Agent 执行轨迹：随该条回答一起持久化，刷新后仍可回看做过哪些步骤 -->
@@ -338,7 +457,15 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { openOptions } from '@/utils/base'
 import { renderMarkdown } from '@/utils/markdown'
-import { getPrefs, addArticle, buildLLMConfigPayload } from '@/utils/prefs'
+import {
+  getPrefs,
+  addArticle,
+  buildLLMConfigPayload,
+  getKnowledgePoints,
+  addKnowledgePoint,
+  updateKnowledgePoint,
+  removeKnowledgePoint,
+} from '@/utils/prefs'
 import AgentTrace from '@/components/AgentTrace.vue'
 import { useAgentTrace, TRACE_STATUS } from '@/composables/useAgentTrace'
 
@@ -368,6 +495,153 @@ const sessionId = ref('')
 const sessionList = ref([])
 const showHistoryList = ref(false)
 let saveTimer = null
+
+// ===== 知识点卡片库（flashcard：收藏问题 + 异步补全答案 + 回顾） =====
+const showKnowledgePanel = ref(false)
+const knowledgeList = ref([])
+const newKnowledgeQuestion = ref('')
+const expandedKnowledgeId = ref('') // 展开到哪张（done 卡片看全文 / pending 卡片补全中）
+const completingId = ref('') // 正在补全的卡片 id
+// 红点：待补全条数
+const knowledgePendingCount = computed(
+  () => knowledgeList.value.filter((kp) => kp.status === 'pending').length
+)
+
+// 取当前页面 URL 作为出处
+const currentSourceUrl = async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    return tab?.url && /^https?:/i.test(tab.url) ? tab.url.slice(0, 80) : ''
+  } catch {
+    return ''
+  }
+}
+
+const genKnowledgeId = () => `kp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+const loadKnowledge = async () => {
+  // 时间倒序（新在前）
+  knowledgeList.value = (await getKnowledgePoints()).sort((a, b) => b.createdAt - a.createdAt)
+}
+
+const toggleKnowledgePanel = () => {
+  showHistoryList.value = false
+  showKnowledgePanel.value = !showKnowledgePanel.value
+  if (showKnowledgePanel.value) {
+    loadKnowledge()
+  }
+}
+
+// 外部新增一条问题卡片（划词「记笔记」/ 手动输入），默认 pending 待补全
+const createKnowledgeCard = async (question, source) => {
+  const q = String(question || '')
+    .trim()
+    .slice(0, 500)
+  if (!q) return
+  const url = await currentSourceUrl()
+  const kp = {
+    id: genKnowledgeId(),
+    question: q,
+    answer: '',
+    status: 'pending',
+    createdAt: Date.now(),
+    source: url ? `${source} · ${url}` : source,
+  }
+  await addKnowledgePoint(kp)
+  await loadKnowledge()
+  return kp
+}
+
+// 手动添加
+const addKnowledgeManual = async () => {
+  const kp = await createKnowledgeCard(newKnowledgeQuestion.value, '手输')
+  if (kp) {
+    newKnowledgeQuestion.value = ''
+    expandedKnowledgeId.value = kp.id
+  }
+}
+
+// 点开卡片：done 展开看全文；pending 触发自动补全
+const openKnowledge = async (kp) => {
+  if (kp.status === 'pending') {
+    await completeKnowledge(kp)
+  } else {
+    expandedKnowledgeId.value = expandedKnowledgeId.value === kp.id ? '' : kp.id
+  }
+}
+
+// 删除一张卡片
+const deleteKnowledge = async (id) => {
+  knowledgeList.value = knowledgeList.value.filter((kp) => kp.id !== id)
+  await removeKnowledgePoint(id)
+}
+
+const clearAllKnowledge = async () => {
+  if (!confirm('确认清空全部知识点？')) return
+  knowledgeList.value = []
+  await chrome.storage.local.set({ ba_knowledge_points: [] })
+}
+
+// 收藏 AI 回答为知识点：答案已经生成，直接 status='done'，问题取最近一条用户消息
+const saveAiAnswerAsKnowledge = async (msg, ev) => {
+  const content = String(msg.content || '').trim()
+  if (!content) return
+  let question = msg.content.slice(0, 40)
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i]
+    if (m.sender === 'user' && m.content) {
+      question = m.content.slice(0, 500)
+      break
+    }
+  }
+  const url = await currentSourceUrl()
+  const kp = {
+    id: genKnowledgeId(),
+    question,
+    answer: content.slice(0, 2000),
+    status: 'done',
+    createdAt: Date.now(),
+    source: url ? `AI 回答 · ${url}` : 'AI 回答',
+  }
+  await addKnowledgePoint(kp)
+  await loadKnowledge()
+  // 轻提示：收藏成功
+  const btn = ev?.target?.closest?.('.message-copy-button')
+  if (btn) {
+    btn.textContent = '已收藏'
+    setTimeout(() => {
+      btn.innerHTML =
+        '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><span>收藏</span>'
+    }, 1500)
+  }
+}
+
+// 补全 pending 卡片：走现有普通对话链路让 LLM 生成答案，写回卡片并标记 done
+const completeKnowledge = async (kp) => {
+  if (!kp || kp.status !== 'pending' || completingId.value) return
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+    alert('请先启动 agent 服务（pnpm run agent-server）再补全答案')
+    return
+  }
+  completingId.value = kp.id
+  expandedKnowledgeId.value = kp.id
+  // 复用 sendPrompt 普通对话链路；用 lastSentAction 区分完成来源，避免污染文章索引等后置逻辑
+  // 让用户在对话区也能看到这条问题的回答（复习时上下文连续）
+  messages.value.push({
+    type: 'text',
+    sender: 'user',
+    content: kp.question,
+    timestamp: Date.now(),
+  })
+  persistSession()
+  thinking.value = true
+  const ok = await sendPrompt(kp.question, 'knowledge_complete')
+  if (!ok) {
+    thinking.value = false
+    completingId.value = ''
+    alert('连接已断开，请检查服务器是否正在运行。')
+  }
+}
 
 // dph-A Turn/Step 可观测：把离散的 agent_step / workflow_progress 事件
 // 归约成结构化执行轨迹（原实现是单帧覆盖，回答出现后整块丢弃，无法回看）
@@ -761,6 +1035,7 @@ const clearAllSessions = async () => {
 }
 
 const toggleHistoryList = () => {
+  showKnowledgePanel.value = false
   showHistoryList.value = !showHistoryList.value
 }
 
@@ -948,7 +1223,7 @@ const connectWebSocket = () => {
       }
     }
 
-    websocket.onmessage = (event) => {
+    websocket.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data)
         console.log('WebSocket message received:', data)
@@ -1017,6 +1292,19 @@ const connectWebSocket = () => {
             // F5-2 文章索引：总结本页成功后自动记录当前页
             if (data.success && lastSentAction === 'summarize' && finalContent) {
               recordArticleIndex(finalContent)
+            }
+            // 知识点补全：agent_response 收尾时把答案写回对应卡片并标记 done
+            if (completingId.value) {
+              const doneId = completingId.value
+              completingId.value = ''
+              expandedKnowledgeId.value = ''
+              if (data.success && finalContent) {
+                await updateKnowledgePoint(doneId, {
+                  answer: finalContent.slice(0, 2000),
+                  status: 'done',
+                })
+              }
+              await loadKnowledge()
             }
             lastSentAction = ''
             persistSession()
@@ -1524,6 +1812,13 @@ const handleTextAction = async (payload) => {
   const label = ACTION_LABELS[action]
   const text = String(payload.text || '').slice(0, 2000)
 
+  // 「记笔记」：不进普通对话，直接把选中内容收藏成一条待补全知识点
+  if (payload.action === 'note') {
+    await createKnowledgeCard(text, '划词')
+    showKnowledgePanel.value = true
+    return
+  }
+
   messages.value.push({
     type: 'selection',
     sender: 'user',
@@ -1769,6 +2064,34 @@ onUnmounted(() => {
   background: #e2e8f0;
 }
 
+.icon-btn.active {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #dbeafe;
+}
+
+/* 知识点图标红点：有新待补全条目时显示 */
+.icon-btn.has-badge {
+  position: relative;
+}
+
+.icon-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #fff;
+}
+
 /* ===== 会话历史面板 ===== */
 .history-panel {
   position: absolute;
@@ -1912,6 +2235,218 @@ onUnmounted(() => {
 }
 
 .history-clear:hover {
+  background: #fef2f2;
+}
+
+/* ===== 知识点面板（flashcard） ===== */
+.knowledge-panel {
+  position: absolute;
+  top: 60px;
+  right: 8px;
+  left: 8px;
+  z-index: 100;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow:
+    0 4px 6px rgba(15, 23, 42, 0.05),
+    0 12px 24px rgba(15, 23, 42, 0.1);
+  padding: 8px;
+  animation: panelFade 0.15s ease;
+}
+
+.knowledge-add {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.knowledge-add-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.knowledge-add-input:focus {
+  border-color: #3b82f6;
+}
+
+.knowledge-add-btn {
+  flex-shrink: 0;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.knowledge-add-btn:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+}
+
+.knowledge-add-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.knowledge-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.7;
+}
+
+.knowledge-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  border: 1px solid transparent;
+}
+
+.knowledge-item:hover {
+  background: #f8fafc;
+}
+
+.knowledge-item.knowledge-pending {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.knowledge-item.expanded {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.knowledge-item-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.knowledge-question {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172a;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.knowledge-delete {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s;
+}
+
+.knowledge-item:hover .knowledge-delete {
+  opacity: 1;
+}
+
+.knowledge-delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.knowledge-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.knowledge-status {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.knowledge-status.pending {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.knowledge-status.done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.knowledge-time {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.knowledge-source {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.knowledge-answer {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: #334155;
+  line-height: 1.7;
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 8px;
+  word-break: break-word;
+}
+
+/* 折叠：只显示前几行摘要，点开看全文 */
+.knowledge-answer.collapsed .knowledge-answer-body {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.knowledge-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #d97706;
+}
+
+.knowledge-clear {
+  margin-top: 6px;
+  padding: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: #dc2626;
+  border-radius: 8px;
+  cursor: pointer;
+  border-top: 1px solid #f1f5f9;
+  transition: background-color 0.15s;
+}
+
+.knowledge-clear:hover {
   background: #fef2f2;
 }
 

@@ -249,8 +249,9 @@ async function handleMessage(id, msg, agent) {
         // 插件配置页下发的模型配置：校验后覆盖服务端 .env 默认值（空字段仍用服务端默认）
         const llmOverride = sanitizeLLMConfig(msg.llmConfig)
         agent.llm.applyConfig(llmOverride)
-        // M1-F8 深度研究：显式 action 或研究型提问 → 走 LangGraph 式状态机工作流
-        const isResearch = msg.action === 'research' || isResearchPrompt(msg.prompt)
+        // M1-F8 深度研究：仅显式 action 触发（关键词自动路由 isResearchPrompt 已移除，
+        // 误判率高且打断正常对话；自动意图路由待 LLM 分类器方案）
+        const isResearch = msg.action === 'research'
         if (isResearch) {
           await runResearch(id, msg.prompt, llmOverride)
           break
@@ -379,18 +380,6 @@ async function handleMessage(id, msg, agent) {
       })
       break
   }
-}
-
-/**
- * 研究型提问检测（M1-F8 意图路由）
- * 关键词规则可控、可讲、零成本；显式 action: 'research' 始终触发
- * 精确意图路由（LLM 判断）会增加一次调用成本，第一版用规则，后续可升级
- */
-function isResearchPrompt(prompt) {
-  if (typeof prompt !== 'string' || prompt.trim().length < 8) return false
-  return /研究|调研|调查|对比|搞清楚|查明白|分析报告|研究报告|区别|差异|来龙去脉|原理|机制/.test(
-    prompt
-  )
 }
 
 /**
