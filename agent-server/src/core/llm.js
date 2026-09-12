@@ -75,10 +75,12 @@ class LLMClient {
    */
   async chat(messages, tools = [], systemPrompt, signal, options = {}) {
     const cfg = this.resolveTierConfig(options.tier)
-    console.log(`[LLM] Calling model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`)
+    console.log(
+      `[LLM] Calling model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`
+    )
 
     const body = this.buildBody(messages, tools, systemPrompt, false, cfg)
-    return this.provider.chat(cfg, body, signal)
+    return this.provider.chat(cfg, body, signal, { tier: options.tier })
   }
 
   /**
@@ -96,10 +98,12 @@ class LLMClient {
    */
   async chatStream(messages, tools = [], systemPrompt, onToken, signal, options = {}) {
     const cfg = this.resolveTierConfig(options.tier)
-    console.log(`[LLM] Streaming model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`)
+    console.log(
+      `[LLM] Streaming model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`
+    )
 
     const body = this.buildBody(messages, tools, systemPrompt, true, cfg)
-    return this.provider.chatStream(cfg, body, onToken, signal)
+    return this.provider.chatStream(cfg, body, onToken, signal, { tier: options.tier })
   }
 
   /**

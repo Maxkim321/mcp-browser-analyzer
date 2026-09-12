@@ -4,6 +4,11 @@ require('dotenv').config()
 // 导入配置文件和工具模块
 const config = require('./config/index.js')
 const { tools } = require('./tools/index.js')
+const { setUsageSink } = require('./core/llm-providers.js')
+const usageLog = require('./core/usage-log.js')
+
+// P2 成本账本：所有 LLM 调用的 usage 单点落库（tier/model/tokens/耗时）
+setUsageSink(usageLog.record)
 
 /**
  * 启动前校验关键配置，缺失时快速失败并给出明确提示

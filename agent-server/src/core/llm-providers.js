@@ -14,6 +14,28 @@
 
 const TRANSIENT_RETRYABLE = { maxRetries: 2, backoffMs: 800 }
 
+// ===== usage 上报（P2 成本账本） =====
+// 模块级 sink：由宿主（src/index.js）注入落库函数，provider 每次调用完成后上报。
+// 解耦选择：不用回调链穿透 chat→LLMClient→编排层，全局单点即可（usage 是横切关注点）。
+let usageSink = null
+function setUsageSink(fn) {
+  usageSink = typeof fn === 'function' ? fn : null
+}
+function emitUsage(info) {
+  if (!usageSink || !info?.usage) return
+  try {
+    usageSink({
+      model: info.model,
+      tier: info.tier || null,
+      prompt_tokens: info.usage.prompt_tokens ?? null,
+      completion_tokens: info.usage.completion_tokens ?? null,
+      duration_ms: info.durationMs ?? null,
+    })
+  } catch (error) {
+    console.warn('[LLM] usage sink failed:', error.message)
+  }
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
@@ -47,7 +69,9 @@ async function withRetry(fn, signal) {
       lastError = error
       if (!isRetryable(error) || attempt === TRANSIENT_RETRYABLE.maxRetries) throw error
       const delay = TRANSIENT_RETRYABLE.backoffMs * 2 ** attempt
-      console.warn(`[LLM] Transient error (${error.statusCode || error.message}), retry ${attempt + 1} in ${delay}ms`)
+      console.warn(
+        `[LLM] Transient error (${error.statusCode || error.message}), retry ${attempt + 1} in ${delay}ms`
+      )
       await sleep(delay)
     }
   }
@@ -68,8 +92,9 @@ const openaiCompatible = {
   /**
    * 非流式对话。自动重试瞬时错误（限流/5xx/网络抖动）
    */
-  async chat(cfg, body, signal) {
+  async chat(cfg, body, signal, meta = {}) {
     return withRetry(async () => {
+      const t0 = Date.now()
       const response = await fetch(`${cfg.baseURL}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -86,6 +111,12 @@ const openaiCompatible = {
         })
       }
       const data = await response.json()
+      emitUsage({
+        model: cfg.model,
+        tier: meta.tier,
+        usage: data.usage,
+        durationMs: Date.now() - t0,
+      })
       return data.choices[0].message
     }, signal)
   },
@@ -95,15 +126,16 @@ const openaiCompatible = {
    * 重试策略与 chat 不同：只有在收到响应头之前（还没吐出第一个 token）才允许重试，
    * 一旦开始读取 body，重试会导致 onToken 重复推送，只能向上抛错。
    */
-  async chatStream(cfg, body, onToken, signal) {
-    const response = await withRetry(async () => {
+  async chatStream(cfg, body, onToken, signal, meta = {}) {
+    const t0 = Date.now()
+    const doFetch = async (payload) => {
       const res = await fetch(`${cfg.baseURL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${cfg.apiKey}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
         signal,
       })
       if (!res.ok) {
@@ -113,12 +145,29 @@ const openaiCompatible = {
         })
       }
       return res
-    }, signal)
+    }
+
+    // 请求 usage 随流返回（OpenAI 兼容扩展 stream_options.include_usage）。
+    // 网关不认识该字段报 400 时，降级去掉重发一次（仅限未开始读流的阶段）
+    let response
+    try {
+      response = await withRetry(
+        () => doFetch({ stream_options: { include_usage: true }, ...body }),
+        signal
+      )
+    } catch (error) {
+      if (error.statusCode === 400) {
+        response = await doFetch(body)
+      } else {
+        throw error
+      }
+    }
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let content = ''
+    let usage = null
     // tool_calls 按 index 累积：流式接口会分多次返回同一 index 的增量
     const toolCalls = []
 
@@ -139,6 +188,8 @@ const openaiCompatible = {
 
         try {
           const chunk = JSON.parse(data)
+          // usage 随最后一个 chunk 返回（stream_options.include_usage）
+          if (chunk.usage) usage = chunk.usage
           const delta = chunk.choices?.[0]?.delta || {}
           if (delta.content) {
             content += delta.content
@@ -174,6 +225,7 @@ const openaiCompatible = {
         function: { name: tc.function.name, arguments: tc.function.arguments },
       }))
     }
+    emitUsage({ model: cfg.model, tier: meta.tier, usage, durationMs: Date.now() - t0 })
     return message
   },
 }
@@ -189,4 +241,4 @@ function getProvider(name) {
   return providers[name] || openaiCompatible
 }
 
-module.exports = { providers, getProvider, withRetry, isRetryable }
+module.exports = { providers, getProvider, withRetry, isRetryable, setUsageSink }
