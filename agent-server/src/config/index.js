@@ -17,14 +17,25 @@ const config = {
     // 分级路由档位：缺省字段回落主配置，档位完全未配置（env 未设置）时该次调用就是主模型
     // light：高频窄任务（grade 打分/查询改写/上下文压缩摘要），便宜快
     // reasoning：重规划任务（深度研究 plan 等），主模型本身就是强模型，故默认不单独配
+    // 档位可整体混布到其他厂商：baseURL/apiKey/temperature 都能按档位覆盖（resolveTierConfig 合并）
     tiers: {
-      light: { model: process.env.LLM_LIGHT_MODEL },
+      light: {
+        model: process.env.LLM_LIGHT_MODEL,
+        baseURL: process.env.LLM_LIGHT_BASE_URL,
+        apiKey: process.env.LLM_LIGHT_API_KEY,
+        // 部分模型（如 Kimi K2 code 系列）只允许 temperature=1；env 未设置则回落主配置
+        temperature: process.env.LLM_LIGHT_TEMPERATURE
+          ? Number(process.env.LLM_LIGHT_TEMPERATURE)
+          : undefined,
+      },
       reasoning: { model: process.env.LLM_REASONING_MODEL },
     },
     // 单价表（元/百万 token，input/output）——成本账本（eval/cost-report.js）用，按实际账单调整
     pricing: {
       'deepseek-chat': { input: 2, output: 8 },
       'doubao-seed-2-0-pro-260215': { input: 4, output: 16 },
+      // Kimi：思考型模型，reasoning token 计入 completion 计费——TODO 单价按 Moonshot 控制台核对修正
+      'kimi-k2.7-code': { input: 4, output: 16 },
     },
   },
 
