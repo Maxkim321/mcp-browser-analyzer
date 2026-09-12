@@ -1,9 +1,11 @@
 const http = require('node:http')
 const WebSocket = require('ws')
+const { v4: uuidv4 } = require('uuid')
 const toolHandler = require('../tools/handler.js')
 const { Agent } = require('../core/agent.js')
 const { LLMClient } = require('../core/llm.js')
 const { ResearchWorkflow } = require('../core/workflow.js')
+const { createPermissionCheck } = require('../core/approval.js')
 const config = require('../config/index.js')
 const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
 const { appendPageContext, appendPrefs } = require('../core/prompt-context.js')
@@ -24,6 +26,45 @@ const connectionAborts = new Map()
 const activeWorkflows = new Map()
 // HITL 等待答复：connectionId → { resolve, timer }
 const pendingWorkflowAsks = new Map()
+// P4 写操作审批等待：approvalId → { resolve, timer, cleanup }
+const pendingWriteApprovals = new Map()
+
+/**
+ * P4 分级权限 HITL：写操作审批往返
+ * 推送 write_approval（含工具名/参数/一句话说明）到侧边栏 → 用户放行或拒绝
+ * 超时/取消/连接断开一律视为拒绝——审批是授权语义，等不到授权 = 没有授权
+ * @param {number} id - 连接 ID
+ * @param {string} toolName - 写工具名
+ * @param {object} args - 工具参数（审批卡片展示 selector/value）
+ * @param {AbortSignal} [signal] - 取消信号
+ * @returns {Promise<{approved:boolean,note?:string,timeout?:boolean}>}
+ */
+function requestWriteApproval(id, toolName, args, signal) {
+  return new Promise((resolve) => {
+    const approvalId = uuidv4()
+    const settle = (result) => {
+      clearTimeout(timer)
+      if (signal) signal.removeEventListener('abort', onAbort)
+      pendingWriteApprovals.delete(approvalId)
+      resolve(result)
+    }
+    const timer = setTimeout(() => settle({ approved: false, timeout: true }), config.agent.writeApprovalTimeout)
+    const onAbort = () => settle({ approved: false, note: '任务已取消' })
+    if (signal) {
+      if (signal.aborted) return settle({ approved: false, note: '任务已取消' })
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+    pendingWriteApprovals.set(approvalId, { resolve: settle, connectionId: id })
+    const sent = manager.send(id, {
+      type: 'write_approval',
+      requestId: approvalId,
+      tool: toolName,
+      args,
+    })
+    // 连接不可用：没有审批人，直接拒绝（不留 120s 空等）
+    if (!sent) settle({ approved: false, note: '侧边栏连接不可用，无法请求审批' })
+  })
+}
 
 /**
  * 连接管理器 - 管理所有 WebSocket 客户端连接
@@ -218,6 +259,8 @@ wss.on('connection', (ws) => {
       abort.abort()
       connectionAborts.delete(connectionId)
     }
+    // P4 分级权限：审批人下线，等待中的写操作审批全部拒绝
+    denyPendingApprovals(connectionId)
     // 清理该连接的深度研究资源（工作流标记 + HITL 等待）
     activeWorkflows.delete(connectionId)
     const pendingAsk = pendingWorkflowAsks.get(connectionId)
@@ -240,6 +283,7 @@ wss.on('connection', (ws) => {
       abort.abort()
       connectionAborts.delete(connectionId)
     }
+    denyPendingApprovals(connectionId)
     activeWorkflows.delete(connectionId)
     const pendingAsk = pendingWorkflowAsks.get(connectionId)
     if (pendingAsk) {
@@ -251,6 +295,19 @@ wss.on('connection', (ws) => {
 })
 
 /**
+ * 连接断开/出错时：该连接所有等待中的写操作审批一律拒绝（审批人已不在线）
+ * @param {number} id - 连接 ID
+ */
+function denyPendingApprovals(id) {
+  for (const [approvalId, pending] of pendingWriteApprovals) {
+    if (pending.connectionId === id) {
+      pendingWriteApprovals.delete(approvalId)
+      pending.resolve({ approved: false, note: '侧边栏已断开，审批拒绝' })
+    }
+  }
+}
+
+/**
  * 处理客户端消息
  * 根据消息类型分发到不同的处理逻辑
  * @param {number} id - 连接 ID
@@ -258,6 +315,19 @@ wss.on('connection', (ws) => {
  * @param {Agent} agent - 该连接的 Agent 实例
  */
 async function handleMessage(id, msg, agent) {
+  // P4 写操作审批答复：必须先于 requestId 分支处理（答复也带 requestId，
+  // 落到 toolHandler 会查不到 pending 而被静默丢弃，审批方将一直挂到超时）
+  if (msg.type === 'write_approval_answer') {
+    const pending = pendingWriteApprovals.get(msg.requestId)
+    if (pending) {
+      pending.resolve({
+        approved: msg.approved === true,
+        note: msg.approved ? undefined : String(msg.note || '用户拒绝了该写操作'),
+      })
+    }
+    return
+  }
+
   // 统一处理工具响应：只要插件回了 requestId，就交给 tool handler 匹配 pending request
   // 这可以覆盖 performance_data / navigate_to_result / reload_result / wait_for_load_result 等类型
   if (msg.requestId) {
@@ -326,6 +396,15 @@ async function handleMessage(id, msg, agent) {
         // dph-A：AbortController 支持用户取消；onStep 把 Turn 内每个 Step（推理/工具）事件下发前端
         const controller = new AbortController()
         connectionAborts.set(id, controller)
+        // P4 分级权限：为本次任务构造写操作审批闭包
+        // （读操作零打断；写操作逐次审批；预算/dry-run/审计口径见 approval.js）
+        const permissionCheck = createPermissionCheck({
+          requestApproval: ({ toolName, args }) =>
+            requestWriteApproval(id, toolName, args, controller.signal),
+          writeBudget: config.agent.maxWriteActions,
+          dryRun: config.agent.writeDryRun,
+          sessionId,
+        })
         // dph-B：记录本次用户提问事件（append-only）
         if (sessionId)
           eventLog.appendEvent(sessionId, 'user', String(msg.prompt || '').trim(), {
@@ -337,6 +416,7 @@ async function handleMessage(id, msg, agent) {
             sessionId,
             systemPrompt,
             signal: controller.signal,
+            permissionCheck,
             onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
             onStep: (stepInfo) => manager.send(id, { type: 'agent_step', ...stepInfo }),
           })

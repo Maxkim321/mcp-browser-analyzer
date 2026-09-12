@@ -540,6 +540,85 @@ async function handleWebSearch(args, traceId, context = {}) {
   })
 }
 
+/**
+ * 写操作通用执行（P4 分级权限 HITL）
+ * 前置审批已在 tool-pipeline 的 permissionCheck 完成，这里只负责执行：
+ * 向插件发 write_action 指令 → content script 在页面 DOM 上执行 → 回传结果
+ * @param {string} action - 动作类型：click / fill / select
+ * @param {object} args - {selector, value?, description?}
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP 响应格式
+ */
+async function handleWriteAction(action, args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { selector, value } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Write action timeout: ${action}`))
+    }, 30000)
+
+    pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
+
+    traceManager.addEvent(traceId, 'write_action', { connectionId, action, selector, value })
+    const sendSuccess = ws.send(connectionId, {
+      type: 'write_action',
+      requestId,
+      action,
+      selector,
+      value,
+    })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
+/**
+ * 枚举页面可交互元素（写操作的前置定位，只读）
+ * @param {object} args - {maxElements?, connectionId?}
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP 响应格式
+ */
+async function handleGetInteractiveElements(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { maxElements = 30 } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('Get interactive elements timeout'))
+    }, 30000)
+
+    pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
+
+    traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'get_interactive_elements' })
+    const sendSuccess = ws.send(connectionId, {
+      type: 'get_interactive_elements',
+      requestId,
+      maxElements,
+    })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
 const toolHandlers = {
   navigate_to: handleNavigateTo,
   reload_page: handleReloadPage,
@@ -552,6 +631,10 @@ const toolHandlers = {
   web_search: handleWebSearch,
   broadcast_message: handleBroadcastMessage,
   todo_write: handleTodoWrite,
+  get_interactive_elements: handleGetInteractiveElements,
+  click_element: (args, traceId, context) => handleWriteAction('click', args, traceId, context),
+  fill_input: (args, traceId, context) => handleWriteAction('fill', args, traceId, context),
+  select_option: (args, traceId, context) => handleWriteAction('select', args, traceId, context),
 }
 
 /**

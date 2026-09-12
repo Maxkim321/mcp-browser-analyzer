@@ -53,6 +53,12 @@ const config = {
     tokenBudget: 16000,
     // dph-D 单工具执行超时（毫秒），防止网络卡死拖垮整个 Turn
     toolTimeout: 60000,
+    // P4 分级权限：单轮任务获批写动作预算（硬上限写死代码，不信任模型自觉）
+    maxWriteActions: Number(process.env.MAX_WRITE_ACTIONS || 8),
+    // P4 dry-run：on 时写动作只规划不执行（演示/评测模式），审批链路照常留痕
+    writeDryRun: process.env.WRITE_DRY_RUN === 'on',
+    // P4 写操作审批等待时长（毫秒），超时默认拒绝——授权语义下等不到授权=没有授权
+    writeApprovalTimeout: Number(process.env.WRITE_APPROVAL_TIMEOUT || 120000),
   },
 }
 

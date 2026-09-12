@@ -35,7 +35,11 @@ function withTimeout(promise, ms, message) {
  * @param {object} opts.args - 工具参数
  * @param {object} opts.context - 执行上下文（connectionId 等）
  * @param {Function} opts.run - 真正执行工具的函数：(args, context) => Promise<result>
- * @param {Function} [opts.permissionCheck] - 权限 hook：(toolName, args, context) => Promise<boolean>，false 拒绝
+ * @param {Function} [opts.permissionCheck] - 权限 hook：(toolName, args, context) => Promise<decision>
+ *   decision 契约（P4 分级权限扩展，布尔值向后兼容）：
+ *   - true：放行；false：拒绝（通用文案）
+ *   - {allowed:true}：放行；{allowed:false, reason}：拒绝（文案带原因，回喂 LLM 可自纠）
+ *   - {dryRun:true}：写动作只规划不执行（返回占位结果，run 不被调用）
  * @param {number} [opts.timeoutMs] - 超时毫秒，默认 DEFAULT_TIMEOUT
  * @returns {Promise<object>} 工具结果（权限拒绝时返回统一格式 {content:[{text}]}，与正常结果一致）
  * @throws {Error} 超时抛 code='TIMEOUT'；工具自身错误原样上抛
@@ -48,12 +52,31 @@ async function runToolPipeline({
   permissionCheck,
   timeoutMs = DEFAULT_TIMEOUT,
 }) {
-  // 1. 权限校验：为写操作预留的挂载点（当前全部工具只读，默认放行）
+  // 1. 权限校验：读操作默认放行；写操作走分级审批（见 approval.js）
   if (typeof permissionCheck === 'function') {
-    const allowed = await permissionCheck(toolName, args, context)
-    if (allowed === false) {
-      console.log(`[ToolPipeline] ${toolName} denied by permissionCheck`)
-      return { content: [{ text: `Permission denied for tool: ${toolName}` }] }
+    const decision = await permissionCheck(toolName, args, context)
+    const denied =
+      decision === false ||
+      (decision && typeof decision === 'object' && decision.allowed === false)
+    if (denied) {
+      const reason =
+        decision && typeof decision === 'object' && decision.reason ? ` — ${decision.reason}` : ''
+      console.log(`[ToolPipeline] ${toolName} denied by permissionCheck${reason}`)
+      // permissionDenied 标记：调用方（agent 审计）据此区分"被拒"与"真实执行"
+      return { permissionDenied: true, content: [{ text: `Permission denied for tool: ${toolName}${reason}` }] }
+    }
+    // dry-run：动作计划已生成（审批链路照常留痕），但绝不真实执行
+    if (decision && typeof decision === 'object' && decision.dryRun === true) {
+      console.log(`[ToolPipeline] ${toolName} skipped by dry-run`)
+      return {
+        dryRun: true,
+        content: [
+          {
+            type: 'text',
+            text: `[DRY-RUN] 写操作 ${toolName}(${JSON.stringify(args || {})}) 已规划但未真实执行（dry-run 模式）。请继续输出你接下来会执行的动作计划，不要重复调用本工具。`,
+          },
+        ],
+      }
     }
   }
 

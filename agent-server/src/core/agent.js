@@ -1,5 +1,5 @@
 const { LLMClient } = require('./llm.js')
-const { tools } = require('../tools/index.js')
+const { tools, isWriteTool } = require('../tools/index.js')
 const { handleToolCall } = require('../tools/handler.js')
 const config = require('../config/index.js')
 // dph-C 上下文管理（摘要提示词）/ dph-D 工具流水线 / 派生视图历史存储
@@ -105,6 +105,11 @@ class Agent {
       todoWriteCount: 0,
       // dph-A 可取消：工具等待插件响应期间也能被 abort（与深度研究同一套取消机制）
       signal: options.signal,
+      // P4 分级权限：权限检查支持按请求注入（ws-server 为每连接构造审批闭包）；
+      // 未注入时回落构造时配置（现有测试/默认放行行为不变）
+      permissionCheck: options.permissionCheck || this.config.permissionCheck,
+      // 写动作预算计数器：获批一次 +1（approval.js 维护），单轮任务生命周期
+      writeActionsUsed: 0,
     }
     // dph-A Turn/Step 执行模型：step 计数器贯穿整个 Turn（一次用户请求 = 一个 Turn），
     // 每个 Step（LLM 推理 / 工具执行）都通过 onStep 下发事件，前端可观测；signal 支持取消
@@ -298,16 +303,29 @@ class Agent {
       context.todoWriteCount = (context.todoWriteCount || 0) + 1
     }
 
-    // dph-D 工具执行流水线：权限校验（写操作预留）→ 超时控制 → 执行，统一收口
+    // dph-D 工具执行流水线：权限校验（读放行/写审批）→ 超时控制 → 执行，统一收口
     try {
+      const t0 = Date.now()
       const result = await runToolPipeline({
         toolName,
         args: toolArgs,
         context,
         timeoutMs: this.config.toolTimeout,
-        permissionCheck: this.config.permissionCheck,
+        permissionCheck: context.permissionCheck ?? this.config.permissionCheck,
         run: (args, ctx) => handleToolCall(toolName, args, ctx),
       })
+      // P4 审计：写动作真实执行留痕（审批决策由 approval.js 落痕，这里只记真实执行）；
+      // 被拒/dry-run 不是执行——拒绝的审计在 write_approval_result，dry-run 无副作用
+      if (isWriteTool(toolName) && !result.permissionDenied && !result.dryRun) {
+        traceLog.record({
+          type: 'write_action_executed',
+          sessionId: context.sessionId || null,
+          tool: toolName,
+          ok: true,
+          dryRun: false,
+          durationMs: Date.now() - t0,
+        })
+      }
       const toolResult = {
         role: 'tool',
         tool_call_id: toolCall.id,
@@ -318,6 +336,16 @@ class Agent {
       console.log(`[Agent] Tool result:`, result)
     } catch (error) {
       console.error(`[Agent] Tool error:`, error)
+      if (isWriteTool(toolName)) {
+        traceLog.record({
+          type: 'write_action_executed',
+          sessionId: context.sessionId || null,
+          tool: toolName,
+          ok: false,
+          dryRun: false,
+          error: error.message,
+        })
+      }
       this.conversationHistory.push({
         role: 'tool',
         tool_call_id: toolCall.id,
