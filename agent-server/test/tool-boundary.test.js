@@ -65,9 +65,8 @@ test('trimHistory: 裁剪起点对齐，不会把 tool 消息组裁成孤儿', (
     { role: 'user', content: '再来一个 Z' },
     { role: 'assistant', content: '回答 Z' },
   ]
-  // 配置 3 条上限：原始 slice 会从 index 4 开始（恰好合法）；
-  // 用 tool 组跨越边界的位置验证：手工构造让 slice 起点落在 tool 上
-  agent.config.historyLimit = 4
+  // rawLimit=4：slice(-4) 原始起点是 index 2（tool）→ 对齐后吞掉整组 tool，从 assistant(结论) 开始
+  agent.config.rawLimit = 4
   agent.conversationHistory = [
     { role: 'user', content: '前情' },
     {

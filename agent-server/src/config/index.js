@@ -21,6 +21,11 @@ const config = {
       light: { model: process.env.LLM_LIGHT_MODEL },
       reasoning: { model: process.env.LLM_REASONING_MODEL },
     },
+    // 单价表（元/百万 token，input/output）——成本账本（eval/cost-report.js）用，按实际账单调整
+    pricing: {
+      'deepseek-chat': { input: 2, output: 8 },
+      'doubao-seed-2-0-pro-260215': { input: 4, output: 16 },
+    },
   },
 
   agent: {
@@ -29,6 +34,10 @@ const config = {
     timeout: 60000,
     // 对话历史上限，避免长会话导致内存持续增长
     historyLimit: 40,
+    // dph-C 派生视图：raw 只追加不改写（history-store.js），raw 的内存上限（条数）
+    rawLimit: 200,
+    // 压缩策略：rolling-summary（滚动摘要，默认）/ truncate（对照基线）/ no-compress
+    compressStrategy: process.env.COMPRESS_STRATEGY || 'rolling-summary',
     // dph-C token 预算：历史估算 token 超过该值触发滚动摘要压缩
     tokenBudget: 16000,
     // dph-D 单工具执行超时（毫秒），防止网络卡死拖垮整个 Turn

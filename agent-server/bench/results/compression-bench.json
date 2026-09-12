@@ -1,0 +1,813 @@
+{
+  "ranAt": "2026-09-12T06:46:03.019Z",
+  "budget": 400,
+  "results": [
+    {
+      "strategy": "no-compress",
+      "retention": 1,
+      "avgViewTokens": 1382,
+      "summarizeCalls": 0,
+      "cases": [
+        {
+          "id": "bench-01",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1386,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "pnpm",
+              "ok": true,
+              "answer": "你之前说的是 **pnpm**。\n\n另外你还提到过两个项目信息：版本是 **0.1.0**，城市是 **杭州**。"
+            },
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": true,
+              "answer": "之前你提到的是 **0.1.0**。\n\n另外一并回顾下你之前同步的几条背景信息：\n\n| 项目 | 内容 |\n|-----"
+            },
+            {
+              "key": "city",
+              "expect": "杭州",
+              "ok": true,
+              "answer": "杭州。"
+            }
+          ]
+        },
+        {
+          "id": "bench-02",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1385,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "npm",
+              "ok": true,
+              "answer": "你之前说的是 **npm**。"
+            },
+            {
+              "key": "version",
+              "expect": "1.2.0",
+              "ok": true,
+              "answer": "之前记录的是 **1.2.0**。"
+            },
+            {
+              "key": "city",
+              "expect": "深圳",
+              "ok": true,
+              "answer": "你之前提到的是**深圳**。"
+            }
+          ]
+        },
+        {
+          "id": "bench-03",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1377,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "yarn",
+              "ok": true,
+              "answer": "你之前说的是 **yarn**。"
+            },
+            {
+              "key": "version",
+              "expect": "2.3.1",
+              "ok": true,
+              "answer": "之前提到的版本号是 **2.3.1**。"
+            },
+            {
+              "key": "city",
+              "expect": "成都",
+              "ok": true,
+              "answer": "你之前说公司在**成都**。"
+            }
+          ]
+        },
+        {
+          "id": "bench-04",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1381,
+          "detail": [
+            {
+              "key": "framework",
+              "expect": "Vue",
+              "ok": true,
+              "answer": "Vue。"
+            },
+            {
+              "key": "database",
+              "expect": "PostgreSQL",
+              "ok": true,
+              "answer": "根据你之前告诉我的信息：**数据库用的是 PostgreSQL**。\n\n另外一并回顾下你之前提到的其他背景：\n\n| 项目"
+            },
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": true,
+              "answer": "你之前提到的版本号是 **0.1.0**。\n\n另外顺带记录过的技术栈信息：\n- 框架：Vue\n- 数据库：Postgre"
+            }
+          ]
+        },
+        {
+          "id": "bench-05",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1376,
+          "detail": [
+            {
+              "key": "version",
+              "expect": "1.2.0",
+              "ok": true,
+              "answer": "之前你提到的是 **1.2.0**。\n\n另外还记录了两条项目背景：\n- 框架：React\n- 数据库：MySQL"
+            },
+            {
+              "key": "framework",
+              "expect": "React",
+              "ok": true,
+              "answer": "React。\n\n（另外前面还记录过：版本 1.2.0、数据库 MySQL。）"
+            },
+            {
+              "key": "database",
+              "expect": "MySQL",
+              "ok": true,
+              "answer": "MySQL。\n\n这是你在前面明确告诉我的：数据库用的是 MySQL。"
+            }
+          ]
+        },
+        {
+          "id": "bench-06",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1377,
+          "detail": [
+            {
+              "key": "framework",
+              "expect": "Svelte",
+              "ok": true,
+              "answer": "Svelte。"
+            },
+            {
+              "key": "city",
+              "expect": "成都",
+              "ok": true,
+              "answer": "成都。"
+            },
+            {
+              "key": "version",
+              "expect": "2.3.1",
+              "ok": true,
+              "answer": "之前你提到的版本号是 **2.3.1**。\n\n（另外补充一下，之前你还提到过技术栈是 **Svelte**、城市相关用的"
+            }
+          ]
+        },
+        {
+          "id": "bench-07",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1384,
+          "detail": [
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": true,
+              "answer": "之前你告诉我的是：**0.1.0**。"
+            },
+            {
+              "key": "city",
+              "expect": "杭州",
+              "ok": true,
+              "answer": "杭州。"
+            },
+            {
+              "key": "framework",
+              "expect": "Vue",
+              "ok": true,
+              "answer": "Vue。\n\n（你前面提到过：version 是 0.1.0，city 是 杭州，framework 是 Vue。）"
+            }
+          ]
+        },
+        {
+          "id": "bench-08",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1382,
+          "detail": [
+            {
+              "key": "city",
+              "expect": "深圳",
+              "ok": true,
+              "answer": "你之前说公司在**深圳**。"
+            },
+            {
+              "key": "database",
+              "expect": "MySQL",
+              "ok": true,
+              "answer": "你之前提到过，数据库用的是 **MySQL**。"
+            },
+            {
+              "key": "version",
+              "expect": "1.2.0",
+              "ok": true,
+              "answer": "你之前提到的是 **1.2.0**。"
+            }
+          ]
+        },
+        {
+          "id": "bench-09",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1386,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "yarn",
+              "ok": true,
+              "answer": "你之前说的是 **yarn**。"
+            },
+            {
+              "key": "version",
+              "expect": "2.3.1",
+              "ok": true,
+              "answer": "之前提到的版本号是 **2.3.1**。"
+            },
+            {
+              "key": "city",
+              "expect": "成都",
+              "ok": true,
+              "answer": "成都。"
+            }
+          ]
+        },
+        {
+          "id": "bench-10",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 1384,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "pnpm",
+              "ok": true,
+              "answer": "你之前说的是 **pnpm**。"
+            },
+            {
+              "key": "framework",
+              "expect": "Vue",
+              "ok": true,
+              "answer": "你之前告诉我，前端框架用的是 **Vue**。"
+            },
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": true,
+              "answer": "你之前提到的版本号是 **0.1.0**。"
+            }
+          ]
+        }
+      ],
+      "durationMs": 25212
+    },
+    {
+      "strategy": "truncate",
+      "retention": 0.233,
+      "avgViewTokens": 227,
+      "summarizeCalls": 0,
+      "cases": [
+        {
+          "id": "bench-01",
+          "facts": 3,
+          "correct": 1,
+          "viewTokens": 228,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "pnpm",
+              "ok": true,
+              "answer": "你之前没有跟我提过包管理器的事。\n\n我们这轮对话里，你聊的是：\n- 某个报错是什么意思\n- 某个函数的边界条件怎么处理\n"
+            },
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": false,
+              "answer": "我这边没有查到之前对话里提到过具体的版本号。\n\n目前上下文里能确认的版本信息只有一条：我作为 Browser Assis"
+            },
+            {
+              "key": "city",
+              "expect": "杭州",
+              "ok": false,
+              "answer": "你之前没有提到过公司在哪个城市。我们之前的几轮对话里，你聊的都是代码相关的话题（函数边界条件、抽公共方法、需求变更），没"
+            }
+          ]
+        },
+        {
+          "id": "bench-02",
+          "facts": 3,
+          "correct": 1,
+          "viewTokens": 232,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "npm",
+              "ok": true,
+              "answer": "你之前没有提到过项目用的包管理器，所以我这边没有相关记录。\n\n你可以直接告诉我，或者我从项目里帮你找一下线索，比如：\n\n"
+            },
+            {
+              "key": "version",
+              "expect": "1.2.0",
+              "ok": false,
+              "answer": "我翻了一下我们这轮对话，之前并没有提到过任何版本号——你贴的内容里没有出现，我之前的回复里也没有。\n\n顺带说明一下：我这"
+            },
+            {
+              "key": "city",
+              "expect": "深圳",
+              "ok": false,
+              "answer": "你之前没有告诉过我公司在哪个城市，我们的对话里没有出现过这类信息。\n\n如果你需要，我可以帮你查一下当前浏览器页面里有没有"
+            }
+          ]
+        },
+        {
+          "id": "bench-03",
+          "facts": 3,
+          "correct": 1,
+          "viewTokens": 225,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "yarn",
+              "ok": true,
+              "answer": "我这边没有你之前的对话记录，所以查不到你当时说的包管理器是哪个。\n\n如果需要，可以这样快速确认：\n\n1. **看锁文件*"
+            },
+            {
+              "key": "version",
+              "expect": "2.3.1",
+              "ok": false,
+              "answer": "你问的\"之前提到的版本号\"，我在当前对话里没有找到相关记录——我们前面几轮聊的是日志级别、注释、报错堆栈和边界条件，都没"
+            },
+            {
+              "key": "city",
+              "expect": "成都",
+              "ok": false,
+              "answer": "我这边没有你之前提到过的信息——我无法访问历史对话记录，每次对话对我来说都是全新的开始。\n\n如果你能再告诉我一次，或者把"
+            }
+          ]
+        },
+        {
+          "id": "bench-04",
+          "facts": 3,
+          "correct": 0,
+          "viewTokens": 224,
+          "detail": [
+            {
+              "key": "framework",
+              "expect": "Vue",
+              "ok": false,
+              "answer": "我目前没有关于这个项目前端框架的记录。\n\n本次对话里你还没有提到过具体的技术栈，我也无法读取历史会话或项目文件来确认。如"
+            },
+            {
+              "key": "database",
+              "expect": "PostgreSQL",
+              "ok": false,
+              "answer": "我这边没有你之前关于数据库选型的讨论记录——当前对话里只有你刚才那几条消息（调日志级别、加注释、看报错），没有涉及选型的"
+            },
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": false,
+              "answer": "你之前提到的是**依赖的版本有点老**，但没有给出具体版本号——原话是\"这个依赖的版本有点老，升…\"，后面的内容被截断了"
+            }
+          ]
+        },
+        {
+          "id": "bench-05",
+          "facts": 3,
+          "correct": 1,
+          "viewTokens": 222,
+          "detail": [
+            {
+              "key": "version",
+              "expect": "1.2.0",
+              "ok": false,
+              "answer": "我无法确认\"之前提到的版本号\"具体是多少——在我们目前的对话里，并没有出现过任何具体的版本号。\n\n回顾一下你说过的几条消"
+            },
+            {
+              "key": "framework",
+              "expect": "React",
+              "ok": true,
+              "answer": "我这边没有关于你们项目前端框架的记录。\n\n从我的环境信息看，当前项目是 **MCP Browser Analyzer**"
+            },
+            {
+              "key": "database",
+              "expect": "MySQL",
+              "ok": false,
+              "answer": "我这边没有关于\"数据库选型\"的任何上下文记录——我们之前聊的都是依赖升级、日志级别、加注释这类话题，没有涉及数据库选型。"
+            }
+          ]
+        },
+        {
+          "id": "bench-06",
+          "facts": 3,
+          "correct": 0,
+          "viewTokens": 223,
+          "detail": [
+            {
+              "key": "framework",
+              "expect": "Svelte",
+              "ok": false,
+              "answer": "你问的是\"之前说前端框架用的是哪个\"，但翻遍我们这轮对话，我并没有提到过任何前端框架——前面几条回复都是模板式的套话，没"
+            },
+            {
+              "key": "city",
+              "expect": "成都",
+              "ok": false,
+              "answer": "你之前没有提到过公司在哪个城市。我们聊的是需求变更、代码评审加类型注解、依赖升级兼容性，以及调 debug 日志级别复现"
+            },
+            {
+              "key": "version",
+              "expect": "2.3.1",
+              "ok": false,
+              "answer": "我查了一下我们前面的对话，**并没有提到过任何具体的版本号**。\n\n回顾一下，你之前几条消息分别是：\n\n1. 提到\"需求"
+            }
+          ]
+        },
+        {
+          "id": "bench-07",
+          "facts": 3,
+          "correct": 0,
+          "viewTokens": 229,
+          "detail": [
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": false,
+              "answer": "我这边没有可查的记录——你前面几条消息（需求变更、代码评审意见、依赖版本）我都只是给了同一句模板回复，没有真正记录任何具"
+            },
+            {
+              "key": "city",
+              "expect": "杭州",
+              "ok": false,
+              "answer": "你之前没有提到过公司在哪个城市。\n\n翻了一下我们这轮对话，你聊的都是开发相关的事：需求延期、代码评审加类型注解、依赖升级"
+            },
+            {
+              "key": "framework",
+              "expect": "Vue",
+              "ok": false,
+              "answer": "我这边没有你项目的技术栈记录，前面几轮对话里也没有提到过前端框架。\n\n不过可以确认的是：我们聊过的内容只有——\n\n- 抽"
+            }
+          ]
+        },
+        {
+          "id": "bench-08",
+          "facts": 3,
+          "correct": 1,
+          "viewTokens": 229,
+          "detail": [
+            {
+              "key": "city",
+              "expect": "深圳",
+              "ok": false,
+              "answer": "你之前没有提到过公司在哪个城市，我们的对话里没有这方面的信息。\n\n如果你需要，我可以帮你把这次对话里出现过的要点梳理一下"
+            },
+            {
+              "key": "database",
+              "expect": "MySQL",
+              "ok": true,
+              "answer": "你问的是\"之前说数据库选型是什么\"——这个我这边没有相关记录。\n\n从我们目前的对话来看，你前面几次提到的都是代码相关的话"
+            },
+            {
+              "key": "version",
+              "expect": "1.2.0",
+              "ok": false,
+              "answer": "你之前几条消息里并没有提到过具体的版本号，所以我没有可引用的数字。\n\n目前对话中唯一出现的版本信息是我自己的标识：**B"
+            }
+          ]
+        },
+        {
+          "id": "bench-09",
+          "facts": 3,
+          "correct": 1,
+          "viewTokens": 228,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "yarn",
+              "ok": true,
+              "answer": "你之前没有告诉过我项目用哪个包管理器，我这边没有这方面的记录。\n\n从环境信息看，当前项目是 **MCP Browser "
+            },
+            {
+              "key": "version",
+              "expect": "2.3.1",
+              "ok": false,
+              "answer": "你提到的版本号，我在本次对话里没有找到相关记录——前面几轮我都没有给出过具体的版本号信息。\n\n如果你是指以下某处，可以再"
+            },
+            {
+              "key": "city",
+              "expect": "成都",
+              "ok": false,
+              "answer": "你之前没有提到过公司在哪个城市。\n\n我们这几轮聊的都是代码相关的话题（函数边界条件、抽公共方法、需求变更），没有涉及过你"
+            }
+          ]
+        },
+        {
+          "id": "bench-10",
+          "facts": 3,
+          "correct": 1,
+          "viewTokens": 232,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "pnpm",
+              "ok": true,
+              "answer": "你前面没有提到过项目用的包管理器，我这边也没有相关记录，所以没法帮你回忆。\n\n如果你想确认，可以告诉我，或者我直接帮你看"
+            },
+            {
+              "key": "framework",
+              "expect": "Vue",
+              "ok": false,
+              "answer": "我这边没有关于你们项目前端框架的任何记录，之前的对话里也没有提到过。\n\n我目前掌握的环境信息只有：\n\n| 项目 | 内容"
+            },
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": false,
+              "answer": "你之前没有提到过任何版本号，所以我没有可引用的记录。本次对话里你先后问了四件事：报错含义、函数边界条件、是否抽公共方法，"
+            }
+          ]
+        }
+      ],
+      "durationMs": 42447
+    },
+    {
+      "strategy": "rolling-summary",
+      "retention": 1,
+      "avgViewTokens": 434,
+      "summarizeCalls": 10,
+      "cases": [
+        {
+          "id": "bench-01",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 408,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "pnpm",
+              "ok": true,
+              "answer": "你之前说的是 **pnpm**。\n\n顺带把其他几条背景也一并确认一下：\n\n| 项目 | 你给的值 |\n|---|---|"
+            },
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": true,
+              "answer": "你之前提到的版本号是 **0.1.0**。"
+            },
+            {
+              "key": "city",
+              "expect": "杭州",
+              "ok": true,
+              "answer": "杭州。"
+            }
+          ]
+        },
+        {
+          "id": "bench-02",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 424,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "npm",
+              "ok": true,
+              "answer": "你之前说的是 **npm**。\n\n（另外补充一下当时确认的另外两个背景信息：项目版本 1.2.0，城市深圳。）"
+            },
+            {
+              "key": "version",
+              "expect": "1.2.0",
+              "ok": true,
+              "answer": "你之前确认过的版本号是 **1.2.0**（包管理器 npm，城市深圳）。\n\n需要我帮你查这个版本相关的其他信息吗？"
+            },
+            {
+              "key": "city",
+              "expect": "深圳",
+              "ok": true,
+              "answer": "你之前提到公司在**深圳**。"
+            }
+          ]
+        },
+        {
+          "id": "bench-03",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 487,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "yarn",
+              "ok": true,
+              "answer": "你之前说的是 **yarn**，版本 **2.3.1**。"
+            },
+            {
+              "key": "version",
+              "expect": "2.3.1",
+              "ok": true,
+              "answer": "根据我们之前的对话，版本号是 **2.3.1**（包管理器为 yarn）。\n\n另外顺带确认下其他背景信息：\n- 包管理器"
+            },
+            {
+              "key": "city",
+              "expect": "成都",
+              "ok": true,
+              "answer": "你在之前的对话里提到的是**成都**。"
+            }
+          ]
+        },
+        {
+          "id": "bench-04",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 366,
+          "detail": [
+            {
+              "key": "framework",
+              "expect": "Vue",
+              "ok": true,
+              "answer": "根据之前的对话，前端框架用的是 **Vue**（技术栈：Vue、PostgreSQL，版本 0.1.0）。\n\n需要我基于"
+            },
+            {
+              "key": "database",
+              "expect": "PostgreSQL",
+              "ok": true,
+              "answer": "根据我们之前的讨论，技术栈里数据库选的是 **PostgreSQL**。\n\n如果你需要，我可以帮你回顾一下当时选型的具体"
+            },
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": true,
+              "answer": "根据之前的对话，提到的版本号是 **0.1.0**（项目当前版本）。\n\n另外补充一下背景：技术栈是 Vue + Post"
+            }
+          ]
+        },
+        {
+          "id": "bench-05",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 447,
+          "detail": [
+            {
+              "key": "version",
+              "expect": "1.2.0",
+              "ok": true,
+              "answer": "根据之前对话中提到的技术栈信息，版本号是 **1.2.0**。\n\n另外补充一下当时记录的完整技术栈背景：\n- **版本*"
+            },
+            {
+              "key": "framework",
+              "expect": "React",
+              "ok": true,
+              "answer": "根据之前的对话记录，前端框架用的是 **React**。\n\n补充一下当时提到的技术栈信息：\n- 版本：1.2.0\n- 前"
+            },
+            {
+              "key": "database",
+              "expect": "MySQL",
+              "ok": true,
+              "answer": "根据之前的对话记录，技术栈里数据库选型是 **MySQL**。\n\n当时记录的技术栈信息为：\n- version：1.2."
+            }
+          ]
+        },
+        {
+          "id": "bench-06",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 443,
+          "detail": [
+            {
+              "key": "framework",
+              "expect": "Svelte",
+              "ok": true,
+              "answer": "Svelte。"
+            },
+            {
+              "key": "city",
+              "expect": "成都",
+              "ok": true,
+              "answer": "你在之前的对话里提到的是**成都**。\n\n需要我把这条背景信息（城市=成都）和其他已知项（framework=Svelt"
+            },
+            {
+              "key": "version",
+              "expect": "2.3.1",
+              "ok": true,
+              "answer": "你之前提到的版本号是 **2.3.1**（背景信息：framework=Svelte，city=成都，version=2"
+            }
+          ]
+        },
+        {
+          "id": "bench-07",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 492,
+          "detail": [
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": true,
+              "answer": "你之前提到的版本号是 **0.1.0**（项目 version 字段）。\n\n另外顺带一提，之前对话里还记录过：city "
+            },
+            {
+              "key": "city",
+              "expect": "杭州",
+              "ok": true,
+              "answer": "杭州。"
+            },
+            {
+              "key": "framework",
+              "expect": "Vue",
+              "ok": true,
+              "answer": "根据之前的记录，前端框架用的是 **Vue**。\n\n（顺带一提，项目背景里还记录着：版本 0.1.0、城市杭州。）"
+            }
+          ]
+        },
+        {
+          "id": "bench-08",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 398,
+          "detail": [
+            {
+              "key": "city",
+              "expect": "深圳",
+              "ok": true,
+              "answer": "你之前提到的是**深圳**。"
+            },
+            {
+              "key": "database",
+              "expect": "MySQL",
+              "ok": true,
+              "answer": "根据你之前设定的背景信息：**database = MySQL**。\n\n顺带回顾一下这次对话里你给过的其他背景参数：\n-"
+            },
+            {
+              "key": "version",
+              "expect": "1.2.0",
+              "ok": true,
+              "answer": "根据你之前设定的背景信息，版本号是 **1.2.0**。\n\n（另外补充一下之前几轮的其他背景设定，方便你对照：city "
+            }
+          ]
+        },
+        {
+          "id": "bench-09",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 406,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "yarn",
+              "ok": true,
+              "answer": "你之前说的是 **yarn**，版本 **2.3.1**。"
+            },
+            {
+              "key": "version",
+              "expect": "2.3.1",
+              "ok": true,
+              "answer": "根据环境信息，**版本号是 2.3.1**（包管理器为 yarn，城市为成都）。\n\n需要说明一下：这个 2.3.1 是当"
+            },
+            {
+              "key": "city",
+              "expect": "成都",
+              "ok": true,
+              "answer": "成都是你之前提到的公司所在城市。"
+            }
+          ]
+        },
+        {
+          "id": "bench-10",
+          "facts": 3,
+          "correct": 3,
+          "viewTokens": 464,
+          "detail": [
+            {
+              "key": "package_manager",
+              "expect": "pnpm",
+              "ok": true,
+              "answer": "pnpm。\n\n（另外提一句：前面几轮我给你的回复都是同一个模板，没有真正回答你的问题，这是我的问题。如果你愿意，把报错堆"
+            },
+            {
+              "key": "framework",
+              "expect": "Vue",
+              "ok": true,
+              "answer": "Vue。\n\n需要说明的是：我这边目前没有可用的浏览器连接，前面几轮我给出的都是套话模板，并没有真正执行任何操作，这一点向"
+            },
+            {
+              "key": "version",
+              "expect": "0.1.0",
+              "ok": true,
+              "answer": "根据你之前提供的信息：\n\n- **项目版本号：0.1.0**\n- 包管理器：pnpm\n- 框架：Vue\n\n如果你问的是某"
+            }
+          ]
+        }
+      ],
+      "durationMs": 39117
+    }
+  ]
+}
