@@ -94,10 +94,16 @@ class Agent {
         if (compressCount !== null) {
           try {
             const result = await compressHistory(this.conversationHistory, this.config.tokenBudget, async (text) => {
-              const reply = await this.llm.chat([
-                { role: 'system', content: CONTEXT_SUMMARY_PROMPT },
-                { role: 'user', content: text },
-              ])
+              const reply = await this.llm.chat(
+                [
+                  { role: 'system', content: CONTEXT_SUMMARY_PROMPT },
+                  { role: 'user', content: text },
+                ],
+                [],
+                undefined,
+                undefined,
+                { tier: 'light' } // 滚动摘要是有损压缩，便宜模型足够，别用强模型烧钱
+              )
               return reply?.content
             })
             this.conversationHistory = result.messages

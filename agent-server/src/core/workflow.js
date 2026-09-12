@@ -40,8 +40,21 @@ class ResearchWorkflow {
     this.maxPagesPerTopic = options.maxPagesPerTopic || 3
     this.maxAttempts = options.maxAttempts || 2 // 每主题信息不足时的重试轮次
     this.checkpointEnabled = options.checkpoint !== false
-    this.hitlEnabled = options.hitl !== false
+    // 分级 HITL：打断频率与打断时机
+    // - 'off'：全程不打断（停止需求由常驻停止按钮 + 进度流覆盖）
+    // - 'on-deadend'（默认）：只在 LLM 不该替用户拍板的分叉点打断——
+    //     死胡同主题（重试耗尽仍不足）/ 累计页数预算告警 / 可选的计划确认（planReview）
+    // - 'every-topic'：旧行为，每个主题推进后必问一次（保留作对比与回退）
+    // 兼容旧 options.hitl：true → every-topic，false → off，未传时用默认 on-deadend
+    this.hitlMode =
+      options.hitlMode ||
+      (options.hitl === false ? 'off' : options.hitl === true ? 'every-topic' : 'on-deadend')
+    this.hitlEnabled = this.hitlMode !== 'off'
+    // 计划确认：研究开始前让用户过目/增改子问题（把交互预算挪到信息最充分的开头）
+    this.planReviewEnabled = options.planReview === true
     this.hitlTimeoutMs = options.hitlTimeoutMs || 120000 // HITL 等待用户答复超时
+    // 预算硬上限：累计抓取页数达到该值时（on-deadend 模式）询问用户是否继续消耗
+    this.maxTotalPages = options.maxTotalPages || 15
   }
 
   /**
@@ -65,6 +78,7 @@ class ResearchWorkflow {
       switch (state.step) {
         case 'plan':
           await this.planNode(state, onProgress)
+          await this.planReview(state, { onProgress, onAsk })
           break
         case 'research':
           await this.researchNode(state, { connectionId, onProgress, onAsk })
@@ -150,15 +164,15 @@ class ResearchWorkflow {
     const topic = state.plan[state.currentTopic]
     const topicLabel = `${state.currentTopic + 1}/${state.plan.length}「${topic.question}」`
 
-    // 信息已足够（重试轮次内由 grade 判断过）→ 条件边：直接进下一主题
+    // 信息已足够（重试轮次内由 grade 判断过）→ 条件边：直接进下一主题（正常路径，不打断）
     if (topic.sufficient) {
       this.emit(state, onProgress, `主题 ${topicLabel}：信息已足够`)
       this.advanceTopic(state)
-      await this.askContinue(state, { onProgress, onAsk })
+      await this.maybeContinue(state, { onProgress, onAsk })
       return
     }
 
-    // 重试次数超限 → 条件边兜底：带着已有信息进下一主题，不阻塞整个研究
+    // 重试次数超限 → 条件边兜底：带着已有信息进下一主题，不阻塞整个研究（死胡同，on-deadend 模式会打断）
     if (topic.attempts >= this.maxAttempts) {
       this.emit(
         state,
@@ -166,7 +180,7 @@ class ResearchWorkflow {
         `主题 ${topicLabel}：多次尝试后信息仍不足（不阻塞，继续后续主题）`
       )
       this.advanceTopic(state)
-      await this.askContinue(state, { onProgress, onAsk })
+      await this.maybeContinue(state, { deadEnd: true, onProgress, onAsk })
       return
     }
 
@@ -181,7 +195,7 @@ class ResearchWorkflow {
     if (this.pendingUrls(topic).length === 0) {
       this.emit(state, onProgress, `主题 ${topicLabel}：搜索未获得可用链接（跳过本主题）`)
       this.advanceTopic(state)
-      await this.askContinue(state, { onProgress, onAsk })
+      await this.maybeContinue(state, { deadEnd: true, onProgress, onAsk })
       return
     }
 
@@ -189,6 +203,7 @@ class ResearchWorkflow {
     state.sources = state.sources.concat(sources)
 
     // grade 条件边：sufficient 或本轮取到过内容但还没攒够 → 下一轮尝试
+    let deadEnd = false
     if (topic.sufficient) {
       this.emit(state, onProgress, `主题 ${topicLabel}：调研完成（${topic.points.length} 条要点）`)
       this.advanceTopic(state)
@@ -202,14 +217,112 @@ class ResearchWorkflow {
     } else {
       this.emit(state, onProgress, `主题 ${topicLabel}：达到重试上限，使用已有信息`)
       this.advanceTopic(state)
+      deadEnd = true
     }
 
-    await this.askContinue(state, { onProgress, onAsk })
+    await this.maybeContinue(state, { deadEnd, onProgress, onAsk })
   }
 
   /**
-   * HITL：仅在主题推进后询问一次（对应 LangGraph human-in-the-loop interrupt）
-   * 用户可继续、停止，或输入自定义方向插入为下一个待调研主题
+   * 分级 HITL 的统一入口：主题推进后决定"要不要打断用户"
+   *
+   * 打断的本质是代价：模态打断要求用户放下手头事情回来点击，而深度研究恰恰是
+   * 用户点完就想走开的任务。所以默认模式（on-deadend）只在两类 LLM 不该替用户
+   * 拍板的分叉点打断：死胡同（继续烧还是止损）和预算告警（继续花还是收手）。
+   * 正常路径的"停止"需求由常驻停止按钮（abort signal）覆盖，不需要弹窗。
+   *
+   * @param {object} state - 当前 State
+   * @param {object} opts - { deadEnd: 本主题是否死胡同, onProgress, onAsk }
+   */
+  async maybeContinue(state, { deadEnd = false, onProgress, onAsk } = {}) {
+    if (!this.hitlEnabled || !onAsk) return
+    if (state.step !== 'research' || state.currentTopic >= state.plan.length) return
+
+    // 旧行为：每个主题推进后必问
+    if (this.hitlMode === 'every-topic') {
+      await this.askContinue(state, { onProgress, onAsk })
+      return
+    }
+
+    // 预算告警：累计抓取页数达到上限，问一次是否继续（budgetAsked 记进 State，
+    // checkpoint 恢复后不会重复问）
+    if (state.sources.length >= this.maxTotalPages && !state.budgetAsked) {
+      state.budgetAsked = true
+      const answer = await this.askUser(
+        onAsk,
+        `已读取 ${state.sources.length} 个页面，达到预算上限。是否继续研究剩余主题？`,
+        ['继续研究', '直接出报告']
+      )
+      if (answer.cancel || answer.text === '直接出报告') {
+        this.emit(state, onProgress, '用户选择收手，基于已收集资料生成报告')
+        state.step = 'compare'
+        return
+      }
+      return
+    }
+
+    // 死胡同：本主题重试耗尽仍信息不足。用户可以止损（跳过/出报告），
+    // 也可以输入新方向插队为下一个待调研主题（HITL 真正的"调方向"价值）
+    if (!deadEnd) return
+
+    const answer = await this.askUser(
+      onAsk,
+      `当前主题多次尝试后信息仍不足。可以输入新的研究方向，或选择：`,
+      ['跳过继续', '直接出报告']
+    )
+    if (answer.cancel || answer.text === '直接出报告') {
+      this.emit(state, onProgress, '用户选择停止，基于已收集资料生成报告')
+      state.step = 'compare'
+      return
+    }
+    if (answer.text && !['跳过继续', '跳过', '继续'].includes(answer.text.trim())) {
+      const question = answer.text.trim().slice(0, 200)
+      state.plan.splice(state.currentTopic, 0, {
+        question,
+        queries: [question],
+        urls: [],
+        points: [],
+        sufficient: false,
+        attempts: 0,
+      })
+      this.emit(state, onProgress, `已插入用户补充方向：「${question}」`)
+    }
+  }
+
+  /**
+   * 计划确认（可选，options.planReview 开启）：研究开始前让用户过目子问题
+   * 这是把交互预算从"过程中"挪到"开头"的一半：开头是用户上下文最充分、
+   * 改方向成本最低的时刻；确认后全程连跑不再打断（配合 on-deadend 默认模式）
+   */
+  async planReview(state, { onProgress, onAsk }) {
+    if (!this.planReviewEnabled || !this.hitlEnabled || !onAsk) return
+    const planText = state.plan.map((t, i) => `${i + 1}. ${t.question}`).join('\n')
+    const answer = await this.askUser(
+      onAsk,
+      `研究计划如下，可输入补充方向后开始，或直接：\n${planText}`,
+      ['开始研究', '停止研究']
+    )
+    if (answer.cancel) {
+      throw Object.assign(new Error('用户在计划确认阶段取消研究'), { code: 'ABORTED' })
+    }
+    if (answer.text && !['开始研究'].includes(answer.text.trim())) {
+      const question = answer.text.trim().slice(0, 200)
+      state.plan.push({
+        question,
+        queries: [question],
+        urls: [],
+        points: [],
+        sufficient: false,
+        attempts: 0,
+      })
+      this.emit(state, onProgress, `计划已更新，追加研究方向：「${question}」`)
+    }
+  }
+
+  /**
+   * [legacy] HITL：仅在主题推进后询问一次（对应 LangGraph human-in-the-loop interrupt）
+   * 用户可继续、停止，或输入自定义方向插入为下一个待调研主题。
+   * 默认模式已不再走这里（见 maybeContinue），保留给 hitlMode='every-topic'
    */
   async askContinue(state, { onProgress, onAsk }) {
     if (!this.hitlEnabled || !onAsk) return
@@ -337,7 +450,8 @@ class ResearchWorkflow {
           ],
           [],
           RESEARCH_TOPIC_PROMPT,
-          this.signal
+          this.signal,
+          { tier: 'light' } // grade 是窄任务（打分+提炼要点），走便宜模型
         )
         grade = parseJSON(response.content)
       } catch (error) {
@@ -383,7 +497,8 @@ class ResearchWorkflow {
         ],
         [],
         RESEARCH_QUERY_PROMPT,
-        this.signal
+        this.signal,
+        { tier: 'light' } // 检索词改写同样是窄任务，走便宜模型
       )
       const queries = parseJSON(response.content)
       if (Array.isArray(queries) && queries.length > 0) {

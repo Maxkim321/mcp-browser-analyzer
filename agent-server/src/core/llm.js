@@ -1,19 +1,26 @@
 const config = require('../config/index.js')
 const { SYSTEM_PROMPT } = require('../config/prompts.js')
+const { getProvider } = require('./llm-providers.js')
 
 /**
- * 大模型集成模块
- * 支持调用 OpenAI/Anthropic 等大模型 API
- * 自动在每次请求前添加系统提示词，指导Agent行为
+ * 大模型客户端：分级路由 + provider 委托
+ *
+ * 本类只负责两件事，协议细节（请求/流式解析/重试）全部在 llm-providers.js：
+ * 1. 多模型抽象：持有 provider 适配器，上层只面向 chat/chatStream 接口编程
+ * 2. 分级路由：每个调用点可标注 tier（light/reasoning），resolveTierConfig 按档位
+ *    合并出该次请求实际生效的模型配置；未配置的档位自动回落主模型（优雅降级）
  */
 
 class LLMClient {
   constructor(customConfig = {}) {
     const mergedConfig = { ...config.llm, ...customConfig }
+    this.provider = getProvider(mergedConfig.provider)
     this.apiKey = mergedConfig.apiKey
     this.baseURL = mergedConfig.baseURL
     this.model = mergedConfig.model
     this.temperature = mergedConfig.temperature
+    // 分级配置：{ light: { model, ... }, reasoning: { model, ... } }，字段缺省回落主配置
+    this.tiers = mergedConfig.tiers || {}
   }
 
   /**
@@ -28,46 +35,50 @@ class LLMClient {
     if (customConfig.model) this.model = customConfig.model
     // temperature 允许 0，必须用 isFinite 判断
     if (Number.isFinite(customConfig.temperature)) this.temperature = customConfig.temperature
+    if (customConfig.tiers) this.tiers = { ...this.tiers, ...customConfig.tiers }
+    if (customConfig.provider) this.provider = getProvider(customConfig.provider)
   }
 
   /**
-   * 调用大模型生成回复
-   * 自动在消息列表开头添加系统提示词
-   * @param {Array} messages - 对话消息列表
+   * 解析某个档位实际生效的模型配置（分级路由核心）
+   * 档位未配置/未声明的字段逐级回落主配置：换便宜模型只需要配一个 model 名，
+   * apiKey/baseURL 自动沿用；档位完全没配则该次调用就是主模型，零成本降级
+   * @param {string} [tier] - 'light' | 'reasoning' | undefined（主模型）
+   * @returns {object} 实际生效的 { apiKey, baseURL, model, temperature, provider }
+   */
+  resolveTierConfig(tier) {
+    const base = {
+      apiKey: this.apiKey,
+      baseURL: this.baseURL,
+      model: this.model,
+      temperature: this.temperature,
+      provider: undefined,
+    }
+    const overrides = this.tiers?.[tier]
+    if (!overrides) return base
+    // 只合并显式配置的字段：config 里 model: undefined 的占位不能把主模型抹掉
+    const resolved = { ...base }
+    for (const [key, value] of Object.entries(overrides)) {
+      if (value !== undefined && value !== null && value !== '') resolved[key] = value
+    }
+    return resolved
+  }
+
+  /**
+   * 调用大模型生成回复（非流式）
+   * @param {Array} messages - 消息列表
    * @param {Array} tools - 可用的工具列表
-   * @param {string} [systemPrompt] - 可选的系统提示词，覆盖默认值（用于总结/翻译等专用动作）
-   * @param {AbortSignal} [signal] - 取消信号（dph-A 可取消），abort 后立即中断并抛 AbortError
+   * @param {string} [systemPrompt] - 可选系统提示词（覆盖默认值，用于总结/翻译等专用动作）
+   * @param {AbortSignal} [signal] - 取消信号
+   * @param {object} [options] - { tier: 'light'|'reasoning' } 分级路由档位
    * @returns {Promise<object>} 大模型响应
    */
-  async chat(messages, tools = [], systemPrompt, signal) {
-    console.log(`[LLM] Calling model: ${this.model}`)
+  async chat(messages, tools = [], systemPrompt, signal, options = {}) {
+    const cfg = this.resolveTierConfig(options.tier)
+    console.log(`[LLM] Calling model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`)
 
-    const body = this.buildBody(messages, tools, systemPrompt, false)
-
-    try {
-      const response = await fetch(`${this.baseURL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal,
-      })
-
-      if (!response.ok) {
-        const error = await response.text()
-        throw new Error(`LLM API error: ${response.status} - ${error}`)
-      }
-
-      const data = await response.json()
-      const result = data.choices[0].message
-      console.log(`[LLM] Response received`)
-      return result
-    } catch (error) {
-      console.error('[LLM] Error:', error)
-      throw error
-    }
+    const body = this.buildBody(messages, tools, systemPrompt, false, cfg)
+    return this.provider.chat(cfg, body, signal)
   }
 
   /**
@@ -79,93 +90,16 @@ class LLMClient {
    * @param {Array} tools - 可用的工具列表
    * @param {string} [systemPrompt] - 可选系统提示词
    * @param {Function} [onToken] - 文本增量回调 (chunk: string) => void
-   * @param {AbortSignal} [signal] - 取消信号（dph-A 可观测/可取消），abort 后立即中断并抛 AbortError
+   * @param {AbortSignal} [signal] - 取消信号（dph-A），abort 后立即中断并抛 AbortError
+   * @param {object} [options] - { tier } 分级路由档位
    * @returns {Promise<object>} 完整消息（含累积的 content / tool_calls）
    */
-  async chatStream(messages, tools = [], systemPrompt, onToken, signal) {
-    console.log(`[LLM] Streaming model: ${this.model}`)
+  async chatStream(messages, tools = [], systemPrompt, onToken, signal, options = {}) {
+    const cfg = this.resolveTierConfig(options.tier)
+    console.log(`[LLM] Streaming model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`)
 
-    const body = this.buildBody(messages, tools, systemPrompt, true)
-
-    const response = await fetch(`${this.baseURL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal,
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`LLM API error: ${response.status} - ${error}`)
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let content = ''
-    // tool_calls 按 index 累积：流式接口会分多次返回同一 index 的增量
-    const toolCalls = []
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-
-      // SSE 按行分割，最后一行可能不完整，保留到下一轮
-      const lines = buffer.split('\n')
-      buffer = lines.pop()
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed.startsWith('data:')) continue
-        const data = trimmed.slice(5).trim()
-        if (!data || data === '[DONE]') continue
-
-        try {
-          const chunk = JSON.parse(data)
-          const delta = chunk.choices?.[0]?.delta || {}
-          if (delta.content) {
-            content += delta.content
-            onToken?.(delta.content)
-          }
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const index = tc.index ?? 0
-              toolCalls[index] = toolCalls[index] || {
-                index,
-                id: '',
-                type: 'function',
-                function: { name: '', arguments: '' },
-              }
-              if (tc.id) toolCalls[index].id = tc.id
-              if (tc.type) toolCalls[index].type = tc.type
-              if (tc.function?.name) toolCalls[index].function.name += tc.function.name
-              if (tc.function?.arguments)
-                toolCalls[index].function.arguments += tc.function.arguments
-            }
-          }
-        } catch (error) {
-          console.warn('[LLM] SSE parse chunk failed:', error.message)
-        }
-      }
-    }
-
-    console.log(
-      `[LLM] Stream finished, content chars: ${content.length}, tool_calls: ${toolCalls.length}`
-    )
-
-    const message = { role: 'assistant', content }
-    if (toolCalls.length > 0) {
-      message.tool_calls = toolCalls.map((tc) => ({
-        id: tc.id,
-        type: 'function',
-        function: { name: tc.function.name, arguments: tc.function.arguments },
-      }))
-    }
-    return message
+    const body = this.buildBody(messages, tools, systemPrompt, true, cfg)
+    return this.provider.chatStream(cfg, body, onToken, signal)
   }
 
   /**
@@ -174,23 +108,23 @@ class LLMClient {
    * @param {Array} tools - 工具列表
    * @param {string} [systemPrompt] - 可选系统提示词
    * @param {boolean} stream - 是否流式
+   * @param {object} [cfg] - 该次请求生效的模型配置（缺省用主配置）
    * @returns {object} 请求体
    */
-  buildBody(messages, tools, systemPrompt, stream) {
+  buildBody(messages, tools, systemPrompt, stream, cfg = this) {
     const augmentedMessages = [
       { role: 'system', content: systemPrompt || SYSTEM_PROMPT },
       ...messages,
     ]
 
     const body = {
-      model: this.model,
+      model: cfg.model,
       messages: augmentedMessages,
-      temperature: this.temperature,
+      temperature: cfg.temperature,
       stream,
     }
 
     if (tools.length > 0) {
-      //把tools喂给LLM理解的格式
       body.tools = tools.map((tool) => ({
         type: 'function',
         function: {

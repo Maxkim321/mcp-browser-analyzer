@@ -14,6 +14,13 @@ const config = {
     baseURL: process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3',
     model: process.env.ARK_MODEL || 'doubao-seed-2-0-pro-260215',
     temperature: 0.7,
+    // 分级路由档位：缺省字段回落主配置，档位完全未配置（env 未设置）时该次调用就是主模型
+    // light：高频窄任务（grade 打分/查询改写/上下文压缩摘要），便宜快
+    // reasoning：重规划任务（深度研究 plan 等），主模型本身就是强模型，故默认不单独配
+    tiers: {
+      light: { model: process.env.LLM_LIGHT_MODEL },
+      reasoning: { model: process.env.LLM_REASONING_MODEL },
+    },
   },
 
   agent: {
