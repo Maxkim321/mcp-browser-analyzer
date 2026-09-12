@@ -19,13 +19,15 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 | | 💬 多轮上下文对话 | 会话持久化（`chrome.storage.local` 分桶存储），历史会话可切换 |
 | | ⚡ 流式输出 | SSE 增量解析 + WebSocket 分片推送，打字机效果；工具调用与文本输出同通道区分 |
 | **深度研究** | 🔍 Deep Research | 自动规划子问题 → 后台静默多页读取 → 信息充分性评估 → 交叉对比 → 流式生成带来源报告；checkpoint 断点恢复；**分级 HITL**——正常路径全程连跑零打断，只在死胡同/预算告警时请求人工拍板（`hitlMode: on-deadend / every-topic / off`），可选计划确认（planReview）把方向调整前置到研究开始前 |
+| **页面操作** | 🖱️ 写操作 + 分级权限审批 | Agent 可点击/填表/选下拉（`click_element`/`fill_input`/`select_option`）：读操作零打断，**每次写操作前推送审批卡片**（展示目标选择器与填入值），超时/断连默认拒绝；写动作预算封顶（默认 8 个/轮）+ dry-run 模式 + 审批/执行全链路审计落痕；执行前强制 `get_interactive_elements` 定位，禁止凭空构造选择器 |
 | **模型路由** | 🎚️ 分级路由 + 多模型抽象 | Provider 适配层（当前 OpenAI 兼容协议，可扩展 Claude/Gemini）与模型选择解耦；调用点按任务标注 tier——grade 打分/检索词改写/上下文压缩走 light 便宜模型，plan/报告走 reasoning 档，未配置档位自动回落主模型；瞬时错误（限流/5xx/网络）自动指数退避重试 |
 | **可靠性** | 🛑 可取消回答 | AbortController 支持随时停止生成，不浪费 token |
 | | 📊 Step 级可观测 | 推理/工具执行进度实时下发前端，用户可看到 Agent 当前在做什么 |
 | | 📝 事件溯源 | append-only JSONL 事件日志，服务重启自动投影重建上下文（断点续跑） |
 | | 📦 上下文压缩 | token 预算 + 冷热分层滚动摘要，长会话不爆 context window；**派生视图架构**——raw 只追加不改写，压缩策略可插拔（rolling-summary/truncate/no-compress），tool_calls 消息组原子性有边界对齐保障 |
 | **度量** | 📏 上下文压缩基准 | 自建保真度基准（埋事实点→压缩→考回）实测：滚动摘要保留率 **100%**、截断式仅 **23.3%**，视图 token 省 69%——策略选型靠数字不靠感觉 |
-| | 📋 黄金评测集 | 固定 fixture + rubric 三层判分（字符串/正则/LLM-as-judge），`pnpm eval` 自动阅卷出成绩单，prompt/模型改动退化当场报警 |
+| | 📋 黄金评测集 | 固定 fixture + rubric 三层判分（字符串/正则/LLM-as-judge），`pnpm eval` 自动阅卷出成绩单，prompt/模型改动退化当场报警；**写操作轨迹判卷**——期望动作序列按相对顺序比对（工具/选择器/值），评测离线可复现 |
+| | 🖥️ 评测台 + 白盒仪表盘 | `localhost:9999/dashboard` 三视图：**概览**（成本台账/压缩基准/评测基线/记忆 A-B/观测事件）+ **评测台**（测试集可浏览、逐 case 判卷明细、历史通过率趋势）+ **白盒飞行记录仪**（会话事件时间线逐条展开原始 JSON、进程观测流实时轮询） |
 | | 💰 Token 成本账本 | 每次 LLM 调用（含 tier）落 JSONL 台账，`pnpm report` 按档位/模型汇总成本——分级路由的 ROI 有账可查 |
 | | ⏱️ 工具流水线 | 统一权限校验 + 超时控制，为写操作审批预留挂载点 |
 | **个性化** | 🎯 偏好记忆（L3） | 跨会话记住总结风格/翻译语言/回复风格，自动注入提示词 |

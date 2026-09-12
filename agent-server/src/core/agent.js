@@ -102,6 +102,7 @@ class Agent {
     // 工具上下文在整个 process 生命周期内共享，避免每轮迭代被重置
     const toolContext = {
       connectionId: options.connectionId,
+      sessionId: options.sessionId || null,
       todoWriteCount: 0,
       // dph-A 可取消：工具等待插件响应期间也能被 abort（与深度研究同一套取消机制）
       signal: options.signal,
