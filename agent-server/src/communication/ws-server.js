@@ -7,6 +7,10 @@ const config = require('../config/index.js')
 const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
 const { appendPageContext, appendPrefs } = require('../core/prompt-context.js')
 const eventLog = require('../core/event-log.js')
+const memoryWire = require('../memory/wire.js')
+
+// P3 浏览记忆开关（MEMORY_ENABLED=off 可关闭，默认开启）
+const MEMORY_ENABLED = process.env.MEMORY_ENABLED !== 'off'
 
 const connectionAgents = new Map()
 
@@ -283,6 +287,16 @@ async function handleMessage(id, msg, agent) {
         if (!msg.action && msg.prefs) {
           systemPrompt = appendPrefs(systemPrompt, msg.prefs)
         }
+        // P3 浏览记忆：提问时检索相关旧卡片注入上下文（固定动作不注入，避免破坏结构化模板）
+        let memoryRefs = []
+        if (!msg.action && MEMORY_ENABLED) {
+          const recalled = memoryWire.recallForPrompt(msg.prompt, msg.pageContext)
+          if (recalled) {
+            systemPrompt = `${systemPrompt}\n\n${recalled.block}`
+            memoryRefs = recalled.refs
+            console.log(`[Memory] Recalled ${recalled.refs.length} cards for prompt`)
+          }
+        }
         // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
         // onToken：LLM 文本增量实时分片推送（流式输出），最终结果仍由 agent_response 兜底
         // dph-A：AbortController 支持用户取消；onStep 把 Turn 内每个 Step（推理/工具）事件下发前端
@@ -306,10 +320,16 @@ async function handleMessage(id, msg, agent) {
             success: result.success,
             content: result.content,
             error: result.error,
+            memory_refs: memoryRefs.length > 0 ? memoryRefs : undefined,
           })
           // dph-B：记录回答事件（仅成功且有内容时，append-only）
           if (sessionId && result.success && result.content) {
             eventLog.appendEvent(sessionId, 'assistant', String(result.content).trim())
+          }
+          // P3 浏览记忆：成功回答 + 页面上下文 → 写卡片（跨页面记忆的数据来源）
+          if (result.success && result.content && MEMORY_ENABLED) {
+            const card = memoryWire.rememberFromResult(msg.pageContext, result.content)
+            if (card) console.log(`[Memory] Card saved: ${card.title.slice(0, 40)}`)
           }
         } finally {
           connectionAborts.delete(id)

@@ -16,14 +16,13 @@
       </div>
     </Transition>
 
-    <!-- 头部 -->
+    <!-- 头部：名称交给浏览器原生侧边栏标题栏展示，这里只承载状态与操作 -->
     <header class="chat-header">
       <div class="brand">
         <div class="logo">
           <img src="./assets/logo.png" alt="logo" />
         </div>
         <div class="brand-text">
-          <h1 class="title">浏览器 AI 助手</h1>
           <div class="connection-status" :class="connectionStatus">
             <span class="status-dot"></span>
             <span class="status-text">{{ statusText }}</span>
@@ -323,6 +322,17 @@
             :nodes="traceNodes"
             :active="traceActive"
           />
+          <!-- P3 浏览记忆：本次回答参考了记忆库中的旧页面 -->
+          <div v-if="msg.memoryRefs && msg.memoryRefs.length" class="memory-refs">
+            <span class="memory-refs-label">📌 参考了你之前读过的 {{ msg.memoryRefs.length }} 篇</span>
+            <span
+              v-for="(refItem, ri) in msg.memoryRefs"
+              :key="ri"
+              class="memory-chip"
+              :title="refItem.url"
+              >《{{ refItem.title }}》</span
+            >
+          </div>
           <div
             class="message-bubble markdown-content"
             :class="{ streaming: msg.streaming }"
@@ -556,7 +566,7 @@ const newKnowledgeQuestion = ref('')
 const expandedKnowledgeId = ref('') // 展开到哪张（done 卡片看全文 / pending 卡片补全中）
 const completingId = ref('') // 正在补全的卡片 id
 
-// ===== 主题（深色默认，手动切换并持久化） =====
+// ===== 主题（默认跟随系统、深色兜底，手动切换后持久化） =====
 const theme = ref('dark')
 const THEME_KEY = 'sidepanel-theme'
 const toggleTheme = () => {
@@ -1367,6 +1377,7 @@ const connectWebSocket = () => {
                 ? data.content
                 : `${lastStreamingMsg.content}\n\n错误: ${data.content || data.error || ''}`
               lastStreamingMsg.streaming = false
+              if (data.memory_refs) lastStreamingMsg.memoryRefs = data.memory_refs
               finalContent = lastStreamingMsg.content
               finishTrace(lastStreamingMsg, traceStatus)
             } else if (data.success) {
@@ -1375,6 +1386,7 @@ const connectWebSocket = () => {
                 sender: 'ai',
                 content: data.content,
                 timestamp: Date.now(),
+                memoryRefs: data.memory_refs || [],
               })
               finalContent = data.content
               finishTrace(messages.value[messages.value.length - 1], traceStatus)
@@ -1958,10 +1970,15 @@ const onRuntimeMessage = (request) => {
 }
 
 onMounted(async () => {
-  // 主题恢复：上次手动选的主题优先，默认深色
+  // 主题恢复：上次手动选的主题优先；没有历史偏好时跟随系统，
+  // 让 app 底色与浏览器原生侧边栏标题栏同色，避免撞色出"边框感"
   try {
     const savedTheme = localStorage.getItem(THEME_KEY)
-    if (savedTheme === 'light' || savedTheme === 'dark') theme.value = savedTheme
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      theme.value = savedTheme
+    } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+      theme.value = 'light'
+    }
   } catch {
     /* ignore */
   }
@@ -2124,7 +2141,8 @@ onUnmounted(() => {
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 100vh;
   width: 100%;
   min-width: 0;
   background: linear-gradient(180deg, var(--bg) 0%, var(--surface-2) 100%);
@@ -2183,17 +2201,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-1);
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .connection-status {
@@ -3634,6 +3641,33 @@ onUnmounted(() => {
   margin-left: 1px;
   color: var(--accent-bright);
   animation: cursor-blink 0.9s steps(2, start) infinite;
+}
+
+/* ===== 浏览记忆引用标签 ===== */
+.memory-refs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.memory-refs-label {
+  color: var(--accent-bright);
+}
+.memory-chip {
+  display: inline-block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-bright);
+  cursor: default;
 }
 
 @keyframes cursor-blink {
