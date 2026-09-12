@@ -8,47 +8,10 @@ const fs = require('fs')
 const path = require('path')
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') })
 const usageLog = require('../src/core/usage-log.js')
+const { aggregate } = require('../src/core/usage-stats.js')
 const config = require('../src/config/index.js')
 
 const OUT_DIR = path.join(__dirname, 'results')
-
-function costOf(entry) {
-  const pricing = (config.llm.pricing || {})[entry.model] || {}
-  const inPrice = Number(pricing.input ?? 0)
-  const outPrice = Number(pricing.output ?? 0)
-  const pt = entry.prompt_tokens || 0
-  const ct = entry.completion_tokens || 0
-  return (pt / 1e6) * inPrice + (ct / 1e6) * outPrice
-}
-
-function aggregate(entries, keyFn) {
-  const map = new Map()
-  for (const e of entries) {
-    const key = keyFn(e)
-    if (!key) continue
-    const cur = map.get(key) || {
-      calls: 0,
-      promptTokens: 0,
-      completionTokens: 0,
-      cost: 0,
-      durationMs: 0,
-    }
-    cur.calls++
-    cur.promptTokens += e.prompt_tokens || 0
-    cur.completionTokens += e.completion_tokens || 0
-    cur.cost += costOf(e)
-    cur.durationMs += e.duration_ms || 0
-    map.set(key, cur)
-  }
-  return [...map.entries()].map(([key, v]) => ({
-    key,
-    calls: v.calls,
-    promptTokens: v.promptTokens,
-    completionTokens: v.completionTokens,
-    cost: Number(v.cost.toFixed(4)),
-    avgMs: Math.round(v.durationMs / v.calls),
-  }))
-}
 
 function main() {
   const entries = usageLog.readAll()
@@ -105,4 +68,6 @@ function main() {
   console.log(`\n→ ${path.join(OUT_DIR, 'cost-report.md')}`)
 }
 
-main()
+// 供 dashboard/测试 require 复用聚合结果，只在直接执行时跑 main
+if (require.main === module) main()
+module.exports = { main }

@@ -224,6 +224,24 @@ class ResearchWorkflow {
   }
 
   /**
+   * 构建打断证据：HITL 不该只问"继续吗"，要把"为什么打断"的决策依据摆给用户
+   * （重试了几轮、试过哪些检索词、拿到几页、预算用了多少）——证据决定用户信不信任打断
+   * @param {object} state - 当前 State
+   * @param {object} specific - 打断类型的专属字段（kind: deadend | budget）
+   */
+  buildEvidence(state, specific = {}) {
+    return {
+      kind: specific.kind || 'unknown',
+      hitlMode: this.hitlMode,
+      topicsDone: state.currentTopic,
+      topicsTotal: state.plan.length,
+      sourcesCount: state.sources.length,
+      maxTotalPages: this.maxTotalPages,
+      ...specific,
+    }
+  }
+
+  /**
    * 分级 HITL 的统一入口：主题推进后决定"要不要打断用户"
    *
    * 打断的本质是代价：模态打断要求用户放下手头事情回来点击，而深度研究恰恰是
@@ -251,7 +269,13 @@ class ResearchWorkflow {
       const answer = await this.askUser(
         onAsk,
         `已读取 ${state.sources.length} 个页面，达到预算上限。是否继续研究剩余主题？`,
-        ['继续研究', '直接出报告']
+        ['继续研究', '直接出报告'],
+        this.buildEvidence(state, {
+          kind: 'budget',
+          topic: state.plan[state.currentTopic]?.question,
+          sourcesCount: state.sources.length,
+          maxTotalPages: this.maxTotalPages,
+        })
       )
       if (answer.cancel || answer.text === '直接出报告') {
         this.emit(state, onProgress, '用户选择收手，基于已收集资料生成报告')
@@ -265,10 +289,20 @@ class ResearchWorkflow {
     // 也可以输入新方向插队为下一个待调研主题（HITL 真正的"调方向"价值）
     if (!deadEnd) return
 
+    // 打断证据：deadEnd 在 advanceTopic 之后触发，刚失败的死胡同主题是 currentTopic - 1
+    const deadTopic = state.plan[state.currentTopic - 1]
     const answer = await this.askUser(
       onAsk,
       `当前主题多次尝试后信息仍不足。可以输入新的研究方向，或选择：`,
-      ['跳过继续', '直接出报告']
+      ['跳过继续', '直接出报告'],
+      this.buildEvidence(state, {
+        kind: 'deadend',
+        topic: deadTopic?.question,
+        attempts: deadTopic?.attempts ?? 0,
+        queriesTried: deadTopic?.queries || [],
+        pagesFromTopic: deadTopic?.urls?.length || 0,
+        pointsFromTopic: deadTopic?.points?.length || 0,
+      })
     )
     if (answer.cancel || answer.text === '直接出报告') {
       this.emit(state, onProgress, '用户选择停止，基于已收集资料生成报告')
@@ -607,11 +641,11 @@ class ResearchWorkflow {
 
   // HITL：暂停工作流等待用户答复；超时默认继续（不阻塞研究）
   // 注意：onAsk 答复后必须 clearTimeout 兜底 timer，否则 timer 会一直挂着拖住进程
-  async askUser(onAsk, question, options) {
+  async askUser(onAsk, question, options, evidence) {
     if (!onAsk) return { cancel: false, text: '继续研究' }
     let timer
     const races = [
-      onAsk(question, options),
+      onAsk(question, options, evidence),
       new Promise((resolve) => {
         timer = setTimeout(
           () => resolve({ cancel: false, text: '继续研究', timeout: true }),

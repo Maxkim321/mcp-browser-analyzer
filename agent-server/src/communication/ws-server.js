@@ -1,3 +1,4 @@
+const http = require('node:http')
 const WebSocket = require('ws')
 const toolHandler = require('../tools/handler.js')
 const { Agent } = require('../core/agent.js')
@@ -8,6 +9,8 @@ const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
 const { appendPageContext, appendPrefs } = require('../core/prompt-context.js')
 const eventLog = require('../core/event-log.js')
 const memoryWire = require('../memory/wire.js')
+const usageTracker = require('../core/usage-tracker.js')
+const dashboard = require('./dashboard.js')
 
 // P3 浏览记忆开关（MEMORY_ENABLED=off 可关闭，默认开启）
 const MEMORY_ENABLED = process.env.MEMORY_ENABLED !== 'off'
@@ -104,6 +107,20 @@ class ConnectionManager {
 const manager = new ConnectionManager()
 
 /**
+ * 推送用量汇总（用量条数据源）：本会话 + 服务进程两级，light 占比让分级路由可见
+ * @param {number} id - 连接 ID
+ */
+function pushUsageSummary(id) {
+  const session = usageTracker.summaryFor(id)
+  const total = usageTracker.totalsSnapshot()
+  manager.send(id, {
+    type: 'usage_summary',
+    session: { ...session, lightShare: usageTracker.lightShare(session) },
+    total: { ...total, lightShare: usageTracker.lightShare(total) },
+  })
+}
+
+/**
  * 校验并清洗插件下发的 LLM 配置
  * 插件端配置页可覆盖服务端 .env，但不能信任前端数据：
  *  - 只接受白名单字段，避免把 stream / messages 之类的字段混进 LLMClient
@@ -157,11 +174,16 @@ toolHandler.init({
 })
 
 /**
- * 启动 WebSocket 服务器
- * 监听端口 9999，处理客户端连接和消息
+ * 启动服务器：HTTP 与 WebSocket 同端口共存
+ * - WebSocket 走 upgrade（插件/客户端连接，协议不变）
+ * - HTTP GET 交给 dashboard（/ → 仪表盘页，/api/* → 度量数据）
  */
-const wss = new WebSocket.Server({ port: config.server.port })
-console.log(`[WebSocket] Server started on port ${config.server.port}`)
+const server = http.createServer((req, res) => dashboard.handleRequest(req, res))
+const wss = new WebSocket.Server({ server })
+server.listen(config.server.port, () => {
+  console.log(`[Server] Listening on port ${config.server.port} (WS + Dashboard)`)
+  console.log(`[Dashboard] http://localhost:${config.server.port}/dashboard`)
+})
 
 /**
  * 处理新的客户端连接
@@ -249,6 +271,8 @@ async function handleMessage(id, msg, agent) {
       break
     case 'user_prompt':
       console.log('[Agent] Processing prompt:', msg.prompt)
+      // 用量归因：本连接发起的所有 LLM 调用（含深度研究）计入该会话
+      usageTracker.bindConnection(id)
       try {
         // 插件配置页下发的模型配置：校验后覆盖服务端 .env 默认值（空字段仍用服务端默认）
         const llmOverride = sanitizeLLMConfig(msg.llmConfig)
@@ -310,6 +334,7 @@ async function handleMessage(id, msg, agent) {
         try {
           const result = await agent.process(msg.prompt, {
             connectionId: id,
+            sessionId,
             systemPrompt,
             signal: controller.signal,
             onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
@@ -321,7 +346,10 @@ async function handleMessage(id, msg, agent) {
             content: result.content,
             error: result.error,
             memory_refs: memoryRefs.length > 0 ? memoryRefs : undefined,
+            // 档位 badge：本条回答实际生效的档位/模型（路由决策从黑盒变可见）
+            meta: result.meta,
           })
+          pushUsageSummary(id)
           // dph-B：记录回答事件（仅成功且有内容时，append-only）
           if (sessionId && result.success && result.content) {
             eventLog.appendEvent(sessionId, 'assistant', String(result.content).trim())
@@ -435,7 +463,8 @@ async function runResearch(id, question, llmOverride = {}) {
   const controller = new AbortController()
   connectionAborts.set(id, controller)
 
-  const sendAsk = (askQuestion, options) =>
+  // sendAsk 透传打断证据（kind/topic/attempts/预算），前端 HITL 卡片据此展示"为什么打断"
+  const sendAsk = (askQuestion, options, evidence) =>
     new Promise((resolve) => {
       const timer = setTimeout(() => {
         pendingWorkflowAsks.delete(id)
@@ -446,6 +475,7 @@ async function runResearch(id, question, llmOverride = {}) {
         type: 'workflow_ask',
         question: askQuestion,
         options: options || ['继续研究', '停止研究'],
+        evidence,
       })
     })
 
@@ -465,6 +495,7 @@ async function runResearch(id, question, llmOverride = {}) {
     })
     // 研究结束：清理 checkpoint，避免重复恢复
     workflow.clearCheckpoint(result.state?.taskId)
+    pushUsageSummary(id)
   } catch (error) {
     // dph-A 可取消：识别取消信号，回复"已停止"，不当作系统错误
     if (error?.code === 'ABORTED' || error?.name === 'AbortError') {

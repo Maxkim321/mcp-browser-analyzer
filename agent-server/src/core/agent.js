@@ -3,9 +3,10 @@ const { tools } = require('../tools/index.js')
 const { handleToolCall } = require('../tools/handler.js')
 const config = require('../config/index.js')
 // dph-C 上下文管理（摘要提示词）/ dph-D 工具流水线 / 派生视图历史存储
-const { CONTEXT_SUMMARY_PROMPT } = require('./context-manager.js')
+const { CONTEXT_SUMMARY_PROMPT, estimateMessagesTokens } = require('./context-manager.js')
 const { HistoryStore } = require('./history-store.js')
 const { runToolPipeline } = require('./tool-pipeline.js')
+const traceLog = require('./trace-log.js')
 
 /**
  * AI Agent 编排器
@@ -126,12 +127,23 @@ class Agent {
       emitStep({ phase: 'reasoning', status: 'running' })
 
       // dph-C 上下文压缩：派生视图按策略生成（raw 只追加不改写，见 history-store.js）。
-      // 摘要由 LLM 生成（非流式、light 档），失败降级为不压缩，不影响主流程
+      // 摘要由 LLM 生成（非流式、light 档），失败降级为不压缩，不影响主流程。
+      // 压缩真实发生时：Step 事件带 token 前后值（前端提示条），并落 trace-log（可观测）
       const { messages: view, compressed } = await this.deriveView()
       if (compressed > 0) {
-        emitStep({ phase: 'compress', status: 'success', compressed })
+        const tokensBefore = estimateMessagesTokens(this.store.raw)
+        const tokensAfter = estimateMessagesTokens(view)
+        emitStep({ phase: 'compress', status: 'success', compressed, tokensBefore, tokensAfter })
+        traceLog.record({
+          type: 'context_compressed',
+          sessionId: options.sessionId || null,
+          strategy: this.config.compressStrategy,
+          compressed,
+          tokensBefore,
+          tokensAfter,
+        })
         console.log(
-          `[Agent] Context derived (${this.config.compressStrategy}): ${compressed} old messages → summary`
+          `[Agent] Context derived (${this.config.compressStrategy}): ${compressed} old messages → summary (${tokensBefore} → ${tokensAfter} tokens)`
         )
       }
 
@@ -177,6 +189,8 @@ class Agent {
           conversation: this.conversationHistory,
           iterations: iteration,
           steps: step,
+          // 档位 badge：最终文本轮实际生效的档位/模型（light 摘要调用发生在派生阶段，不影响归属）
+          meta: { tier: this.llm.lastCall?.tier || 'main', model: this.llm.lastCall?.model || null },
         }
       }
     }

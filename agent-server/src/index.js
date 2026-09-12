@@ -4,11 +4,20 @@ require('dotenv').config()
 // 导入配置文件和工具模块
 const config = require('./config/index.js')
 const { tools } = require('./tools/index.js')
-const { setUsageSink } = require('./core/llm-providers.js')
+const { setUsageSink, setTraceSink } = require('./core/llm-providers.js')
 const usageLog = require('./core/usage-log.js')
+const usageTracker = require('./core/usage-tracker.js')
+const traceLog = require('./core/trace-log.js')
 
 // P2 成本账本：所有 LLM 调用的 usage 单点落库（tier/model/tokens/耗时）
-setUsageSink(usageLog.record)
+// 同时喂给内存聚合器（usage_tracker）：ws-server 每次回答后推送 usage_summary（用量条）
+setUsageSink((info) => {
+  usageLog.record(info)
+  usageTracker.record(info)
+})
+
+// 运行时可观测事件（重试/降级/压缩）落 trace-log，dashboard /api/trace 呈现
+setTraceSink((event) => traceLog.record(event))
 
 /**
  * 启动前校验关键配置，缺失时快速失败并给出明确提示
@@ -52,13 +61,14 @@ console.log()
 // 启动 WebSocket 服务
 require('./communication/ws-server.js')
 
-console.log('✅ WebSocket 服务已启动')
+console.log('✅ 服务已启动（WebSocket + Dashboard）')
 console.log()
 
 // 打印最终提示信息
 console.log('💡 提示:')
 console.log('   - Agent Server 已准备就绪')
 console.log('   - 等待 Chrome 插件连接...')
+console.log(`   - 仪表盘: http://localhost:${config.server.port}/dashboard`)
 console.log('   - 使用 chat.js 进行交互式测试')
 console.log()
 console.log('─'.repeat(60))

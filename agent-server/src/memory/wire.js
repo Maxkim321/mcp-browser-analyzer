@@ -28,14 +28,19 @@ function rememberFromResult(pageContext, content) {
  * @param {string} prompt - 用户输入
  * @param {object} [pageContext] - { url, title }（当前页自身不参与召回）
  * @param {number} [k=3]
- * @returns {{ block: string, refs: Array<{title,url,score}> } | null}
+ * @returns {{ block: string, refs: Array<{title,url,score,matchedTerms}> } | null}
  */
 function recallForPrompt(prompt, pageContext, k = 3) {
   const query = [prompt, pageContext?.title].filter(Boolean).join(' ')
   const hits = topK(query, { k, excludeUrl: pageContext?.url })
   if (hits.length === 0) return null
 
-  const refs = hits.map((h) => ({ title: h.card.title, url: h.card.url, score: h.score }))
+  const refs = hits.map((h) => ({
+    title: h.card.title,
+    url: h.card.url,
+    score: h.score,
+    matchedTerms: h.matchedTerms || [],
+  }))
   const items = hits
     .map(
       (h, i) =>

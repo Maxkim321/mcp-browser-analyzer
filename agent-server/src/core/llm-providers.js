@@ -36,6 +36,21 @@ function emitUsage(info) {
   }
 }
 
+// ===== 观测事件上报（重试/降级，与 usage sink 同一横切模式） =====
+// 故障自愈若不可见，用户会以为系统从没处理过故障；落库走 trace-log（运行时可观测事件）
+let traceSink = null
+function setTraceSink(fn) {
+  traceSink = typeof fn === 'function' ? fn : null
+}
+function emitTrace(event) {
+  if (!traceSink) return
+  try {
+    traceSink(event)
+  } catch (error) {
+    console.warn('[LLM] trace sink failed:', error.message)
+  }
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
@@ -56,8 +71,9 @@ function isRetryable(error) {
  * 带退避的重试包装：只对瞬时错误生效，指数退避（800ms → 1600ms）
  * @param {Function} fn - 每次尝试执行的函数
  * @param {AbortSignal} [signal] - 取消信号：abort 期间不再发起下一次重试
+ * @param {object} [info] - { model, tier } 观测事件归因用（重试事件进 trace-log）
  */
-async function withRetry(fn, signal) {
+async function withRetry(fn, signal, info = {}) {
   let lastError
   for (let attempt = 0; attempt <= TRANSIENT_RETRYABLE.maxRetries; attempt++) {
     if (signal?.aborted) {
@@ -72,6 +88,15 @@ async function withRetry(fn, signal) {
       console.warn(
         `[LLM] Transient error (${error.statusCode || error.message}), retry ${attempt + 1} in ${delay}ms`
       )
+      emitTrace({
+        type: 'llm_retry',
+        model: info.model,
+        tier: info.tier || null,
+        attempt: attempt + 1,
+        delayMs: delay,
+        statusCode: error.statusCode ?? null,
+        error: String(error.message || '').slice(0, 200),
+      })
       await sleep(delay)
     }
   }
@@ -93,32 +118,36 @@ const openaiCompatible = {
    * 非流式对话。自动重试瞬时错误（限流/5xx/网络抖动）
    */
   async chat(cfg, body, signal, meta = {}) {
-    return withRetry(async () => {
-      const t0 = Date.now()
-      const response = await fetch(`${cfg.baseURL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${cfg.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal,
-      })
-      if (!response.ok) {
-        const error = await readErrorBody(response)
-        throw Object.assign(new Error(`LLM API error: ${response.status} - ${error}`), {
-          statusCode: response.status,
+    return withRetry(
+      async () => {
+        const t0 = Date.now()
+        const response = await fetch(`${cfg.baseURL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${cfg.apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal,
         })
-      }
-      const data = await response.json()
-      emitUsage({
-        model: cfg.model,
-        tier: meta.tier,
-        usage: data.usage,
-        durationMs: Date.now() - t0,
-      })
-      return data.choices[0].message
-    }, signal)
+        if (!response.ok) {
+          const error = await readErrorBody(response)
+          throw Object.assign(new Error(`LLM API error: ${response.status} - ${error}`), {
+            statusCode: response.status,
+          })
+        }
+        const data = await response.json()
+        emitUsage({
+          model: cfg.model,
+          tier: meta.tier,
+          usage: data.usage,
+          durationMs: Date.now() - t0,
+        })
+        return data.choices[0].message
+      },
+      signal,
+      { model: cfg.model, tier: meta.tier }
+    )
   },
 
   /**
@@ -153,10 +182,18 @@ const openaiCompatible = {
     try {
       response = await withRetry(
         () => doFetch({ stream_options: { include_usage: true }, ...body }),
-        signal
+        signal,
+        { model: cfg.model, tier: meta.tier }
       )
     } catch (error) {
       if (error.statusCode === 400) {
+        // 协议降级：网关不认识 stream_options → 去掉该字段重发（usage 不随流返回）
+        emitTrace({
+          type: 'llm_fallback',
+          model: cfg.model,
+          tier: meta.tier || null,
+          reason: 'stream_options_unsupported',
+        })
         response = await doFetch(body)
       } else {
         throw error
@@ -241,4 +278,4 @@ function getProvider(name) {
   return providers[name] || openaiCompatible
 }
 
-module.exports = { providers, getProvider, withRetry, isRetryable, setUsageSink }
+module.exports = { providers, getProvider, withRetry, isRetryable, setUsageSink, setTraceSink }

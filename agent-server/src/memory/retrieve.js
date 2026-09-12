@@ -64,13 +64,21 @@ function topK(query, { k = 3, excludeUrl } = {}) {
     for (const t of d.tokens) tf.set(t, (tf.get(t) || 0) + 1)
 
     let score = 0
+    const matchedTerms = []
     for (const t of queryTokens) {
       const f = tf.get(t)
       if (!f) continue
+      matchedTerms.push(t)
       const idf = Math.log(1 + (N - (df.get(t) || 0) + 0.5) / ((df.get(t) || 0) + 0.5))
       score += (idf * (f * (BM25.k1 + 1))) / (f + BM25.k1 * (1 - BM25.b + (BM25.b * len) / avgLen))
     }
-    if (score > 0) scored.push({ card: d.card, score: Number(score.toFixed(3)) })
+    if (score > 0)
+      scored.push({
+        card: d.card,
+        score: Number(score.toFixed(3)),
+        // 命中的查询词项：让"为什么召回这张卡"可解释（前端悬浮展示）
+        matchedTerms: matchedTerms.slice(0, 6),
+      })
   }
 
   return scored.sort((a, b) => b.score - a.score).slice(0, k)
