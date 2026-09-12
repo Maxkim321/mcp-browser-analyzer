@@ -1,3 +1,8 @@
+const path = require('node:path')
+const os = require('node:os')
+// 测试隔离：必须在 require trace-log 之前设置（模块加载时固化路径），
+// 否则测试的 readall_probe 会写进真实 trace-log.jsonl 污染 dashboard 数据
+process.env.TRACE_FILE = path.join(os.tmpdir(), `trace-log-test-${process.pid}.jsonl`)
 const { test, describe, beforeEach } = require('node:test')
 const assert = require('node:assert/strict')
 const traceLog = require('../src/core/trace-log.js')

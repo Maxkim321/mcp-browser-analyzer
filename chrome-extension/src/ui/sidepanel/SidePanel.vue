@@ -578,6 +578,9 @@ const connectionStatus = ref('disconnected')
 const statusText = ref('未连接')
 // 会话用量条：服务端 usage_summary 推送驱动（token/成本/light 占比）
 const usageSummary = ref(null)
+// 压缩提示每回合最多一条：ReAct 多轮迭代可能每轮都触发压缩（每轮都真实发生、
+// 轨迹里都留痕），但对话流里连冒 N 条会淹没正文——提示只报第一次，其余看轨迹
+let compressNoticedThisTurn = false
 let websocket = null
 let reconnectTimer = null
 const WS_URL = 'ws://localhost:9999'
@@ -1512,6 +1515,7 @@ const connectWebSocket = () => {
 
           case 'thinking':
             thinking.value = true
+            compressNoticedThisTurn = false
             beginTrace()
             break
 
@@ -1519,8 +1523,9 @@ const connectWebSocket = () => {
           // 前端归约成轨迹节点而非单帧覆盖，用户可看到完整执行过程
           case 'agent_step':
             applyTraceStep(data)
-            // 压缩真实发生时在对话流里冒一条提示（含视图 token 前后值），平时零打扰
-            if (data.phase === 'compress' && data.compressed > 0) {
+            // 压缩真实发生时在对话流里冒一条提示（含视图 token 前后值），每回合最多一条
+            if (data.phase === 'compress' && data.compressed > 0 && !compressNoticedThisTurn) {
+              compressNoticedThisTurn = true
               const saved =
                 Number.isFinite(data.tokensBefore) && Number.isFinite(data.tokensAfter)
                   ? `，视图 token ${data.tokensBefore} → ${data.tokensAfter}`

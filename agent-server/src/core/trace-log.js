@@ -15,7 +15,8 @@ const path = require('node:path')
  */
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data')
-const TRACE_FILE = path.join(DATA_DIR, 'trace-log.jsonl')
+// 路径可由 TRACE_FILE 覆盖（测试隔离用），默认 data/trace-log.jsonl
+const TRACE_FILE = process.env.TRACE_FILE || path.join(DATA_DIR, 'trace-log.jsonl')
 // 内存环形缓冲：dashboard 直接读，避免每次请求重读文件
 const MEMORY_LIMIT = 200
 const memoryRing = []
