@@ -305,7 +305,7 @@
         <h2>🧠 浏览记忆</h2>
         <p class="desc">记忆卡片来自用户真实浏览行为（本地 JSONL，隐私不上传）</p>
         <div id="memory-info"></div>
-        <div class="note">有记忆 vs 无记忆对照分差：待 A/B 评测跑出后回填。</div>
+        <div id="memory-ab"></div>
       </section>
 
       <section>
@@ -497,6 +497,17 @@
           <div class="stat" style="min-width:200px"><div class="v" style="font-size:13px">${esc((d.latest?.title || '').slice(0, 24))}</div><div class="k">最近沉淀</div></div>
         </div>`
             : '<div class="empty">记忆库为空：总结过的页面会自动沉淀为卡片</div>'
+          // A/B 对照（eval/results/memory-ab.json）：检索层 recall@3 + 回答层有/无记忆通过率
+          const ab = d.ab
+          $('memory-ab').innerHTML = ab
+            ? `<div class="cards">
+          <div class="stat"><div class="v">${Math.round((ab.recallAt3 || 0) * 100)}%</div><div class="k">检索层 recall@3</div></div>
+          <div class="stat"><div class="v" style="color:var(--green)">${Math.round((ab.withMemory?.rate || 0) * 100)}%</div><div class="k">有记忆通过率</div></div>
+          <div class="stat"><div class="v" style="color:var(--red)">${Math.round((ab.withoutMemory?.rate || 0) * 100)}%</div><div class="k">无记忆通过率</div></div>
+          <div class="stat"><div class="v">+${Math.round((ab.memoryGain || 0) * 100)} pct</div><div class="k">记忆增益 Δ</div></div>
+        </div>
+        <div class="note">A/B 设计：答案只存在于预埋记忆卡片且偏离公开默认值（防先验蒙对），无记忆臂对照验证——增益只能来自检索。${esc(ab.ranAt?.slice(0, 10) || '')}</div>`
+            : '<div class="note">A/B 对照：尚未运行（pnpm eval:memory 生成对照数字）。</div>'
         } catch {
           $('memory-info').innerHTML = '<div class="empty">/api/memory 读取失败</div>'
         }

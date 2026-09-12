@@ -9,6 +9,7 @@
     "chat": "node chat.js",
     "test": "node --test test/*.test.js",
     "eval": "node eval/run-eval.js",
+    "eval:memory": "node eval/run-memory-ab.js",
     "bench": "node bench/compression.bench.js",
     "report": "node eval/cost-report.js"
   },

@@ -1,0 +1,61 @@
+{
+  "ranAt": "2026-09-12T09:24:00.321Z",
+  "total": 3,
+  "recallAt3": 1,
+  "withMemory": {
+    "pass": 3,
+    "rate": 1
+  },
+  "withoutMemory": {
+    "pass": 0,
+    "rate": 0
+  },
+  "memoryGain": 1,
+  "cases": [
+    {
+      "id": "memory-bm25-01",
+      "recallHit": true,
+      "recallScore": 17.589,
+      "matchedTerms": [
+        "bm25",
+        "k1",
+        "b",
+        "团队",
+        "队内",
+        "内部"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-release-02",
+      "recallHit": true,
+      "recallScore": 21.531,
+      "matchedTerms": [
+        "发布",
+        "布流",
+        "流程",
+        "笔记",
+        "滚动",
+        "动发"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-dbpool-03",
+      "recallHit": true,
+      "recallScore": 14.759,
+      "matchedTerms": [
+        "数据",
+        "据库",
+        "库运",
+        "运维",
+        "维记",
+        "记录"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    }
+  ]
+}

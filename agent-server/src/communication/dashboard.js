@@ -24,6 +24,7 @@ const PAGE_FILE = path.join(ROOT, 'dashboard', 'index.html')
 const BENCH_FILE = path.join(ROOT, 'bench', 'results', 'compression-bench.json')
 const EVAL_FILE = path.join(ROOT, 'eval', 'results', 'latest.json')
 const MEMORY_FILE = path.join(ROOT, 'data', 'memory.jsonl')
+const MEMORY_AB_FILE = path.join(ROOT, 'eval', 'results', 'memory-ab.json')
 
 function readJson(file) {
   try {
@@ -76,7 +77,7 @@ function evalPayload() {
   return readJson(EVAL_FILE)
 }
 
-/** 浏览记忆卡片概况（A/B 评测数字跑出来前，先呈现库本身） */
+/** 浏览记忆卡片概况 + A/B 对照数字（有/无记忆通过率与 recall@3） */
 function memoryPayload() {
   let cards = 0
   let latest = null
@@ -94,7 +95,7 @@ function memoryPayload() {
   } catch {
     /* 库不存在 → 0 张 */
   }
-  return { cards, latest }
+  return { cards, latest, ab: readJson(MEMORY_AB_FILE) }
 }
 
 /**
