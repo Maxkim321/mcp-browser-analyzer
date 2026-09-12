@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid')
+const { runLighthouseAudit } = require('./lighthouse.js')
 
 /**
  * 待处理请求映射
@@ -126,6 +127,34 @@ function handleListConnections(args, traceId) {
       {
         type: 'text',
         text: JSON.stringify({ count, connectionIds: ids }, null, 2),
+      },
+    ],
+  }
+}
+
+/**
+ * 处理 run_lighthouse_audit 工具
+ * 在服务端启动 headless Chrome 跑完整 Lighthouse 审计，
+ * 不经过浏览器插件转发，插件离线也可用
+ * @param {object} args - 工具参数
+ * @param {string} args.url - 要审计的页面 URL
+ * @param {string[]} [args.categories] - 要审计的分类，默认全部四类
+ * @param {string} traceId - 追踪ID
+ * @returns {Promise<object>} MCP 响应格式
+ */
+async function handleLighthouseAudit(args, traceId) {
+  const { url } = args
+  const { categories } = args
+
+  traceManager.addEvent(traceId, 'lighthouse_start', { url, categories })
+  const summary = await runLighthouseAudit(url, { categories })
+  traceManager.addEvent(traceId, 'lighthouse_done', { scores: summary.scores })
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(summary, null, 2),
       },
     ],
   }
@@ -517,6 +546,7 @@ const toolHandlers = {
   wait_for_load: handleWaitForLoad,
   list_connections: handleListConnections,
   get_browser_performance: handleGetPerformance,
+  run_lighthouse_audit: handleLighthouseAudit,
   get_page_content: handleGetPageContent,
   fetch_url: handleFetchUrl,
   web_search: handleWebSearch,
@@ -545,7 +575,39 @@ async function handleToolCall(name, args, context = {}) {
       throw new Error(`Unknown tool: ${name}`)
     }
 
-    const result = await handler(args, traceId, context)
+    // dph-A 可取消：等待插件响应期间若 signal abort，立即 reject 并清理 pending
+    const abortError = () => Object.assign(new Error('Tool cancelled'), { code: 'ABORTED' })
+    const signal = context.signal
+
+    let result
+    if (signal) {
+      if (signal.aborted) throw abortError()
+      result = await new Promise((resolve, reject) => {
+        const onAbort = () => {
+          // 清理本 trace 尚未完成的 pending request，避免残留 timeout 与后台任务
+          for (const [requestId, entry] of pendingRequests) {
+            if (entry.traceId === traceId) {
+              clearTimeout(entry.timeout)
+              pendingRequests.delete(requestId)
+            }
+          }
+          reject(abortError())
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+        handler(args, traceId, context).then(
+          (value) => {
+            signal.removeEventListener('abort', onAbort)
+            resolve(value)
+          },
+          (err) => {
+            signal.removeEventListener('abort', onAbort)
+            reject(err)
+          }
+        )
+      })
+    } else {
+      result = await handler(args, traceId, context)
+    }
     traceManager.complete(traceId, 'success')
     return result
   } catch (error) {

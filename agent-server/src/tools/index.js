@@ -78,6 +78,31 @@ const tools = [
     },
   },
   {
+    name: 'run_lighthouse_audit',
+    description:
+      '对指定 URL 运行完整的 Lighthouse 性能审计（服务端 headless Chrome，不需要浏览器插件在线，不占用用户当前页面）。' +
+      '返回 Performance/Accessibility/Best-Practices/SEO 四类得分、核心指标（FCP/LCP/TBT/CLS/SI）、' +
+      '按可节省时间排序的优化机会和低分审计项。一次全分类审计通常需要 30-60 秒。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: '要审计的页面 URL，例如 https://example.com',
+        },
+        categories: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['performance', 'accessibility', 'best-practices', 'seo'],
+          },
+          description: '要审计的分类，默认全部四类。只关心性能时可只传 ["performance"] 以加快速度',
+        },
+      },
+      required: ['url'],
+    },
+  },
+  {
     name: 'broadcast_message',
     description: '向所有连接的浏览器插件广播消息',
     inputSchema: {

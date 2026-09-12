@@ -249,8 +249,9 @@ async function handleMessage(id, msg, agent) {
         // 插件配置页下发的模型配置：校验后覆盖服务端 .env 默认值（空字段仍用服务端默认）
         const llmOverride = sanitizeLLMConfig(msg.llmConfig)
         agent.llm.applyConfig(llmOverride)
-        // M1-F8 深度研究：显式 action 或研究型提问 → 走 LangGraph 式状态机工作流
-        const isResearch = msg.action === 'research' || isResearchPrompt(msg.prompt)
+        // M1-F8 深度研究：仅显式 action 触发（关键词自动路由 isResearchPrompt 已移除，
+        // 误判率高且打断正常对话；自动意图路由待 LLM 分类器方案）
+        const isResearch = msg.action === 'research'
         if (isResearch) {
           await runResearch(id, msg.prompt, llmOverride)
           break
@@ -382,18 +383,6 @@ async function handleMessage(id, msg, agent) {
 }
 
 /**
- * 研究型提问检测（M1-F8 意图路由）
- * 关键词规则可控、可讲、零成本；显式 action: 'research' 始终触发
- * 精确意图路由（LLM 判断）会增加一次调用成本，第一版用规则，后续可升级
- */
-function isResearchPrompt(prompt) {
-  if (typeof prompt !== 'string' || prompt.trim().length < 8) return false
-  return /研究|调研|调查|对比|搞清楚|查明白|分析报告|研究报告|区别|差异|来龙去脉|原理|机制/.test(
-    prompt
-  )
-}
-
-/**
  * 运行深度研究工作流（M1-F8）
  * - 注册 activeWorkflows 防止并发
  * - 推送 workflow_progress（进度）
@@ -421,6 +410,11 @@ async function runResearch(id, question, llmOverride = {}) {
   })
   activeWorkflows.set(id, workflow)
 
+  // dph-A 可取消：深度研究也注册 AbortController，cancel_request 才能中止整个工作流
+  // （此前这里没注册，导致点"停止"时 connectionAborts 取不到 controller，取消空转）
+  const controller = new AbortController()
+  connectionAborts.set(id, controller)
+
   const sendAsk = (askQuestion, options) =>
     new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -441,6 +435,7 @@ async function runResearch(id, question, llmOverride = {}) {
       onProgress: (progress) => manager.send(id, { type: 'workflow_progress', ...progress }),
       onAsk: sendAsk,
       onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
+      signal: controller.signal,
     })
     manager.send(id, {
       type: 'agent_response',
@@ -451,14 +446,25 @@ async function runResearch(id, question, llmOverride = {}) {
     // 研究结束：清理 checkpoint，避免重复恢复
     workflow.clearCheckpoint(result.state?.taskId)
   } catch (error) {
-    console.error('[Workflow] Error:', error)
-    manager.send(id, {
-      type: 'agent_response',
-      success: false,
-      content: '深度研究执行出错。',
-      error: error.message,
-    })
+    // dph-A 可取消：识别取消信号，回复"已停止"，不当作系统错误
+    if (error?.code === 'ABORTED' || error?.name === 'AbortError') {
+      manager.send(id, {
+        type: 'agent_response',
+        success: false,
+        content: '已停止本次回答。',
+        error: 'cancelled',
+      })
+    } else {
+      console.error('[Workflow] Error:', error)
+      manager.send(id, {
+        type: 'agent_response',
+        success: false,
+        content: '深度研究执行出错。',
+        error: error.message,
+      })
+    }
   } finally {
+    connectionAborts.delete(id)
     activeWorkflows.delete(id)
     const pendingAsk = pendingWorkflowAsks.get(id)
     if (pendingAsk) {

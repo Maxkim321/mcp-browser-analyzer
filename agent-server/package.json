@@ -6,10 +6,13 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "chat": "node chat.js"
+    "chat": "node chat.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "chrome-launcher": "^1.2.1",
     "dotenv": "^16.4.0",
+    "lighthouse": "^13.1.0",
     "uuid": "^10.0.0",
     "ws": "^8.18.0"
   }
