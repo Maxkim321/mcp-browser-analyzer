@@ -271,6 +271,15 @@
           <div class="message-meta">
             <span class="message-sender">{{ msg.sender === 'user' ? '我' : 'AI 助手' }}</span>
             <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
+            <!-- 档位 badge：本条回答实际生效的模型档位（分级路由从黑盒变可见） -->
+            <span
+              v-if="msg.sender === 'ai' && msg.type === 'text' && msg.tierMeta"
+              class="tier-badge"
+              :class="{ light: msg.tierMeta.tier === 'light' }"
+              :title="`模型: ${msg.tierMeta.model || '未知'}`"
+            >
+              {{ msg.tierMeta.tier === 'light' ? '⚡ light 档' : '🧠 主模型' }}
+            </span>
             <button
               v-if="msg.type === 'text' && msg.sender === 'ai'"
               class="message-copy-button"
@@ -322,14 +331,16 @@
             :nodes="traceNodes"
             :active="traceActive"
           />
-          <!-- P3 浏览记忆：本次回答参考了记忆库中的旧页面 -->
+          <!-- P3 浏览记忆：本次回答参考了记忆库中的旧页面；悬浮展示"为什么命中"（BM25 分数 + 命中词） -->
           <div v-if="msg.memoryRefs && msg.memoryRefs.length" class="memory-refs">
-            <span class="memory-refs-label">📌 参考了你之前读过的 {{ msg.memoryRefs.length }} 篇</span>
+            <span class="memory-refs-label"
+              >📌 参考了你之前读过的 {{ msg.memoryRefs.length }} 篇</span
+            >
             <span
               v-for="(refItem, ri) in msg.memoryRefs"
               :key="ri"
               class="memory-chip"
-              :title="refItem.url"
+              :title="memoryRefTitle(refItem)"
               >《{{ refItem.title }}》</span
             >
           </div>
@@ -351,9 +362,23 @@
             <span class="spinner"></span>
             <span>{{ msg.content }}</span>
           </div>
-          <!-- M1-F8 深度研究：HITL 询问卡片（继续/停止/自定义方向） -->
+          <!-- dph-C 运行时压缩提示：压缩真实发生时冒一条（含视图 token 前后值），平时不占空间 -->
+          <div class="message-bubble compress-bubble" v-if="msg.type === 'compress_notice'">
+            <span>{{ msg.content }}</span>
+          </div>
+          <!-- M1-F8 深度研究：HITL 询问卡片（继续/停止/自定义方向）+ 打断证据 -->
           <div class="message-bubble ask-bubble" v-if="msg.type === 'workflow_ask'">
             <p class="workflow-ask-question">{{ msg.question }}</p>
+            <!-- 打断证据：为什么打断（死胡同重试轨迹/预算用量）——证据决定用户信不信任打断 -->
+            <div v-if="msg.evidence" class="ask-evidence">
+              <div
+                v-for="(line, li) in askEvidenceLines(msg.evidence)"
+                :key="li"
+                class="ask-evidence-item"
+              >
+                {{ line }}
+              </div>
+            </div>
             <div v-if="msg.pending" class="workflow-ask-actions">
               <button
                 v-for="opt in msg.options"
@@ -445,6 +470,9 @@
         </svg>
       </button>
 
+      <!-- 会话用量条：token/成本/light 占比实时可见（usage_summary 推送驱动） -->
+      <UsageBar v-if="usageSummary" :session="usageSummary.session" :total="usageSummary.total" />
+
       <!-- 快捷动作工具栏 -->
       <div class="quick-actions">
         <button
@@ -530,6 +558,7 @@ import {
   removeKnowledgePoint,
 } from '@/utils/prefs'
 import AgentTrace from '@/components/AgentTrace.vue'
+import UsageBar from '@/components/UsageBar.vue'
 import { useAgentTrace, TRACE_STATUS } from '@/composables/useAgentTrace'
 
 defineOptions({
@@ -547,6 +576,8 @@ const pendingSelection = ref('')
 const thinking = ref(false)
 const connectionStatus = ref('disconnected')
 const statusText = ref('未连接')
+// 会话用量条：服务端 usage_summary 推送驱动（token/成本/light 占比）
+const usageSummary = ref(null)
 let websocket = null
 let reconnectTimer = null
 const WS_URL = 'ws://localhost:9999'
@@ -1203,6 +1234,51 @@ const truncateUrl = (url) => {
   }
 }
 
+/**
+ * 记忆引用悬浮文案：不止给来源，还给"为什么命中"（BM25 分数 + 命中词）——
+ * 检索从"结果可见"升级为"理由可见"，不是黑箱记忆
+ */
+const memoryRefTitle = (refItem) => {
+  if (!refItem) return ''
+  const lines = [String(refItem.title || ''), String(refItem.url || '')]
+  if (Number.isFinite(refItem.score)) {
+    let scoreLine = `BM25 相关度 ${refItem.score}`
+    if (refItem.matchedTerms?.length) scoreLine += ` · 命中：${refItem.matchedTerms.join(' / ')}`
+    lines.push(scoreLine)
+  }
+  return lines.filter(Boolean).join('\n')
+}
+
+/**
+ * HITL 打断证据 → 展示行：把"为什么打断"的决策依据摆出来（重试轨迹/预算用量），
+ * 证据决定用户信不信任这个打断
+ */
+const askEvidenceLines = (evidence) => {
+  if (!evidence) return []
+  const lines = []
+  if (evidence.kind === 'deadend') {
+    lines.push(`⛔ 打断原因：检索进入死胡同（自动重试已耗尽）`)
+    if (evidence.topic) lines.push(`主题：「${evidence.topic}」`)
+    if (Number.isFinite(evidence.attempts)) lines.push(`已尝试 ${evidence.attempts} 轮检索与改写`)
+    if (evidence.queriesTried?.length)
+      lines.push(`试过的检索词：${evidence.queriesTried.join(' → ')}`)
+    if (Number.isFinite(evidence.pointsFromTopic))
+      lines.push(
+        `该主题仅获得 ${evidence.pointsFromTopic} 条要点 / ${evidence.pagesFromTopic} 页来源`
+      )
+  } else if (evidence.kind === 'budget') {
+    lines.push(`⛔ 打断原因：页面预算告警`)
+    if (evidence.topic) lines.push(`下一主题：「${evidence.topic}」`)
+  }
+  if (Number.isFinite(evidence.sourcesCount) && Number.isFinite(evidence.maxTotalPages)) {
+    lines.push(`预算用量：${evidence.sourcesCount}/${evidence.maxTotalPages} 页`)
+  }
+  if (Number.isFinite(evidence.topicsDone) && Number.isFinite(evidence.topicsTotal)) {
+    lines.push(`研究进度：${evidence.topicsDone}/${evidence.topicsTotal} 主题`)
+  }
+  return lines
+}
+
 const getActiveTab = async () => {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
   if (!tabs.length || !tabs[0].id) {
@@ -1378,6 +1454,7 @@ const connectWebSocket = () => {
                 : `${lastStreamingMsg.content}\n\n错误: ${data.content || data.error || ''}`
               lastStreamingMsg.streaming = false
               if (data.memory_refs) lastStreamingMsg.memoryRefs = data.memory_refs
+              if (data.meta) lastStreamingMsg.tierMeta = data.meta
               finalContent = lastStreamingMsg.content
               finishTrace(lastStreamingMsg, traceStatus)
             } else if (data.success) {
@@ -1387,6 +1464,7 @@ const connectWebSocket = () => {
                 content: data.content,
                 timestamp: Date.now(),
                 memoryRefs: data.memory_refs || [],
+                tierMeta: data.meta || null,
               })
               finalContent = data.content
               finishTrace(messages.value[messages.value.length - 1], traceStatus)
@@ -1441,6 +1519,20 @@ const connectWebSocket = () => {
           // 前端归约成轨迹节点而非单帧覆盖，用户可看到完整执行过程
           case 'agent_step':
             applyTraceStep(data)
+            // 压缩真实发生时在对话流里冒一条提示（含视图 token 前后值），平时零打扰
+            if (data.phase === 'compress' && data.compressed > 0) {
+              const saved =
+                Number.isFinite(data.tokensBefore) && Number.isFinite(data.tokensAfter)
+                  ? `，视图 token ${data.tokensBefore} → ${data.tokensAfter}`
+                  : ''
+              messages.value.push({
+                type: 'compress_notice',
+                sender: 'ai',
+                content: `📦 上下文已压缩：${data.compressed} 条早期消息转为摘要${saved}`,
+                timestamp: Date.now(),
+              })
+              persistSession()
+            }
             break
 
           case 'cancel_ack':
@@ -1455,7 +1547,7 @@ const connectWebSocket = () => {
             applyTraceWorkflow(data)
             break
 
-          // M1-F8 深度研究：HITL 询问（暂停等待用户答复）
+          // M1-F8 深度研究：HITL 询问（暂停等待用户答复）——evidence 是"为什么打断"的证据
           case 'workflow_ask':
             thinking.value = false
             messages.value.push({
@@ -1464,12 +1556,18 @@ const connectWebSocket = () => {
               taskId: data.taskId,
               question: data.question,
               options: data.options || ['继续研究', '停止研究'],
+              evidence: data.evidence || null,
               pending: true,
               answer: '',
               customText: '',
               timestamp: Date.now(),
             })
             persistSession()
+            break
+
+          // 会话用量汇总：每次回答/研究结束后推送，驱动输入区上方的用量条
+          case 'usage_summary':
+            usageSummary.value = { session: data.session, total: data.total }
             break
 
           // M1-F8 深度研究：读取指定 URL（经 background 后台开 tab，不打扰当前页面）
@@ -3061,6 +3159,39 @@ onUnmounted(() => {
   align-self: flex-start;
 }
 
+/* ===== dph-C 运行时压缩提示：一次性事件条，平时不占空间 ===== */
+.compress-bubble {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent-border);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  align-self: flex-start;
+}
+
+/* ===== 档位 badge：本条回答由哪个档位的模型生成（分级路由可见性） ===== */
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  line-height: 1.6;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.tier-badge.light {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
+}
+
 .spinner {
   display: inline-block;
   width: 12px;
@@ -3092,6 +3223,25 @@ onUnmounted(() => {
   line-height: 1.5;
   color: var(--accent-ink);
   font-weight: 500;
+}
+
+/* ===== HITL 打断证据：把"为什么打断"的决策依据摆给用户 ===== */
+.ask-evidence {
+  margin: 0 0 10px 0;
+  padding: 8px 10px;
+  background: rgba(var(--ink-rgb), 0.04);
+  border-left: 2px solid var(--accent-border);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ask-evidence-item {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-2);
+  word-break: break-all;
 }
 
 .workflow-ask-actions {
