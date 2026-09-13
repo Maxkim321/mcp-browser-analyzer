@@ -155,3 +155,6 @@ docs/
 
 # agent-server 运行时数据（账本/记忆库）
 agent-server/data/
+
+# pnpm 本地缓存（曾误提交过，防止再犯）
+.pnpm-store/
