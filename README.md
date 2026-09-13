@@ -103,6 +103,14 @@ ARK_BASE_URL=https://api.deepseek.com
 ARK_MODEL=deepseek-chat
 ```
 
+可选：配置轻量档模型（分级路由用——打分/检索词改写/上下文压缩走 light 档省钱，不配置则自动回落主模型）：
+
+```env
+LLM_LIGHT_MODEL=kimi-k2.7-code
+LLM_LIGHT_BASE_URL=你的OpenAI兼容接口地址
+LLM_LIGHT_API_KEY=对应密钥
+```
+
 ### 3. 启动 Agent Server（监听 :9999）
 
 ```bash
@@ -114,20 +122,26 @@ pnpm agent-server
 ### 4. 构建并加载 Chrome 插件
 
 ```bash
-pnpm extension        # 构建插件到 chrome-extension/dist（watch 模式）
+pnpm extension:build   # 一次性构建插件（产物在 chrome-extension/extension/dist）
+pnpm extension         # watch 模式，改代码自动重构建
 ```
 
 1. 打开 Chrome，访问 `chrome://extensions/`
 2. 开启右上角「开发者模式」
-3. 点击「加载已解压的扩展程序」，选择 `chrome-extension/dist` 目录
+3. 点击「加载已解压的扩展程序」，选择 `chrome-extension/extension` 目录（即 `manifest.json` 所在层）
 4. 点击扩展图标 → 打开侧边栏，即可开始使用
 
-### 5. 运行测试
+### 5. 测试与质量保障
 
 ```bash
-cd agent-server
-node --test           # 核心模块单测（node:test，零依赖）
+pnpm test             # 108 个单测（node:test 零依赖），锁编排层行为不变量
+pnpm eval             # 黄金评测集：10 个 case 端到端阅卷出成绩单（离线可复现）
+pnpm eval:memory      # 浏览记忆 A/B 对照：recall@3 / 记忆增益 Δ
+pnpm bench            # 压缩保真度基准：滚动摘要 vs 截断 vs 不压缩
+pnpm report           # Token 成本账本：按档位/模型汇总分级路由 ROI
 ```
+
+评测与基准的产物落盘在 `agent-server/eval/results` 与 `agent-server/bench/results`；仪表盘 `localhost:9999/dashboard` 只读这些产物展示（dashboard 不生产数字，只呈现数字）。
 
 ---
 
