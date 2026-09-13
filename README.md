@@ -10,6 +10,22 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 
 ---
 
+## 🎬 效果先睹为快
+
+**一键总结本页**——概括 / 要点 / 关键数据结构化输出，标注来源 URL，右下角还有本次调用的 token 与成本：
+
+![一键总结本页](assets/demo-summary.png)
+
+**深度研究**——自动检索真实链接、后台逐页静默阅读、交叉对比后输出带来源与可信度标注的报告，执行轨迹全程可见：
+
+![深度研究执行轨迹](assets/demo-research-trace.png)
+
+**质量度量上屏**——成本台账、压缩保真度基准、黄金评测基线、记忆 A/B 全部可视化（`localhost:9999/dashboard`）：
+
+![Agent 仪表盘](assets/demo-dashboard.png)
+
+---
+
 ## ✨ 功能特性
 
 | 分类 | 功能 | 说明 |
@@ -198,12 +214,15 @@ npm run review:sample
 │   ├── src/ui/sidepanel/      #   侧边栏对话 UI（含深度研究交互）
 │   └── src/utils/             #   prefs.js（F5偏好记忆）· markdown.js · base.js
 ├── agent-server/              # Agent 服务（Node.js + WebSocket）
-│   ├── src/core/              #   agent.js（ReAct + dph-A）· workflow.js（深度研究状态机）
-│   │                          #   event-log.js（dph-B 事件溯源）· context-manager.js（dph-C 上下文压缩）
-│   │                          #   tool-pipeline.js（dph-D 工具流水线）· llm.js（SSE流式）
-│   ├── src/tools/             #   工具 schema + handler（fetch_url / get_page_content / ...）
-│   ├── src/communication/     #   WS 服务 + 消息路由
+│   ├── src/core/              #   agent.js（ReAct + dph-A）· workflow.js（深度研究状态机 + 分级HITL）
+│   │                          #   event-log.js（dph-B 事件溯源）· history-store.js（派生视图/上下文压缩）
+│   │                          #   tool-pipeline.js（dph-D 工具流水线）· approval.js（写操作分级审批）
+│   ├── src/tools/             #   工具 schema + handler（web_search / fetch_url / lighthouse / 写操作原语）
+│   ├── src/communication/     #   WS 服务 + 消息路由 + dashboard（只读产物）
+│   ├── src/memory/            #   浏览记忆：卡片库（JSONL 追加）+ BM25 检索
 │   ├── src/config/            #   prompts.js（模板提示词）· index.js
+│   ├── eval/                  #   黄金评测集 + 记忆 A/B + 成本报表（pnpm eval / eval:memory / report）
+│   ├── bench/                 #   压缩保真度基准（pnpm bench）
 │   └── test/                  #   node:test 单测
 ├── ai-code-review/            # AI 代码审查独立 CLI（零依赖 Node ESM）
 │   ├── bin/ai-cr.mjs          #   CLI 入口
@@ -218,14 +237,17 @@ npm run review:sample
 ### ✅ 已完成
 - **M0**：页面总结 · 流式输出 · 划词即问 · 轻量页面上下文 · 会话持久化
 - **M1-F5**：偏好记忆（L3 KV）· 文章收藏
-- **M1-F8**：深度研究（自研状态机 + checkpoint 断点恢复 + HITL 人工介入）
-- **dph 可靠性层**：Turn/Step 可观测可取消 · 事件溯源断点续跑 · 上下文冷热压缩 · 工具流水线
+- **M1-F8**：深度研究（自研状态机 + checkpoint 断点恢复 + 分级 HITL 人工介入）
+- **dph 可靠性层**：Turn/Step 可观测可取消 · 事件溯源断点续跑 · 上下文派生视图压缩 · 工具流水线
+- **写操作分级权限闭环**：点击/填表/选下拉 · 逐次审批卡片（超时/断连即拒）· 动作预算 + dry-run + 全链路审计
+- **度量体系**：黄金评测集（10 case 三层判分，10/10）· 压缩保真度基准（滚动摘要 100% vs 截断 23.3%）· Token 成本账本（分级路由 ROI 有账可查）· 浏览记忆 A/B（recall@3 100%，增益 +100pct）
+- **评测台 + 白盒飞行记录仪**：localhost:9999/dashboard 三视图（概览 / 逐 case 判卷 / 事件回放）
+- **浏览记忆 RAG 阶段 1**：本地卡片库 + BM25 检索 top-3 注入（阶段 2 预留 embedding 接口，< 1 万条暴力检索最优）
 - **AI 代码审查**：零依赖 CLI · GitHub/GitLab 适配器 · GitHub Actions 自动触发 · PR 行级评论
 
 ### 🔜 进行中 / 未来
-- **M1 剩余**：会话管理补全（重命名/删除/搜索）· 结构化提取
-- **M2**：写操作（Computer Use，含权限审批流水线）· MCP Client / WebMCP 接入第三方工具生态
-- ~~**L4 记忆**：RAG 检索~~ → **已完成阶段 1**：浏览记忆卡片库 + BM25 检索（阶段 2 预留 embedding 升级接口，规模 < 1 万条时暴力检索最优）
+- **M1 剩余**：会话管理补全（重命名/删除/搜索）
+- **M2**：MCP Client / WebMCP 接入第三方工具生态 · keep-evidence 压缩策略（压观点不压证据）· 记忆 embedding 升级（阶段 2）
 
 ## 📄 License
 
