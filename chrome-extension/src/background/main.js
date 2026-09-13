@@ -228,14 +228,38 @@ const handleTextAction = (payload, sender) => {
   c.runtime.sendMessage({ type: 'text_action_relay', ...data }).catch(() => void 0)
 }
 
+// P4 写操作：content script 转发（枚举可交互元素 / 执行写动作），带补注入重试
+const forwardToContentScriptWithRetry = async (message) => {
+  const tabId = await getActiveTabId()
+  try {
+    return await sendToContentScript(tabId, message)
+  } catch (error) {
+    const shouldRetryByInject = String(error?.message || '').includes('Receiving end does not exist')
+    if (!shouldRetryByInject) throw error
+    await ensureContentScriptInjected(tabId)
+    return sendToContentScript(tabId, message)
+  }
+}
+
 // 监听来自agent-server的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request)
-  
+
   if (request.type === 'text_action') {
     // 划词动作：来自 content-script，无需回包，异步处理；sender 提供 tab.windowId 用于同步打开侧边栏
     handleTextAction(request, sender)
     return false
+  }
+
+  if (request.type === 'get_interactive_elements' || request.type === 'write_action') {
+    // P4 写操作链路：SidePanel 经此转发到 content script（审批已在服务端完成/或为只读枚举）
+    forwardToContentScriptWithRetry(request)
+      .then((response) => sendResponse(response))
+      .catch((error) => {
+        console.error('Write chain error:', error)
+        sendResponse({ success: false, error: error.message })
+      })
+    return true
   }
 
   if (request.type === 'get_performance') {

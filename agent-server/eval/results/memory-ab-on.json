@@ -1,0 +1,111 @@
+{
+  "arm": "on",
+  "ranAt": "2026-09-12T09:23:51.400Z",
+  "results": [
+    {
+      "id": "memory-bm25-01",
+      "passed": true,
+      "recall": {
+        "hit": true,
+        "score": 17.589,
+        "matchedTerms": [
+          "bm25",
+          "k1",
+          "b",
+          "团队",
+          "队内",
+          "内部"
+        ]
+      },
+      "durationMs": 1573,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "224/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": true,
+          "detail": "全部命中"
+        }
+      ],
+      "contentPreview": "根据你之前读过的《检索服务调参记录（内部）》，最终线上配置是：\n\n- **k1 调到 1.2**（默认 1.5 偏重词频）\n- **b 调到 0.6**（默认 0.75，长文档惩罚过强）\n\n需要注意，记录里特意强调：**这不是教科书默认值，而是团队在自己数据集上做网格搜索试出来的**。调整后人工评估的相关性提升了约 12%。\n\n如果你需要，我也可以帮你对比一下当前页面（《2026 主流 AI 编程"
+    },
+    {
+      "id": "memory-release-02",
+      "passed": true,
+      "recall": {
+        "hit": true,
+        "score": 21.531,
+        "matchedTerms": [
+          "发布",
+          "布流",
+          "流程",
+          "笔记",
+          "滚动",
+          "动发"
+        ]
+      },
+      "durationMs": 1286,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "235/800"
+        },
+        {
+          "name": "regex",
+          "passed": true,
+          "detail": "全部命中"
+        }
+      ],
+      "contentPreview": "根据浏览记忆中的《发布流程 v3 笔记（内部）》：\n\n- **滚动发布窗口**：固定在**每周三凌晨 2 点到 4 点**（刻意避开周二大促复盘会）。\n- **自动回滚阈值**：**5 分钟内错误率超过 3%** 即触发回滚，由值守机器人执行。\n\n补充一个相关细节：灰度批次为 5% → 25% → 100%，每批观察 15 分钟。\n\n> 注：以上信息来自本机记忆库中的历史页面，非当前打开的《202"
+    },
+    {
+      "id": "memory-dbpool-03",
+      "passed": true,
+      "recall": {
+        "hit": true,
+        "score": 14.759,
+        "matchedTerms": [
+          "数据",
+          "据库",
+          "库运",
+          "运维",
+          "维记",
+          "记录"
+        ]
+      },
+      "durationMs": 1237,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "229/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": true,
+          "detail": "全部命中"
+        }
+      ],
+      "contentPreview": "根据浏览记忆中的《数据库运维记录（内部）》：\n\n- **连接数（max_connections）**：从 **100 调到 350**\n- **配合的组件**：引入 **pgbouncer** 做连接池复用，模式为 **transaction 模式**\n\n另外该记录还提到：慢查询超时阈值设为 800ms，超过即记录并告警；变更当晚连接等待队列清零。\n\n需要我进一步对比当前页面（AI 编程助手订阅方"
+    }
+  ]
+}

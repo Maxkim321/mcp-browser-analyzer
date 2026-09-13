@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid')
+const { runLighthouseAudit } = require('./lighthouse.js')
 
 /**
  * 待处理请求映射
@@ -126,6 +127,34 @@ function handleListConnections(args, traceId) {
       {
         type: 'text',
         text: JSON.stringify({ count, connectionIds: ids }, null, 2),
+      },
+    ],
+  }
+}
+
+/**
+ * 处理 run_lighthouse_audit 工具
+ * 在服务端启动 headless Chrome 跑完整 Lighthouse 审计，
+ * 不经过浏览器插件转发，插件离线也可用
+ * @param {object} args - 工具参数
+ * @param {string} args.url - 要审计的页面 URL
+ * @param {string[]} [args.categories] - 要审计的分类，默认全部四类
+ * @param {string} traceId - 追踪ID
+ * @returns {Promise<object>} MCP 响应格式
+ */
+async function handleLighthouseAudit(args, traceId) {
+  const { url } = args
+  const { categories } = args
+
+  traceManager.addEvent(traceId, 'lighthouse_start', { url, categories })
+  const summary = await runLighthouseAudit(url, { categories })
+  traceManager.addEvent(traceId, 'lighthouse_done', { scores: summary.scores })
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(summary, null, 2),
       },
     ],
   }
@@ -511,17 +540,113 @@ async function handleWebSearch(args, traceId, context = {}) {
   })
 }
 
+/**
+ * 写操作通用执行（P4 分级权限 HITL）
+ * 前置审批已在 tool-pipeline 的 permissionCheck 完成，这里只负责执行：
+ * 向插件发 write_action 指令 → content script 在页面 DOM 上执行 → 回传结果
+ * @param {string} action - 动作类型：click / fill / select
+ * @param {object} args - {selector, value?, description?}
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP 响应格式
+ */
+async function handleWriteAction(action, args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { selector, value } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Write action timeout: ${action}`))
+    }, 30000)
+
+    pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
+
+    traceManager.addEvent(traceId, 'write_action', { connectionId, action, selector, value })
+    const sendSuccess = ws.send(connectionId, {
+      type: 'write_action',
+      requestId,
+      action,
+      selector,
+      value,
+    })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
+/**
+ * 枚举页面可交互元素（写操作的前置定位，只读）
+ * @param {object} args - {maxElements?, connectionId?}
+ * @param {string} traceId - 追踪ID
+ * @param {object} context - 运行上下文
+ * @returns {Promise<object>} MCP 响应格式
+ */
+async function handleGetInteractiveElements(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const { maxElements = 30 } = args
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('Get interactive elements timeout'))
+    }, 30000)
+
+    pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
+
+    traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'get_interactive_elements' })
+    const sendSuccess = ws.send(connectionId, {
+      type: 'get_interactive_elements',
+      requestId,
+      maxElements,
+    })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
+}
+
 const toolHandlers = {
   navigate_to: handleNavigateTo,
   reload_page: handleReloadPage,
   wait_for_load: handleWaitForLoad,
   list_connections: handleListConnections,
   get_browser_performance: handleGetPerformance,
+  run_lighthouse_audit: handleLighthouseAudit,
   get_page_content: handleGetPageContent,
   fetch_url: handleFetchUrl,
   web_search: handleWebSearch,
   broadcast_message: handleBroadcastMessage,
   todo_write: handleTodoWrite,
+  get_interactive_elements: handleGetInteractiveElements,
+  click_element: (args, traceId, context) => handleWriteAction('click', args, traceId, context),
+  fill_input: (args, traceId, context) => handleWriteAction('fill', args, traceId, context),
+  select_option: (args, traceId, context) => handleWriteAction('select', args, traceId, context),
+}
+
+/**
+ * 工具覆盖表（评测用）
+ * setToolOverrides 注册后，handleToolCall 命中的工具不再经插件转发，
+ * 而是执行覆盖函数（args, context) => Promise<{content:[{type:'text',text}]}>。
+ * 用途：评测环境把 get_page_content/fetch_url 指向本地 fixture，
+ * 使黄金考题离线可复现，同时保留完整编排链路。
+ */
+let toolOverrides = {}
+function setToolOverrides(map) {
+  toolOverrides = map || {}
 }
 
 /**
@@ -540,12 +665,52 @@ async function handleToolCall(name, args, context = {}) {
   traceManager.addEvent(traceId, 'tool_call', { name, args })
 
   try {
+    const override = toolOverrides[name]
+    if (override) {
+      const result = await override(args, context)
+      traceManager.complete(traceId, 'success')
+      return result
+    }
+
     const handler = toolHandlers[name]
     if (!handler) {
       throw new Error(`Unknown tool: ${name}`)
     }
 
-    const result = await handler(args, traceId, context)
+    // dph-A 可取消：等待插件响应期间若 signal abort，立即 reject 并清理 pending
+    const abortError = () => Object.assign(new Error('Tool cancelled'), { code: 'ABORTED' })
+    const signal = context.signal
+
+    let result
+    if (signal) {
+      if (signal.aborted) throw abortError()
+      result = await new Promise((resolve, reject) => {
+        const onAbort = () => {
+          // 清理本 trace 尚未完成的 pending request，避免残留 timeout 与后台任务
+          for (const [requestId, entry] of pendingRequests) {
+            if (entry.traceId === traceId) {
+              clearTimeout(entry.timeout)
+              pendingRequests.delete(requestId)
+            }
+          }
+          reject(abortError())
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+        // Promise.resolve 包装：handler 可能是同步函数（如 todo_write），直接 .then 会 TypeError
+        Promise.resolve(handler(args, traceId, context)).then(
+          (value) => {
+            signal.removeEventListener('abort', onAbort)
+            resolve(value)
+          },
+          (err) => {
+            signal.removeEventListener('abort', onAbort)
+            reject(err)
+          }
+        )
+      })
+    } else {
+      result = await handler(args, traceId, context)
+    }
     traceManager.complete(traceId, 'success')
     return result
   } catch (error) {
@@ -609,5 +774,6 @@ module.exports = {
   init,
   handleToolCall,
   handlePluginResponse,
+  setToolOverrides,
   traceManager,
 }

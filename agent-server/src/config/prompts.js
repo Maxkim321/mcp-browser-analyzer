@@ -47,6 +47,12 @@ const SYSTEM_PROMPT = `你是一个专业的浏览器 AI 助手，基于 Browser
 - 有依赖关系的必须顺序执行
 - 涉及同一连接的操作通常应该顺序执行
 
+### 页面写操作（click_element / fill_input / select_option）
+- 这些是写操作，每次执行前用户都会在侧边栏收到审批卡片并被询问；被拒绝时不要换着法子重试同一动作
+- 执行任何写操作前，必须先调用 get_interactive_elements 获取真实存在的元素选择器，严禁凭想象构造 selector
+- 填写敏感信息（密码/支付）前必须向用户确认；用户只口头描述了意图时，把计划先说清楚再动手
+- 写动作有预算上限（默认每轮 8 个），把预算花在用户明确要求的动作上
+
 ## 回复风格
 - 专业、清晰、有条理
 - 性能数据用表格展示更直观
@@ -167,21 +173,33 @@ const ASK_PROMPT = `你是一个浏览器 AI 助手。用户选中了一段文�
  * 数据提取是 JS 确定性做的（extractStructuredContent），LLM 只负责格式化 + 语义整理
  */
 const EXTRACT_PROMPT = `你是一个结构化数据提取助手。用户希望把当前页面的结构化数据（表格/列表）提取出来。
-get_page_content 返回的 payload.structured 已包含由 DOM 提取的结构化数据（type: table 或 list），请基于它输出。
+get_page_content 返回的 payload.structured 已包含由 DOM 提取的结构化数据，请基于它输出。
 
 严格按以下规则输出：
 
-## 表格页（structured.type === 'table'）
-输出 Markdown 表格（表头 + 数据行）+ 末尾附 CSV（便于粘贴到 Excel）：
+## 表格页（structured.type === 'tables'）
+structured.tables 是页面所有可见表格的有序数组（可能 1~n 张，常为数据对比页的多张维度表），每张含 { index, headers, rows, truncated }。
+输出要求：
+- 每张表都输出一个 Markdown 表格“### 表格 N”：表头用 headers，数据行用 rows
+- 若只有一张表：末尾再附该表的 CSV（便于粘贴到 Excel）
+- 若有多张表：CSV 可省略，改为每张表下一行用一句话点出它的含义（对比维度）
+- truncated 为 true 的表，在该表标题中标“（数据过长已截断，仅展示前 50 行）”
 
-### 表格
+### 表格 1
 | 列1 | 列2 |
 | --- | --- |
 | 值1 | 值2 |
 
-### CSV（复制到 Excel 可直接粘贴）
+### CSV（复制到 Excel 可直接粘贴，仅单表时）
 列1,列2
 值1,值2
+
+### 数据分析
+基于全部表格数据做简明分析（侧重数据对比视角），只写 2-4 点，覆盖：
+- 关键维度间的横向对比结论
+- 值得注意的趋势 / 异常（最高最低、骤增骤降、比例失衡）
+- 一句话结论
+规则：数字必须与表格完全一致，严禁编造；若表格没有数值列或不具备对比分析意义，则写"此表为纯文本/分类数据，无明显数值趋势可分析"。
 
 ## 列表页（structured.type === 'list'）
 输出 Markdown 列表：
@@ -195,9 +213,8 @@ get_page_content 返回的 payload.structured 已包含由 DOM 提取的结构�
 
 规则（质量门禁，必须遵守）：
 - 只基于 structured 数据，严禁编造任何单元格/条目
-- structured.truncated 为 true 时，开头注明"数据过长已截断，仅展示前 50 行/项"
 - CSV 字段含逗号/引号时按 RFC 4180 转义（用双引号包裹并加倍内部引号）
-- 表格列数多于 6 列时，Markdown 表格照常输出，但 CSV 必须完整保留所有列`
+- 表格列数多于 6 列时，Markdown 表格照常输出，但 CSV（单表时）必须完整保留所有列`
 const RESEARCH_PLAN_PROMPT = `你是一个深度研究规划助手。请把一个研究问题拆解成 2-3 个子问题，并为每个子问题给出 1-2 个搜索引擎检索词，用于后续搜索并抓取真实网页。
 
 严格输出 JSON，不要输出任何其他内容：

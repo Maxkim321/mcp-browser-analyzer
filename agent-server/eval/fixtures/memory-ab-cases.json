@@ -1,0 +1,33 @@
+{
+  "page": "pages/coding-assistant-compare.html",
+  "note": "跨页面记忆评测：答案只存在于预埋记忆卡片，当前页 fixture 与问题无关。事实是编造但具体的内部记录（偏离教科书默认值），防止模型靠先验知识蒙对——这就是对照实验的意义。",
+  "cases": [
+    {
+      "id": "memory-bm25-01",
+      "prompt": "我之前读过一篇团队内部的检索服务调参记录，里面说 BM25 的 k1 和 b 最终调到了多少？",
+      "expectedUrl": "file://eval/cards/bm25-tuning.html",
+      "rubric": {
+        "must_mention": ["1.2", "0.6"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-release-02",
+      "prompt": "我们团队的发布流程笔记里，滚动发布的窗口定在星期几？触发自动回滚的错误率阈值是多少？",
+      "expectedUrl": "file://eval/cards/release-process.html",
+      "rubric": {
+        "regex": ["周[三三]", "3\\s*%"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-dbpool-03",
+      "prompt": "那篇数据库运维记录说订单库的连接池调到了多少？配合了什么组件？",
+      "expectedUrl": "file://eval/cards/db-pool.html",
+      "rubric": {
+        "must_mention": ["350", "pgbouncer"],
+        "max_chars": 800
+      }
+    }
+  ]
+}

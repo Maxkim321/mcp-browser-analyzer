@@ -30,8 +30,8 @@ jobs:
       - name: Build extension
         run: pnpm -F chrome-extension build
 
-  build-server:
-    name: Check Server Syntax
+  check-server:
+    name: Check Agent Server
     runs-on: ubuntu-latest
 
     steps:
@@ -51,4 +51,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Syntax check agent-server
-        run: node --check agent-server/src/index.js && node --check agent-server/src/core/agent.js && node --check agent-server/src/core/llm.js && node --check agent-server/src/communication/ws-server.js && node --check agent-server/src/tools/handler.js
+        run: node --check agent-server/src/index.js && node --check agent-server/src/core/agent.js && node --check agent-server/src/core/llm.js && node --check agent-server/src/communication/ws-server.js && node --check agent-server/src/tools/handler.js && node --check agent-server/src/tools/lighthouse.js
+
+      - name: Run agent-server tests
+        run: pnpm -F agent-server test

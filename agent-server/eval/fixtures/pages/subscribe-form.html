@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>田野观察 · 订阅周报</title>
+  </head>
+  <body>
+    <article>
+      <h1>田野观察 · 订阅周报</h1>
+      <p>
+        《田野观察》是一份关注 AI 工程化的中文周报，每周精选 5 篇技术文章与 1
+        个深度案例，主编是田伟亮。填写下方表单即可订阅。
+      </p>
+      <form id="subscribe-form" action="/api/subscribe" method="post">
+        <label>姓名 <input id="name" name="name" type="text" placeholder="你的称呼" /></label>
+        <label>
+          邮箱 <input id="email" name="email" type="email" placeholder="you@example.com" />
+        </label>
+        <label>
+          推送频率
+          <select id="frequency" name="frequency">
+            <option value="">请选择</option>
+            <option value="daily">每日精选</option>
+            <option value="weekly">每周合集</option>
+            <option value="monthly">每月深度</option>
+          </select>
+        </label>
+        <label>
+          <input id="agree" name="agree" type="checkbox" value="yes" />
+          我已阅读并同意订阅条款
+        </label>
+        <button id="submit-btn" type="submit">确认订阅</button>
+      </form>
+      <p>订阅后你会收到确认邮件，内容每周四上午 9 点准时送达，随时可以一键退订。</p>
+    </article>
+  </body>
+</html>

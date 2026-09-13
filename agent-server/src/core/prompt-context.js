@@ -37,7 +37,9 @@ function appendPrefs(systemPrompt, prefs) {
   const translateLang = String(prefs.translateLang || '').trim()
   const replyStyle = String(prefs.replyStyle || '').trim()
   if (summaryStyle && summaryStyle !== 'concise') {
-    lines.push(`- 总结格式偏好：${summaryStyle === 'detailed' ? '详细（含背景与展开说明）' : summaryStyle}`)
+    lines.push(
+      `- 总结格式偏好：${summaryStyle === 'detailed' ? '详细（含背景与展开说明）' : summaryStyle}`
+    )
   }
   if (translateLang && translateLang !== 'zh') {
     lines.push(`- 默认翻译目标语言：${translateLang}`)

@@ -125,3 +125,47 @@ export const removeArticle = async (url) => {
   await chrome.storage.local.set({ ba_articles: next })
   return next
 }
+
+/**
+ * 知识点卡片库（秋招随手记 / flashcard）
+ * 独立于会话历史，本质是收藏问题 + 异步补全答案 + 可回顾。
+ * ba_knowledge_points：数组，每条 { id, question, answer, status:'pending'|'done', createdAt, source }
+ *  - pending：只收藏了问题，尚未补全答案
+ *  - done：答案已生成（点开补全 or 从 AI 回答一键收藏即直接完成）
+ *  - source：出处，如「划词」「手输」「AI 回答」+ 当前页面 URL，便于回顾时知道知识点来源
+ */
+const MAX_KNOWLEDGE_POINTS = 500
+
+export const getKnowledgePoints = async () => {
+  try {
+    const { ba_knowledge_points } = await chrome.storage.local.get('ba_knowledge_points')
+    return Array.isArray(ba_knowledge_points) ? ba_knowledge_points : []
+  } catch {
+    return []
+  }
+}
+
+export const saveKnowledgePoints = async (list) => {
+  await chrome.storage.local.set({ ba_knowledge_points: list })
+  return list
+}
+
+// 新增卡片：新条目插头部，超上限截断
+export const addKnowledgePoint = async (kp) => {
+  const list = await getKnowledgePoints()
+  const next = [kp, ...list].slice(0, MAX_KNOWLEDGE_POINTS)
+  return saveKnowledgePoints(next)
+}
+
+// 更新某条（补全答案 / 状态翻转等）
+export const updateKnowledgePoint = async (id, patch) => {
+  const list = await getKnowledgePoints()
+  const next = list.map((kp) => (kp.id === id ? { ...kp, ...patch } : kp))
+  return saveKnowledgePoints(next)
+}
+
+export const removeKnowledgePoint = async (id) => {
+  const list = await getKnowledgePoints()
+  const next = list.filter((kp) => kp.id !== id)
+  return saveKnowledgePoints(next)
+}

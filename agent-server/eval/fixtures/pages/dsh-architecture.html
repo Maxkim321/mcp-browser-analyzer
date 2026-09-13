@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>DeepSeek Harness 源码深度解读</title></head>
+<body>
+<article>
+  <h1>DeepSeek Harness 源码深度解读：官方开源 Agent 框架的架构拆解</h1>
+  <p>2026 年 8 月 13 日，DeepSeek 官方在 GitHub 开源了 DeepSeek Harness（简称 dsh），口号只有一句话：Everything is a Plugin（一切皆插件）。仓库发布两天 Star 数突破 4.1 万、Fork 3283。本文基于 deepseek-ai/deepseek-harness @ 47f9438 克隆，对源码做架构级拆解。</p>
+
+  <h2>一、仓库全景</h2>
+  <p>硬数字：54 个包、1247 个 TypeScript 源文件（不含测试）、约 20 万行代码、12293 次提交，主贡献者 Tianyi Cui 独占 5235 次提交。版本 0.1.0-rc.5，官方明确标注 Developer Preview，破坏性变更随时可能发生。协议 MIT。技术栈：Node.js + TypeScript（全 ESM）+ pnpm workspaces。</p>
+  <p>代码质量工程化令人印象深刻：每个 npm 包都是 @deepseek-ai/dsh-* 命名，单测要求每个源文件 100% 行覆盖率（CI 门禁），并且每个包都必须自带一个 invariant（运行时不变量断言模块）。</p>
+
+  <h2>二、核心架构：一切皆插件</h2>
+  <p>dsh 底层基于 Cordis 插件化框架（源码直接 vendor 进仓库）。Cordis 的核心抽象：插件向共享上下文贡献 Service（服务）、类型化 Event（事件）和可逆 Effect（副作用）；注册即副作用，卸载自动撤销。插件之间通过 ctx 键互相引用。</p>
+  <p>dsh 的产品层——模型适配器、工具注册表、会话日志、甚至 Agent Loop 本身——全部是插件。文档原话："不存在需要打补丁的特权内核：扩展 dsh 的方式是把插件挂载到其他插件旁边。"</p>
+  <p>配置采用 Profile / Bundle / Patch 三层叠放机制：Profile 列出要叠放的组合包，Bundle 是 Cordis 配置项与挂载代码的分发格式，Patch 按 id 定位条目并替换。叠放顺序是越晚叠的层权力越大，任何一条启动配置都能被 patch 替换。dsh-base 是每个 profile 的第一层（模型、工具、持久化、沙箱、审批、设置、凭据、遥测）。</p>
+
+  <h2>三、事件驱动设计</h2>
+  <p>事件分三个域：会话事件（session/*）持久、追加式，存放必须跨重启保留的事实；Agent 事件（agent/*）实时，携带活跃 Agent 的 inbox、步骤、状态；能力事件（fs/*、tools/*、telemetry/*）实时，给 seam 附加策略和适配器，避免导入循环。</p>
+  <p>设计铁律是"模型可见即已记录"：抵达模型请求的一切都必须能从会话日志重建，运行时用 invariant 断言这一点。新增一项模型可见输入，就必须新增一个会话事件。这保证了 fork、恢复、回放、遥测都从同一份事件流派生——日志是唯一的真相源。</p>
+
+  <h2>四、Agent Loop 心脏</h2>
+  <p>packages/core/agent-loop/ 里的默认驱动器是 ReactLoopAgent，约 500 行。术语：Step（步骤）= 一次模型请求加它调用的工具；Turn（轮次）= 零到多个步骤，领取首条输入时打开，不再欠任何工作时关闭。</p>
+  <p>轮次流程：turn/start → agent/pre-step（waterfall 事件，监听器可改写或拒绝消息）→ step/start → 从日志派生模型历史 → agent/request → llm/stream → assistant/chunk → tool/call → step/end。waterfall 事件与 serial 事件的区别：waterfall 可拦截改写，监听器必须调用 next() 委托下游；agent/turn-stopping 是 serial 事件，用于"是否该停"的终检，是唯一没有 next() 的检查点。</p>
+  <p>工程细节：空内容也记账——assistant/message 会记录每次成功的提供方调用，包括返回空内容或以 max-tokens 结束的调用，空内容不进派生历史但用量保留。错误恢复有专门路径：agent/request-error 处理上下文溢出，先做工具结果剪枝，再选摘要。输入走统一 inbox：steering（中途引导）与注入消息经过同一个 agent/pre-step waterfall。</p>
+
+  <h2>五、能力 Seam（最优雅的设计）</h2>
+  <p>一个 seam 包含三个角色：Service Definition（声明接口）、Service Provider（实现它）、Consumer（使用它，通常是面向模型的工具）。换一个 Provider 就换掉整个产品能力。文档例子：把 ctx.fs 指向 E2B 远程沙箱，Bash、PTY、LSP 就全部一起迁移，不需要为每个能力单独 fork。</p>
+
+  <h2>六、内置工具生态</h2>
+  <p>docs/tool-catalog.md 是生成式目录——启动每个工具插件、读取真实 ctx.tools.schemas() 生成，工具注册是运行时行为。内置 24 个工具族：文件与代码（read/write/edit/glob/grep/run_code/lsp）、执行与终端（bash/terminal 六件套/job 三件套）、协作与智能体（subagent/subagent_fork/send_message/report/create_goal/ask_user_question）、信息与记忆（web_fetch/web_search/skill/session_search/todo_write/schedule）、以及最激进的自指工具 cordis_define/run/stop——让 Agent 在运行时定义、启动、停止自己的插件，默认 opt-in。</p>
+
+  <h2>七、Subagent 家族与安全</h2>
+  <p>subagent 能力支持 6 种 Provider：spawn-in-process（进程内新起）、fork-in-process（从父 agent 历史 fork）、acp（ACP 协议进程外）、codex（启动真实 Codex app-server）、claude-code（官方 Claude Agent SDK 启动真实 Claude Code）、dsh-sdk（TypeScript SDK 进程外）。多智能体编排在 seam 抽象下变成"选 Provider"的问题。</p>
+  <p>沙箱三件套：Linux Landlock（native Node 插件）、Windows ACL、E2B 远程沙箱。hooks 家族兼容 Claude Code / Codex 的 hook 协议。</p>
+
+  <h2>八、评价</h2>
+  <p>亮点：架构纯度罕见，连 agent loop 都是插件；事件即契约，可观测性扎实；seam 三件套支持全局能力替换；工程纪律一流。风险：Developer Preview 破坏性变更随时发生；重度绑定 Cordis 迁移成本高；约 20 万行代码学习曲线陡峭；生态刚起步，第三方插件稀少，模型默认偏 DeepSeek 系。</p>
+  <p>一句话总结：dsh 最大的价值是给 Agent 工程社区提供了一个极其干净的架构范本，而 0.1.0 的版本号意味着真正的生态故事才刚刚开始。</p>
+</article>
+</body>
+</html>
