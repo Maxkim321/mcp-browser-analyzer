@@ -1,12 +1,21 @@
+const http = require('node:http')
 const WebSocket = require('ws')
+const { v4: uuidv4 } = require('uuid')
 const toolHandler = require('../tools/handler.js')
 const { Agent } = require('../core/agent.js')
 const { LLMClient } = require('../core/llm.js')
 const { ResearchWorkflow } = require('../core/workflow.js')
+const { createPermissionCheck } = require('../core/approval.js')
 const config = require('../config/index.js')
 const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
 const { appendPageContext, appendPrefs } = require('../core/prompt-context.js')
 const eventLog = require('../core/event-log.js')
+const memoryWire = require('../memory/wire.js')
+const usageTracker = require('../core/usage-tracker.js')
+const dashboard = require('./dashboard.js')
+
+// P3 浏览记忆开关（MEMORY_ENABLED=off 可关闭，默认开启）
+const MEMORY_ENABLED = process.env.MEMORY_ENABLED !== 'off'
 
 const connectionAgents = new Map()
 
@@ -17,6 +26,45 @@ const connectionAborts = new Map()
 const activeWorkflows = new Map()
 // HITL 等待答复：connectionId → { resolve, timer }
 const pendingWorkflowAsks = new Map()
+// P4 写操作审批等待：approvalId → { resolve, timer, cleanup }
+const pendingWriteApprovals = new Map()
+
+/**
+ * P4 分级权限 HITL：写操作审批往返
+ * 推送 write_approval（含工具名/参数/一句话说明）到侧边栏 → 用户放行或拒绝
+ * 超时/取消/连接断开一律视为拒绝——审批是授权语义，等不到授权 = 没有授权
+ * @param {number} id - 连接 ID
+ * @param {string} toolName - 写工具名
+ * @param {object} args - 工具参数（审批卡片展示 selector/value）
+ * @param {AbortSignal} [signal] - 取消信号
+ * @returns {Promise<{approved:boolean,note?:string,timeout?:boolean}>}
+ */
+function requestWriteApproval(id, toolName, args, signal) {
+  return new Promise((resolve) => {
+    const approvalId = uuidv4()
+    const settle = (result) => {
+      clearTimeout(timer)
+      if (signal) signal.removeEventListener('abort', onAbort)
+      pendingWriteApprovals.delete(approvalId)
+      resolve(result)
+    }
+    const timer = setTimeout(() => settle({ approved: false, timeout: true }), config.agent.writeApprovalTimeout)
+    const onAbort = () => settle({ approved: false, note: '任务已取消' })
+    if (signal) {
+      if (signal.aborted) return settle({ approved: false, note: '任务已取消' })
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+    pendingWriteApprovals.set(approvalId, { resolve: settle, connectionId: id })
+    const sent = manager.send(id, {
+      type: 'write_approval',
+      requestId: approvalId,
+      tool: toolName,
+      args,
+    })
+    // 连接不可用：没有审批人，直接拒绝（不留 120s 空等）
+    if (!sent) settle({ approved: false, note: '侧边栏连接不可用，无法请求审批' })
+  })
+}
 
 /**
  * 连接管理器 - 管理所有 WebSocket 客户端连接
@@ -100,6 +148,20 @@ class ConnectionManager {
 const manager = new ConnectionManager()
 
 /**
+ * 推送用量汇总（用量条数据源）：本会话 + 服务进程两级，light 占比让分级路由可见
+ * @param {number} id - 连接 ID
+ */
+function pushUsageSummary(id) {
+  const session = usageTracker.summaryFor(id)
+  const total = usageTracker.totalsSnapshot()
+  manager.send(id, {
+    type: 'usage_summary',
+    session: { ...session, lightShare: usageTracker.lightShare(session) },
+    total: { ...total, lightShare: usageTracker.lightShare(total) },
+  })
+}
+
+/**
  * 校验并清洗插件下发的 LLM 配置
  * 插件端配置页可覆盖服务端 .env，但不能信任前端数据：
  *  - 只接受白名单字段，避免把 stream / messages 之类的字段混进 LLMClient
@@ -153,11 +215,16 @@ toolHandler.init({
 })
 
 /**
- * 启动 WebSocket 服务器
- * 监听端口 9999，处理客户端连接和消息
+ * 启动服务器：HTTP 与 WebSocket 同端口共存
+ * - WebSocket 走 upgrade（插件/客户端连接，协议不变）
+ * - HTTP GET 交给 dashboard（/ → 仪表盘页，/api/* → 度量数据）
  */
-const wss = new WebSocket.Server({ port: config.server.port })
-console.log(`[WebSocket] Server started on port ${config.server.port}`)
+const server = http.createServer((req, res) => dashboard.handleRequest(req, res))
+const wss = new WebSocket.Server({ server })
+server.listen(config.server.port, () => {
+  console.log(`[Server] Listening on port ${config.server.port} (WS + Dashboard)`)
+  console.log(`[Dashboard] http://localhost:${config.server.port}/dashboard`)
+})
 
 /**
  * 处理新的客户端连接
@@ -192,6 +259,8 @@ wss.on('connection', (ws) => {
       abort.abort()
       connectionAborts.delete(connectionId)
     }
+    // P4 分级权限：审批人下线，等待中的写操作审批全部拒绝
+    denyPendingApprovals(connectionId)
     // 清理该连接的深度研究资源（工作流标记 + HITL 等待）
     activeWorkflows.delete(connectionId)
     const pendingAsk = pendingWorkflowAsks.get(connectionId)
@@ -214,6 +283,7 @@ wss.on('connection', (ws) => {
       abort.abort()
       connectionAborts.delete(connectionId)
     }
+    denyPendingApprovals(connectionId)
     activeWorkflows.delete(connectionId)
     const pendingAsk = pendingWorkflowAsks.get(connectionId)
     if (pendingAsk) {
@@ -225,6 +295,19 @@ wss.on('connection', (ws) => {
 })
 
 /**
+ * 连接断开/出错时：该连接所有等待中的写操作审批一律拒绝（审批人已不在线）
+ * @param {number} id - 连接 ID
+ */
+function denyPendingApprovals(id) {
+  for (const [approvalId, pending] of pendingWriteApprovals) {
+    if (pending.connectionId === id) {
+      pendingWriteApprovals.delete(approvalId)
+      pending.resolve({ approved: false, note: '侧边栏已断开，审批拒绝' })
+    }
+  }
+}
+
+/**
  * 处理客户端消息
  * 根据消息类型分发到不同的处理逻辑
  * @param {number} id - 连接 ID
@@ -232,6 +315,19 @@ wss.on('connection', (ws) => {
  * @param {Agent} agent - 该连接的 Agent 实例
  */
 async function handleMessage(id, msg, agent) {
+  // P4 写操作审批答复：必须先于 requestId 分支处理（答复也带 requestId，
+  // 落到 toolHandler 会查不到 pending 而被静默丢弃，审批方将一直挂到超时）
+  if (msg.type === 'write_approval_answer') {
+    const pending = pendingWriteApprovals.get(msg.requestId)
+    if (pending) {
+      pending.resolve({
+        approved: msg.approved === true,
+        note: msg.approved ? undefined : String(msg.note || '用户拒绝了该写操作'),
+      })
+    }
+    return
+  }
+
   // 统一处理工具响应：只要插件回了 requestId，就交给 tool handler 匹配 pending request
   // 这可以覆盖 performance_data / navigate_to_result / reload_result / wait_for_load_result 等类型
   if (msg.requestId) {
@@ -245,6 +341,8 @@ async function handleMessage(id, msg, agent) {
       break
     case 'user_prompt':
       console.log('[Agent] Processing prompt:', msg.prompt)
+      // 用量归因：本连接发起的所有 LLM 调用（含深度研究）计入该会话
+      usageTracker.bindConnection(id)
       try {
         // 插件配置页下发的模型配置：校验后覆盖服务端 .env 默认值（空字段仍用服务端默认）
         const llmOverride = sanitizeLLMConfig(msg.llmConfig)
@@ -283,11 +381,30 @@ async function handleMessage(id, msg, agent) {
         if (!msg.action && msg.prefs) {
           systemPrompt = appendPrefs(systemPrompt, msg.prefs)
         }
+        // P3 浏览记忆：提问时检索相关旧卡片注入上下文（固定动作不注入，避免破坏结构化模板）
+        let memoryRefs = []
+        if (!msg.action && MEMORY_ENABLED) {
+          const recalled = memoryWire.recallForPrompt(msg.prompt, msg.pageContext)
+          if (recalled) {
+            systemPrompt = `${systemPrompt}\n\n${recalled.block}`
+            memoryRefs = recalled.refs
+            console.log(`[Memory] Recalled ${recalled.refs.length} cards for prompt`)
+          }
+        }
         // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
         // onToken：LLM 文本增量实时分片推送（流式输出），最终结果仍由 agent_response 兜底
         // dph-A：AbortController 支持用户取消；onStep 把 Turn 内每个 Step（推理/工具）事件下发前端
         const controller = new AbortController()
         connectionAborts.set(id, controller)
+        // P4 分级权限：为本次任务构造写操作审批闭包
+        // （读操作零打断；写操作逐次审批；预算/dry-run/审计口径见 approval.js）
+        const permissionCheck = createPermissionCheck({
+          requestApproval: ({ toolName, args }) =>
+            requestWriteApproval(id, toolName, args, controller.signal),
+          writeBudget: config.agent.maxWriteActions,
+          dryRun: config.agent.writeDryRun,
+          sessionId,
+        })
         // dph-B：记录本次用户提问事件（append-only）
         if (sessionId)
           eventLog.appendEvent(sessionId, 'user', String(msg.prompt || '').trim(), {
@@ -296,8 +413,10 @@ async function handleMessage(id, msg, agent) {
         try {
           const result = await agent.process(msg.prompt, {
             connectionId: id,
+            sessionId,
             systemPrompt,
             signal: controller.signal,
+            permissionCheck,
             onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
             onStep: (stepInfo) => manager.send(id, { type: 'agent_step', ...stepInfo }),
           })
@@ -306,10 +425,19 @@ async function handleMessage(id, msg, agent) {
             success: result.success,
             content: result.content,
             error: result.error,
+            memory_refs: memoryRefs.length > 0 ? memoryRefs : undefined,
+            // 档位 badge：本条回答实际生效的档位/模型（路由决策从黑盒变可见）
+            meta: result.meta,
           })
+          pushUsageSummary(id)
           // dph-B：记录回答事件（仅成功且有内容时，append-only）
           if (sessionId && result.success && result.content) {
             eventLog.appendEvent(sessionId, 'assistant', String(result.content).trim())
+          }
+          // P3 浏览记忆：成功回答 + 页面上下文 → 写卡片（跨页面记忆的数据来源）
+          if (result.success && result.content && MEMORY_ENABLED) {
+            const card = memoryWire.rememberFromResult(msg.pageContext, result.content)
+            if (card) console.log(`[Memory] Card saved: ${card.title.slice(0, 40)}`)
           }
         } finally {
           connectionAborts.delete(id)
@@ -415,7 +543,8 @@ async function runResearch(id, question, llmOverride = {}) {
   const controller = new AbortController()
   connectionAborts.set(id, controller)
 
-  const sendAsk = (askQuestion, options) =>
+  // sendAsk 透传打断证据（kind/topic/attempts/预算），前端 HITL 卡片据此展示"为什么打断"
+  const sendAsk = (askQuestion, options, evidence) =>
     new Promise((resolve) => {
       const timer = setTimeout(() => {
         pendingWorkflowAsks.delete(id)
@@ -426,6 +555,7 @@ async function runResearch(id, question, llmOverride = {}) {
         type: 'workflow_ask',
         question: askQuestion,
         options: options || ['继续研究', '停止研究'],
+        evidence,
       })
     })
 
@@ -445,6 +575,7 @@ async function runResearch(id, question, llmOverride = {}) {
     })
     // 研究结束：清理 checkpoint，避免重复恢复
     workflow.clearCheckpoint(result.state?.taskId)
+    pushUsageSummary(id)
   } catch (error) {
     // dph-A 可取消：识别取消信号，回复"已停止"，不当作系统错误
     if (error?.code === 'ABORTED' || error?.name === 'AbortError') {

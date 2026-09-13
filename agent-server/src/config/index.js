@@ -17,9 +17,25 @@ const config = {
     // 分级路由档位：缺省字段回落主配置，档位完全未配置（env 未设置）时该次调用就是主模型
     // light：高频窄任务（grade 打分/查询改写/上下文压缩摘要），便宜快
     // reasoning：重规划任务（深度研究 plan 等），主模型本身就是强模型，故默认不单独配
+    // 档位可整体混布到其他厂商：baseURL/apiKey/temperature 都能按档位覆盖（resolveTierConfig 合并）
     tiers: {
-      light: { model: process.env.LLM_LIGHT_MODEL },
+      light: {
+        model: process.env.LLM_LIGHT_MODEL,
+        baseURL: process.env.LLM_LIGHT_BASE_URL,
+        apiKey: process.env.LLM_LIGHT_API_KEY,
+        // 部分模型（如 Kimi K2 code 系列）只允许 temperature=1；env 未设置则回落主配置
+        temperature: process.env.LLM_LIGHT_TEMPERATURE
+          ? Number(process.env.LLM_LIGHT_TEMPERATURE)
+          : undefined,
+      },
       reasoning: { model: process.env.LLM_REASONING_MODEL },
+    },
+    // 单价表（元/百万 token，input/output）——成本账本（eval/cost-report.js）用，按实际账单调整
+    pricing: {
+      'deepseek-chat': { input: 2, output: 8 },
+      'doubao-seed-2-0-pro-260215': { input: 4, output: 16 },
+      // Kimi：思考型模型，reasoning token 计入 completion 计费——TODO 单价按 Moonshot 控制台核对修正
+      'kimi-k2.7-code': { input: 4, output: 16 },
     },
   },
 
@@ -29,10 +45,20 @@ const config = {
     timeout: 60000,
     // 对话历史上限，避免长会话导致内存持续增长
     historyLimit: 40,
+    // dph-C 派生视图：raw 只追加不改写（history-store.js），raw 的内存上限（条数）
+    rawLimit: 200,
+    // 压缩策略：rolling-summary（滚动摘要，默认）/ truncate（对照基线）/ no-compress
+    compressStrategy: process.env.COMPRESS_STRATEGY || 'rolling-summary',
     // dph-C token 预算：历史估算 token 超过该值触发滚动摘要压缩
     tokenBudget: 16000,
     // dph-D 单工具执行超时（毫秒），防止网络卡死拖垮整个 Turn
     toolTimeout: 60000,
+    // P4 分级权限：单轮任务获批写动作预算（硬上限写死代码，不信任模型自觉）
+    maxWriteActions: Number(process.env.MAX_WRITE_ACTIONS || 8),
+    // P4 dry-run：on 时写动作只规划不执行（演示/评测模式），审批链路照常留痕
+    writeDryRun: process.env.WRITE_DRY_RUN === 'on',
+    // P4 写操作审批等待时长（毫秒），超时默认拒绝——授权语义下等不到授权=没有授权
+    writeApprovalTimeout: Number(process.env.WRITE_APPROVAL_TIMEOUT || 120000),
   },
 }
 

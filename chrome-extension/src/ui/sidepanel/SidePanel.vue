@@ -1,13 +1,28 @@
 <template>
-  <div class="chat-container">
-    <!-- 头部 -->
+  <div class="chat-container" :data-theme="theme">
+    <!-- 游戏风开屏：logo 演出 + 真实启动进度（挂载 → 会话恢复 → 服务连接） -->
+    <Transition name="boot-fade">
+      <div v-if="booting" class="boot-splash">
+        <div class="boot-glow"></div>
+        <div class="boot-logo-wrap">
+          <img class="boot-logo" src="./assets/logo.png" alt="logo" />
+        </div>
+        <h1 class="boot-title">浏览器 AI 助手</h1>
+        <div class="boot-progress">
+          <div class="boot-progress-fill" :style="{ width: `${(bootStep / 3) * 100}%` }"></div>
+        </div>
+        <div class="boot-step">{{ bootStepLabel }}</div>
+        <div class="boot-tip">{{ bootTip }}</div>
+      </div>
+    </Transition>
+
+    <!-- 头部：名称交给浏览器原生侧边栏标题栏展示，这里只承载状态与操作 -->
     <header class="chat-header">
       <div class="brand">
         <div class="logo">
           <img src="./assets/logo.png" alt="logo" />
         </div>
         <div class="brand-text">
-          <h1 class="title">浏览器 AI 助手</h1>
           <div class="connection-status" :class="connectionStatus">
             <span class="status-dot"></span>
             <span class="status-text">{{ statusText }}</span>
@@ -15,6 +30,42 @@
         </div>
       </div>
       <div class="header-actions">
+        <button
+          class="icon-btn"
+          :title="theme === 'dark' ? '切换到浅色' : '切换到深色'"
+          @click="toggleTheme"
+        >
+          <!-- 太阳 / 月亮随主题切换 -->
+          <svg
+            v-if="theme === 'dark'"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41"
+            />
+          </svg>
+          <svg
+            v-else
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
         <button
           class="icon-btn"
           title="知识点"
@@ -220,6 +271,15 @@
           <div class="message-meta">
             <span class="message-sender">{{ msg.sender === 'user' ? '我' : 'AI 助手' }}</span>
             <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
+            <!-- 档位 badge：本条回答实际生效的模型档位（分级路由从黑盒变可见） -->
+            <span
+              v-if="msg.sender === 'ai' && msg.type === 'text' && msg.tierMeta"
+              class="tier-badge"
+              :class="{ light: msg.tierMeta.tier === 'light' }"
+              :title="`模型: ${msg.tierMeta.model || '未知'}`"
+            >
+              {{ msg.tierMeta.tier === 'light' ? '⚡ light 档' : '🧠 主模型' }}
+            </span>
             <button
               v-if="msg.type === 'text' && msg.sender === 'ai'"
               class="message-copy-button"
@@ -271,8 +331,22 @@
             :nodes="traceNodes"
             :active="traceActive"
           />
+          <!-- P3 浏览记忆：本次回答参考了记忆库中的旧页面；悬浮展示"为什么命中"（BM25 分数 + 命中词） -->
+          <div v-if="msg.memoryRefs && msg.memoryRefs.length" class="memory-refs">
+            <span class="memory-refs-label"
+              >📌 参考了你之前读过的 {{ msg.memoryRefs.length }} 篇</span
+            >
+            <span
+              v-for="(refItem, ri) in msg.memoryRefs"
+              :key="ri"
+              class="memory-chip"
+              :title="memoryRefTitle(refItem)"
+              >《{{ refItem.title }}》</span
+            >
+          </div>
           <div
             class="message-bubble markdown-content"
+            :class="{ streaming: msg.streaming }"
             v-if="msg.type === 'text' && msg.sender === 'ai'"
             v-html="renderMarkdown(msg.content)"
           ></div>
@@ -288,9 +362,23 @@
             <span class="spinner"></span>
             <span>{{ msg.content }}</span>
           </div>
-          <!-- M1-F8 深度研究：HITL 询问卡片（继续/停止/自定义方向） -->
+          <!-- dph-C 运行时压缩提示：压缩真实发生时冒一条（含视图 token 前后值），平时不占空间 -->
+          <div class="message-bubble compress-bubble" v-if="msg.type === 'compress_notice'">
+            <span>{{ msg.content }}</span>
+          </div>
+          <!-- M1-F8 深度研究：HITL 询问卡片（继续/停止/自定义方向）+ 打断证据 -->
           <div class="message-bubble ask-bubble" v-if="msg.type === 'workflow_ask'">
             <p class="workflow-ask-question">{{ msg.question }}</p>
+            <!-- 打断证据：为什么打断（死胡同重试轨迹/预算用量）——证据决定用户信不信任打断 -->
+            <div v-if="msg.evidence" class="ask-evidence">
+              <div
+                v-for="(line, li) in askEvidenceLines(msg.evidence)"
+                :key="li"
+                class="ask-evidence-item"
+              >
+                {{ line }}
+              </div>
+            </div>
             <div v-if="msg.pending" class="workflow-ask-actions">
               <button
                 v-for="opt in msg.options"
@@ -309,6 +397,24 @@
               />
             </div>
             <p v-else class="workflow-ask-answered">已答复（{{ msg.answer }}），研究中...</p>
+          </div>
+          <!-- P4 分级权限 HITL：写操作审批卡片——AI 要动你的页面，先给你看清它要干什么 -->
+          <div class="message-bubble ask-bubble" v-if="msg.type === 'write_approval'">
+            <p class="workflow-ask-question">🔐 AI 请求执行写操作：{{ writeToolLabel(msg.tool) }}</p>
+            <div class="ask-evidence">
+              <div class="ask-evidence-item">目标：{{ msg.args?.selector }}</div>
+              <div v-if="msg.args?.value" class="ask-evidence-item">内容：{{ msg.args.value }}</div>
+              <div v-if="msg.args?.description" class="ask-evidence-item">说明：{{ msg.args.description }}</div>
+            </div>
+            <div v-if="msg.pending" class="workflow-ask-actions">
+              <button class="workflow-ask-btn primary" @click="answerWriteApproval(msg, true)">
+                允许执行
+              </button>
+              <button class="workflow-ask-btn" @click="answerWriteApproval(msg, false)">拒绝</button>
+            </div>
+            <p v-else class="workflow-ask-answered">
+              {{ msg.approved ? '✅ 已放行' : '❌ 已拒绝' }}
+            </p>
           </div>
           <div class="message-bubble perf-bubble" v-if="msg.type === 'performance'">
             <div class="performance-card">
@@ -381,6 +487,9 @@
           <polyline points="19 12 12 19 5 12" />
         </svg>
       </button>
+
+      <!-- 会话用量条：token/成本/light 占比实时可见（usage_summary 推送驱动） -->
+      <UsageBar v-if="usageSummary" :session="usageSummary.session" :total="usageSummary.total" />
 
       <!-- 快捷动作工具栏 -->
       <div class="quick-actions">
@@ -467,6 +576,7 @@ import {
   removeKnowledgePoint,
 } from '@/utils/prefs'
 import AgentTrace from '@/components/AgentTrace.vue'
+import UsageBar from '@/components/UsageBar.vue'
 import { useAgentTrace, TRACE_STATUS } from '@/composables/useAgentTrace'
 
 defineOptions({
@@ -484,6 +594,11 @@ const pendingSelection = ref('')
 const thinking = ref(false)
 const connectionStatus = ref('disconnected')
 const statusText = ref('未连接')
+// 会话用量条：服务端 usage_summary 推送驱动（token/成本/light 占比）
+const usageSummary = ref(null)
+// 压缩提示每回合最多一条：ReAct 多轮迭代可能每轮都触发压缩（每轮都真实发生、
+// 轨迹里都留痕），但对话流里连冒 N 条会淹没正文——提示只报第一次，其余看轨迹
+let compressNoticedThisTurn = false
 let websocket = null
 let reconnectTimer = null
 const WS_URL = 'ws://localhost:9999'
@@ -502,6 +617,47 @@ const knowledgeList = ref([])
 const newKnowledgeQuestion = ref('')
 const expandedKnowledgeId = ref('') // 展开到哪张（done 卡片看全文 / pending 卡片补全中）
 const completingId = ref('') // 正在补全的卡片 id
+
+// ===== 主题（默认跟随系统、深色兜底，手动切换后持久化） =====
+const theme = ref('dark')
+const THEME_KEY = 'sidepanel-theme'
+const toggleTheme = () => {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  try {
+    localStorage.setItem(THEME_KEY, theme.value)
+  } catch {
+    /* storage 不可用时主题仅本次生效 */
+  }
+}
+
+// ===== 开屏（游戏风启动进度，进度条对接真实初始化事件） =====
+// 步骤：1 UI 挂载完成 → 2 会话恢复 → 3 服务连接（成功或失败都放行，不卡开屏）
+const booting = ref(true)
+const bootStep = ref(0)
+const BOOT_STARTED_AT = Date.now()
+const BOOT_MIN_MS = 1400 // 开屏最短停留，动画不闪现
+const BOOT_TIPS = [
+  '💡 选中网页文字，划词即问',
+  '🔍 输入问题，多页深度研究出带来源报告',
+  '📊 一键提取页面表格 / 列表数据',
+  '📌 AI 回答可收藏为知识点，随时回顾',
+  '⌨️ Shift + Enter 换行，Enter 发送',
+]
+const bootTip = ref(BOOT_TIPS[Math.floor(Math.random() * BOOT_TIPS.length)])
+const bootStepLabel = computed(
+  () => ['正在初始化界面...', '正在恢复会话...', '正在连接服务...'][bootStep.value - 1] || ''
+)
+const advanceBoot = (n) => {
+  if (bootStep.value >= n) return
+  bootStep.value = n
+  if (n >= 3) {
+    // 最短停留时间保证演出完整；250ms 留给淡出过渡
+    const wait = Math.max(0, BOOT_MIN_MS - (Date.now() - BOOT_STARTED_AT))
+    setTimeout(() => {
+      booting.value = false
+    }, wait + 250)
+  }
+}
 // 红点：待补全条数
 const knowledgePendingCount = computed(
   () => knowledgeList.value.filter((kp) => kp.status === 'pending').length
@@ -867,7 +1023,11 @@ const flushSession = async () => {
     saveTimer = null
   }
   if (!sessionId.value) return
-  const snapshot = messages.value.map((m) => ({ ...m }))
+  const snapshot = messages.value
+    // P4 审批卡片是瞬态消息：服务端等待态不落盘——重放出的僵尸卡片 requestId 已死，
+    // 用户会看到一个永远无法答复的按钮；审批只在会话内存态中生存
+    .filter((m) => m.type !== 'write_approval')
+    .map((m) => ({ ...m }))
   await chrome.storage.local.set({
     [`ba_session_${sessionId.value}`]: { id: sessionId.value, messages: snapshot },
   })
@@ -1099,6 +1259,51 @@ const truncateUrl = (url) => {
   }
 }
 
+/**
+ * 记忆引用悬浮文案：不止给来源，还给"为什么命中"（BM25 分数 + 命中词）——
+ * 检索从"结果可见"升级为"理由可见"，不是黑箱记忆
+ */
+const memoryRefTitle = (refItem) => {
+  if (!refItem) return ''
+  const lines = [String(refItem.title || ''), String(refItem.url || '')]
+  if (Number.isFinite(refItem.score)) {
+    let scoreLine = `BM25 相关度 ${refItem.score}`
+    if (refItem.matchedTerms?.length) scoreLine += ` · 命中：${refItem.matchedTerms.join(' / ')}`
+    lines.push(scoreLine)
+  }
+  return lines.filter(Boolean).join('\n')
+}
+
+/**
+ * HITL 打断证据 → 展示行：把"为什么打断"的决策依据摆出来（重试轨迹/预算用量），
+ * 证据决定用户信不信任这个打断
+ */
+const askEvidenceLines = (evidence) => {
+  if (!evidence) return []
+  const lines = []
+  if (evidence.kind === 'deadend') {
+    lines.push(`⛔ 打断原因：检索进入死胡同（自动重试已耗尽）`)
+    if (evidence.topic) lines.push(`主题：「${evidence.topic}」`)
+    if (Number.isFinite(evidence.attempts)) lines.push(`已尝试 ${evidence.attempts} 轮检索与改写`)
+    if (evidence.queriesTried?.length)
+      lines.push(`试过的检索词：${evidence.queriesTried.join(' → ')}`)
+    if (Number.isFinite(evidence.pointsFromTopic))
+      lines.push(
+        `该主题仅获得 ${evidence.pointsFromTopic} 条要点 / ${evidence.pagesFromTopic} 页来源`
+      )
+  } else if (evidence.kind === 'budget') {
+    lines.push(`⛔ 打断原因：页面预算告警`)
+    if (evidence.topic) lines.push(`下一主题：「${evidence.topic}」`)
+  }
+  if (Number.isFinite(evidence.sourcesCount) && Number.isFinite(evidence.maxTotalPages)) {
+    lines.push(`预算用量：${evidence.sourcesCount}/${evidence.maxTotalPages} 页`)
+  }
+  if (Number.isFinite(evidence.topicsDone) && Number.isFinite(evidence.topicsTotal)) {
+    lines.push(`研究进度：${evidence.topicsDone}/${evidence.topicsTotal} 主题`)
+  }
+  return lines
+}
+
 const getActiveTab = async () => {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
   if (!tabs.length || !tabs[0].id) {
@@ -1196,6 +1401,10 @@ const updateConnectionStatus = (status) => {
       statusText.value = '连接失败'
       break
   }
+  // 开屏放行：连接成功或失败都不阻塞（失败时用户会在头部状态看到原因）
+  if (status === 'connected' || status === 'error' || status === 'disconnected') {
+    advanceBoot(3)
+  }
 }
 
 // 连接 WebSocket
@@ -1269,6 +1478,8 @@ const connectWebSocket = () => {
                 ? data.content
                 : `${lastStreamingMsg.content}\n\n错误: ${data.content || data.error || ''}`
               lastStreamingMsg.streaming = false
+              if (data.memory_refs) lastStreamingMsg.memoryRefs = data.memory_refs
+              if (data.meta) lastStreamingMsg.tierMeta = data.meta
               finalContent = lastStreamingMsg.content
               finishTrace(lastStreamingMsg, traceStatus)
             } else if (data.success) {
@@ -1277,6 +1488,8 @@ const connectWebSocket = () => {
                 sender: 'ai',
                 content: data.content,
                 timestamp: Date.now(),
+                memoryRefs: data.memory_refs || [],
+                tierMeta: data.meta || null,
               })
               finalContent = data.content
               finishTrace(messages.value[messages.value.length - 1], traceStatus)
@@ -1324,6 +1537,7 @@ const connectWebSocket = () => {
 
           case 'thinking':
             thinking.value = true
+            compressNoticedThisTurn = false
             beginTrace()
             break
 
@@ -1331,6 +1545,21 @@ const connectWebSocket = () => {
           // 前端归约成轨迹节点而非单帧覆盖，用户可看到完整执行过程
           case 'agent_step':
             applyTraceStep(data)
+            // 压缩真实发生时在对话流里冒一条提示（含视图 token 前后值），每回合最多一条
+            if (data.phase === 'compress' && data.compressed > 0 && !compressNoticedThisTurn) {
+              compressNoticedThisTurn = true
+              const saved =
+                Number.isFinite(data.tokensBefore) && Number.isFinite(data.tokensAfter)
+                  ? `，视图 token ${data.tokensBefore} → ${data.tokensAfter}`
+                  : ''
+              messages.value.push({
+                type: 'compress_notice',
+                sender: 'ai',
+                content: `📦 上下文已压缩：${data.compressed} 条早期消息转为摘要${saved}`,
+                timestamp: Date.now(),
+              })
+              persistSession()
+            }
             break
 
           case 'cancel_ack':
@@ -1345,7 +1574,7 @@ const connectWebSocket = () => {
             applyTraceWorkflow(data)
             break
 
-          // M1-F8 深度研究：HITL 询问（暂停等待用户答复）
+          // M1-F8 深度研究：HITL 询问（暂停等待用户答复）——evidence 是"为什么打断"的证据
           case 'workflow_ask':
             thinking.value = false
             messages.value.push({
@@ -1354,12 +1583,40 @@ const connectWebSocket = () => {
               taskId: data.taskId,
               question: data.question,
               options: data.options || ['继续研究', '停止研究'],
+              evidence: data.evidence || null,
               pending: true,
               answer: '',
               customText: '',
               timestamp: Date.now(),
             })
             persistSession()
+            break
+
+          // P4 分级权限 HITL：写操作审批请求（卡片展示工具/目标/值，等用户放行或拒绝）
+          case 'write_approval':
+            thinking.value = false
+            messages.value.push({
+              type: 'write_approval',
+              sender: 'ai',
+              requestId: data.requestId,
+              tool: data.tool,
+              args: data.args || {},
+              pending: true,
+              approved: false,
+              timestamp: Date.now(),
+            })
+            scrollToBottom()
+            break
+
+          // P4 写操作链路：审批通过后真实执行 / 只读枚举可交互元素，经 background 到 content script
+          case 'write_action':
+          case 'get_interactive_elements':
+            forwardWriteChain(data)
+            break
+
+          // 会话用量汇总：每次回答/研究结束后推送，驱动输入区上方的用量条
+          case 'usage_summary':
+            usageSummary.value = { session: data.session, total: data.total }
             break
 
           // M1-F8 深度研究：读取指定 URL（经 background 后台开 tab，不打扰当前页面）
@@ -1702,6 +1959,73 @@ const answerWorkflowAsk = (msg, answer) => {
   persistSession()
 }
 
+// P4 分级权限 HITL：用户对写操作审批的答复（放行/拒绝），服务端据此放行或拒绝执行
+const answerWriteApproval = (msg, approved) => {
+  if (!msg.pending) return
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) return
+  msg.pending = false
+  msg.approved = approved
+  websocket.send(
+    JSON.stringify({
+      type: 'write_approval_answer',
+      requestId: msg.requestId,
+      approved,
+      note: approved ? undefined : '用户在侧边栏拒绝了该写操作',
+    })
+  )
+}
+
+// P4 写操作工具的中文标签（审批卡片可读性）
+const writeToolLabel = (tool) => {
+  const labels = {
+    click_element: '点击元素',
+    fill_input: '填写输入框',
+    select_option: '选择下拉选项',
+  }
+  return labels[tool] || tool
+}
+
+// P4 写操作链路转发：write_action（已审批）与 get_interactive_elements（只读枚举）
+// 走 background → content script，回包后按 requestId 回给服务端（与其他工具同构）
+const forwardWriteChain = (data) => {
+  chrome.runtime
+    .sendMessage({
+      type: data.type,
+      requestId: data.requestId,
+      action: data.action,
+      selector: data.selector,
+      value: data.value,
+      maxElements: data.maxElements,
+    })
+    .then((response) => {
+      if (response?.success && response.payload) {
+        sendToolResponse(
+          data.type === 'write_action' ? 'write_action_result' : 'interactive_elements',
+          data.requestId,
+          response.payload,
+          'Write chain completed'
+        )
+      } else {
+        const err = response?.error || `${data.type} failed`
+        sendToolResponse(
+          data.type === 'write_action' ? 'write_action_result' : 'interactive_elements',
+          data.requestId,
+          { error: err },
+          err
+        )
+      }
+    })
+    .catch((error) => {
+      console.error('Write chain forward failed:', error)
+      sendToolResponse(
+        data.type === 'write_action' ? 'write_action_result' : 'interactive_elements',
+        data.requestId,
+        { error: error.message },
+        error.message
+      )
+    })
+}
+
 // M1-F8 深度研究：以输入框内容为研究问题，显式触发深度研究工作流
 const handleResearch = async () => {
   if (thinking.value) return
@@ -1860,8 +2184,28 @@ const onRuntimeMessage = (request) => {
 }
 
 onMounted(async () => {
+  // 主题恢复：上次手动选的主题优先；没有历史偏好时跟随系统，
+  // 让 app 底色与浏览器原生侧边栏标题栏同色，避免撞色出"边框感"
+  try {
+    const savedTheme = localStorage.getItem(THEME_KEY)
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      theme.value = savedTheme
+    } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+      theme.value = 'light'
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // 开屏：步骤 1（UI 挂载）完成；4s 硬兜底，任何异常都不会把用户关在开屏里
+  advanceBoot(1)
+  setTimeout(() => {
+    booting.value = false
+  }, 4000)
+
   // F4：先恢复最近会话（UI + 后续 WS onopen 时重放给服务端）
   await restoreCurrentSession()
+  advanceBoot(2)
   nextTick(() => scrollToBottom('auto'))
   connectWebSocket()
   chrome.runtime.onMessage.addListener(onRuntimeMessage)
@@ -1895,6 +2239,112 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ===== 设计令牌 =====
+ * 深色为默认主题（.chat-container 自身），[data-theme='light'] 整套覆盖为浅色。
+ * 命名按语义不按色相：调主题只改这里，其余 1400 行样式全部引用 var()。
+ */
+.chat-container {
+  /* 面板底色分层：bg（页面）→ surface（区块）→ raised（浮层卡片） */
+  --bg: #0a101e;
+  --surface: #101a2d;
+  --surface-2: #0d1526;
+  --surface-raised: #17233c;
+  --overlay-rgb: 16, 26, 45;
+  --border: #22304d;
+  --border-strong: #33425f;
+  /* 文字层级 */
+  --text-1: #e2e8f0;
+  --text-2: #94a3b8;
+  --text-3: #7c8aa5;
+  --text-muted: #64748b;
+  /* 阴影/叠印用基色 */
+  --ink-rgb: 0, 0, 0;
+  --muted-rgb: 100, 116, 139;
+  /* 强调色（indigo）：按钮底用 accent，暗色下提亮一档保证对比 */
+  --accent: #6366f1;
+  --accent-strong: #4f46e5;
+  --accent-bright: #818cf8;
+  --accent-rgb: 129, 140, 248;
+  --accent-soft: rgba(99, 102, 241, 0.16);
+  --accent-border: rgba(129, 140, 248, 0.45);
+  --accent-ink: #0a101e;
+  --on-accent: #ffffff;
+  /* 代码块/知识面板：双主题都保持深色底（内容一致性） */
+  --code-bg: #0a0f1a;
+  --code-text: #e2e8f0;
+  /* 语义色 */
+  --info: #60a5fa;
+  --info-strong: #3b82f6;
+  --info-soft: rgba(59, 130, 246, 0.14);
+  --info-border: rgba(96, 165, 250, 0.4);
+  --info-rgb: 59, 130, 246;
+  --success: #34d399;
+  --success-strong: #10b981;
+  --success-deep: #6ee7b7;
+  --success-soft: rgba(16, 185, 129, 0.13);
+  --success-border: rgba(52, 211, 153, 0.45);
+  --success-rgb: 16, 185, 129;
+  --danger: #f87171;
+  --danger-strong: #ef4444;
+  --danger-deep: #fca5a5;
+  --danger-soft: rgba(220, 38, 38, 0.16);
+  --danger-border: rgba(248, 113, 113, 0.45);
+  --warn: #fbbf24;
+  --warn-strong: #f59e0b;
+  --warn-deep: #fcd34d;
+  --warn-soft: rgba(217, 119, 6, 0.16);
+  --warn-border: rgba(251, 191, 36, 0.45);
+  /* 动效节奏：交互反馈 150ms / 内容切换 300ms */
+  --speed-fast: 0.15s;
+  --speed-normal: 0.3s;
+}
+
+.chat-container[data-theme='light'] {
+  --bg: #f8fafc;
+  --surface: #f1f5f9;
+  --surface-2: #eef2f7;
+  --surface-raised: #ffffff;
+  --overlay-rgb: 255, 255, 255;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text-1: #0f172a;
+  --text-2: #475569;
+  --text-3: #64748b;
+  --text-muted: #94a3b8;
+  --ink-rgb: 15, 23, 42;
+  --muted-rgb: 148, 163, 184;
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --accent-bright: #6366f1;
+  --accent-rgb: 79, 70, 229;
+  --accent-soft: #eef2ff;
+  --accent-border: #c7d2fe;
+  --accent-ink: #1e1b4b;
+  --code-bg: #0f172a;
+  --code-text: #e2e8f0;
+  --info: #3b82f6;
+  --info-strong: #2563eb;
+  --info-soft: #eff6ff;
+  --info-border: #bfdbfe;
+  --info-rgb: 59, 130, 246;
+  --success: #10b981;
+  --success-strong: #16a34a;
+  --success-deep: #166534;
+  --success-soft: #dcfce7;
+  --success-border: #bbf7d0;
+  --success-rgb: 16, 185, 129;
+  --danger: #dc2626;
+  --danger-strong: #ef4444;
+  --danger-deep: #b91c1c;
+  --danger-soft: #fef2f2;
+  --danger-border: #fecaca;
+  --warn: #f59e0b;
+  --warn-strong: #d97706;
+  --warn-deep: #b45309;
+  --warn-soft: #fffbeb;
+  --warn-border: #fde68a;
+}
+
 /* ===== 基础 ===== */
 *,
 *::before,
@@ -1905,11 +2355,12 @@ onUnmounted(() => {
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 100vh;
   width: 100%;
   min-width: 0;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-  color: #0f172a;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--surface-2) 100%);
+  color: var(--text-1);
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', sans-serif;
@@ -1924,10 +2375,10 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 8px;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(var(--overlay-rgb), 0.85);
   backdrop-filter: saturate(180%) blur(10px);
   -webkit-backdrop-filter: saturate(180%) blur(10px);
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  border-bottom: 1px solid rgba(var(--ink-rgb), 0.06);
   flex-shrink: 0;
   min-height: 56px;
 }
@@ -1946,11 +2397,11 @@ onUnmounted(() => {
   border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
-  background: #f1f5f9;
+  background: var(--surface);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 2px rgba(var(--ink-rgb), 0.08);
 }
 
 .logo img {
@@ -1966,23 +2417,12 @@ onUnmounted(() => {
   gap: 2px;
 }
 
-.title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .connection-status {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-3);
   line-height: 1;
 }
 
@@ -1990,44 +2430,44 @@ onUnmounted(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #cbd5e1;
+  background: var(--border-strong);
   transition: background 0.2s;
 }
 
 .connection-status.connected .status-dot {
-  background: #10b981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(var(--success-rgb), 0.18);
   animation: pulse-dot 2s infinite;
 }
 
 .connection-status.connecting .status-dot {
-  background: #f59e0b;
+  background: var(--warn);
   animation: pulse-dot 1.2s infinite;
 }
 
 .connection-status.disconnected .status-dot,
 .connection-status.error .status-dot {
-  background: #ef4444;
+  background: var(--danger);
 }
 
 .connection-status.connected {
-  color: #047857;
+  color: var(--success-deep);
 }
 .connection-status.connecting {
-  color: #b45309;
+  color: var(--warn-deep);
 }
 .connection-status.disconnected,
 .connection-status.error {
-  color: #b91c1c;
+  color: var(--danger-deep);
 }
 
 @keyframes pulse-dot {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+    box-shadow: 0 0 0 0 rgba(var(--success-rgb), 0.5);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 4px rgba(var(--success-rgb), 0);
   }
 }
 
@@ -2043,7 +2483,7 @@ onUnmounted(() => {
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: #475569;
+  color: var(--text-2);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2055,19 +2495,19 @@ onUnmounted(() => {
 }
 
 .icon-btn:hover {
-  background: #f1f5f9;
-  color: #0f172a;
-  border-color: #e2e8f0;
+  background: var(--surface);
+  color: var(--text-1);
+  border-color: var(--border);
 }
 
 .icon-btn:active {
-  background: #e2e8f0;
+  background: var(--border);
 }
 
 .icon-btn.active {
-  background: #eff6ff;
-  color: #2563eb;
-  border-color: #dbeafe;
+  background: var(--info-soft);
+  color: var(--info-strong);
+  border-color: var(--info-soft);
 }
 
 /* 知识点图标红点：有新待补全条目时显示 */
@@ -2083,13 +2523,13 @@ onUnmounted(() => {
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: #ef4444;
-  color: #fff;
+  background: var(--danger);
+  color: var(--on-accent);
   font-size: 10px;
   font-weight: 600;
   line-height: 16px;
   text-align: center;
-  box-shadow: 0 0 0 2px #fff;
+  box-shadow: 0 0 0 2px var(--surface-raised);
 }
 
 /* ===== 会话历史面板 ===== */
@@ -2101,12 +2541,12 @@ onUnmounted(() => {
   z-index: 100;
   max-height: 60vh;
   overflow-y: auto;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow:
-    0 4px 6px rgba(15, 23, 42, 0.05),
-    0 12px 24px rgba(15, 23, 42, 0.1);
+    0 4px 6px rgba(var(--ink-rgb), 0.05),
+    0 12px 24px rgba(var(--ink-rgb), 0.1);
   padding: 8px;
   animation: panelFade 0.15s ease;
 }
@@ -2133,18 +2573,18 @@ onUnmounted(() => {
 }
 
 .history-item:hover {
-  background: #f1f5f9;
+  background: var(--surface);
 }
 
 .history-item.active {
-  background: #eff6ff;
+  background: var(--info-soft);
 }
 
 .history-title {
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  color: #0f172a;
+  color: var(--text-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2152,7 +2592,7 @@ onUnmounted(() => {
 
 .history-time {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -2160,14 +2600,14 @@ onUnmounted(() => {
   padding: 24px 16px;
   text-align: center;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .history-search {
   width: 100%;
   margin-bottom: 6px;
   padding: 7px 10px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 13px;
   outline: none;
@@ -2175,8 +2615,8 @@ onUnmounted(() => {
 }
 
 .history-search:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--info);
+  box-shadow: 0 0 0 3px rgba(var(--info-rgb), 0.1);
 }
 
 .history-rename,
@@ -2186,7 +2626,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-muted);
   cursor: pointer;
   flex-shrink: 0;
   display: flex;
@@ -2202,24 +2642,24 @@ onUnmounted(() => {
 }
 
 .history-rename:hover {
-  background: #e0e7ff;
-  color: #4f46e5;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .history-delete:hover {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .history-rename-input {
   flex: 1;
   min-width: 0;
   padding: 4px 8px;
-  border: 1px solid #3b82f6;
+  border: 1px solid var(--info);
   border-radius: 6px;
   font-size: 13px;
   outline: none;
-  background: #fff;
+  background: var(--surface-raised);
 }
 
 .history-clear {
@@ -2227,15 +2667,15 @@ onUnmounted(() => {
   padding: 8px;
   text-align: center;
   font-size: 12px;
-  color: #dc2626;
+  color: var(--danger);
   border-radius: 8px;
   cursor: pointer;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--surface);
   transition: background-color 0.15s;
 }
 
 .history-clear:hover {
-  background: #fef2f2;
+  background: var(--danger-soft);
 }
 
 /* ===== 知识点面板（flashcard） ===== */
@@ -2247,12 +2687,12 @@ onUnmounted(() => {
   z-index: 100;
   max-height: 70vh;
   overflow-y: auto;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow:
-    0 4px 6px rgba(15, 23, 42, 0.05),
-    0 12px 24px rgba(15, 23, 42, 0.1);
+    0 4px 6px rgba(var(--ink-rgb), 0.05),
+    0 12px 24px rgba(var(--ink-rgb), 0.1);
   padding: 8px;
   animation: panelFade 0.15s ease;
 }
@@ -2267,7 +2707,7 @@ onUnmounted(() => {
   flex: 1;
   min-width: 0;
   padding: 7px 10px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 13px;
   outline: none;
@@ -2275,7 +2715,7 @@ onUnmounted(() => {
 }
 
 .knowledge-add-input:focus {
-  border-color: #3b82f6;
+  border-color: var(--info);
 }
 
 .knowledge-add-btn {
@@ -2283,27 +2723,27 @@ onUnmounted(() => {
   padding: 0 14px;
   border: none;
   border-radius: 8px;
-  background: #2563eb;
-  color: #fff;
+  background: var(--info-strong);
+  color: var(--on-accent);
   font-size: 13px;
   cursor: pointer;
   transition: background-color 0.15s;
 }
 
 .knowledge-add-btn:disabled {
-  background: #cbd5e1;
+  background: var(--border-strong);
   cursor: not-allowed;
 }
 
 .knowledge-add-btn:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: var(--info-strong);
 }
 
 .knowledge-empty {
   padding: 24px 16px;
   text-align: center;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-muted);
   line-height: 1.7;
 }
 
@@ -2316,17 +2756,17 @@ onUnmounted(() => {
 }
 
 .knowledge-item:hover {
-  background: #f8fafc;
+  background: var(--bg);
 }
 
 .knowledge-item.knowledge-pending {
-  border-color: #fde68a;
-  background: #fffbeb;
+  border-color: var(--warn-border);
+  background: var(--warn-soft);
 }
 
 .knowledge-item.expanded {
-  background: #f8fafc;
-  border-color: #e2e8f0;
+  background: var(--bg);
+  border-color: var(--border);
 }
 
 .knowledge-item-top {
@@ -2340,7 +2780,7 @@ onUnmounted(() => {
   min-width: 0;
   font-size: 13px;
   font-weight: 500;
-  color: #0f172a;
+  color: var(--text-1);
   line-height: 1.4;
   white-space: normal;
   word-break: break-word;
@@ -2353,7 +2793,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-muted);
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
@@ -2366,8 +2806,8 @@ onUnmounted(() => {
 }
 
 .knowledge-delete:hover {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .knowledge-meta {
@@ -2385,25 +2825,25 @@ onUnmounted(() => {
 }
 
 .knowledge-status.pending {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--warn-soft);
+  color: var(--warn-deep);
 }
 
 .knowledge-status.done {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--success-soft);
+  color: var(--success-deep);
 }
 
 .knowledge-time {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .knowledge-source {
   flex: 1;
   min-width: 0;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2413,9 +2853,9 @@ onUnmounted(() => {
 .knowledge-answer {
   margin-top: 8px;
   font-size: 12.5px;
-  color: #334155;
+  color: var(--text-2);
   line-height: 1.7;
-  border-top: 1px dashed #e2e8f0;
+  border-top: 1px dashed var(--border);
   padding-top: 8px;
   word-break: break-word;
 }
@@ -2431,7 +2871,7 @@ onUnmounted(() => {
 .knowledge-hint {
   margin-top: 8px;
   font-size: 11px;
-  color: #d97706;
+  color: var(--warn-strong);
 }
 
 .knowledge-clear {
@@ -2439,15 +2879,15 @@ onUnmounted(() => {
   padding: 8px;
   text-align: center;
   font-size: 12px;
-  color: #dc2626;
+  color: var(--danger);
   border-radius: 8px;
   cursor: pointer;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--surface);
   transition: background-color 0.15s;
 }
 
 .knowledge-clear:hover {
-  background: #fef2f2;
+  background: var(--danger-soft);
 }
 
 /* ===== 消息区域 ===== */
@@ -2468,28 +2908,28 @@ onUnmounted(() => {
   margin: 8px 4px;
   padding: 24px 18px;
   text-align: center;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 1px 2px rgba(var(--ink-rgb), 0.04);
 }
 
 .welcome-icon {
   font-size: 32px;
   margin-bottom: 8px;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.06));
+  filter: drop-shadow(0 2px 4px rgba(var(--ink-rgb), 0.06));
 }
 
 .welcome-text {
   font-size: 15px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-1);
   margin: 0 0 4px;
 }
 
 .welcome-desc {
   font-size: 12.5px;
-  color: #64748b;
+  color: var(--text-3);
   margin: 0 0 14px;
   line-height: 1.5;
 }
@@ -2503,10 +2943,10 @@ onUnmounted(() => {
 
 .tip-item {
   font-size: 12px;
-  color: #475569;
+  color: var(--text-2);
   padding: 7px 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 8px;
   line-height: 1.5;
 }
@@ -2540,20 +2980,20 @@ onUnmounted(() => {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--accent-bright) 0%, var(--accent) 100%);
+  color: var(--on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 11px;
   font-weight: 600;
   flex-shrink: 0;
-  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.25);
+  box-shadow: 0 1px 3px rgba(var(--accent-rgb), 0.25);
 }
 
 .message-item.user-message .message-avatar {
-  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
-  box-shadow: 0 1px 3px rgba(71, 85, 105, 0.25);
+  background: linear-gradient(135deg, var(--text-3) 0%, var(--text-2) 100%);
+  box-shadow: 0 1px 3px rgba(var(--muted-rgb), 0.25);
 }
 
 .message-body {
@@ -2579,20 +3019,20 @@ onUnmounted(() => {
 .message-sender {
   font-size: 12px;
   font-weight: 600;
-  color: #475569;
+  color: var(--text-2);
   letter-spacing: 0.01em;
 }
 
 .message-time {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .message-copy-button {
   margin-left: auto;
   border: none;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-muted);
   font-size: 11px;
   cursor: pointer;
   display: inline-flex;
@@ -2606,31 +3046,31 @@ onUnmounted(() => {
 }
 
 .message-copy-button:hover {
-  color: #4f46e5;
-  background: #eef2ff;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* ===== 消息气泡 ===== */
 .message-bubble {
-  background: #ffffff;
+  background: var(--surface-raised);
   padding: 10px 12px;
   border-radius: 12px;
   font-size: 13.5px;
   line-height: 1.6;
-  color: #0f172a;
-  border: 1px solid #e2e8f0;
+  color: var(--text-1);
+  border: 1px solid var(--border);
   word-wrap: break-word;
   overflow-wrap: break-word;
   max-width: 100%;
   min-width: 0;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 1px 2px rgba(var(--ink-rgb), 0.04);
 }
 
 .message-item.user-message .message-bubble {
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--accent-bright) 0%, var(--accent) 100%);
+  color: var(--on-accent);
   border-color: transparent;
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.2);
 }
 
 /* ===== Markdown 渲染内容（v-html 插入，需 :deep 生效） ===== */
@@ -2641,7 +3081,7 @@ onUnmounted(() => {
   margin: 12px 0 6px;
   font-weight: 600;
   line-height: 1.4;
-  color: #0f172a;
+  color: var(--text-1);
 }
 
 .markdown-content :deep(h1) {
@@ -2649,7 +3089,7 @@ onUnmounted(() => {
 }
 .markdown-content :deep(h2) {
   font-size: 15.5px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border);
   padding-bottom: 4px;
 }
 .markdown-content :deep(h3) {
@@ -2677,14 +3117,14 @@ onUnmounted(() => {
 
 .markdown-content :deep(strong) {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-1);
 }
 
 .markdown-content :deep(code) {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 12px;
   padding: 1px 5px;
-  background: rgba(15, 23, 42, 0.06);
+  background: rgba(var(--ink-rgb), 0.06);
   border-radius: 4px;
   word-break: break-all;
 }
@@ -2692,8 +3132,8 @@ onUnmounted(() => {
 .markdown-content :deep(pre) {
   margin: 0;
   padding: 10px 12px;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--code-bg);
+  color: var(--code-text);
   border-radius: 0 0 8px 8px;
   overflow-x: auto;
   font-size: 12px;
@@ -2712,8 +3152,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 4px 10px;
-  background: #1e293b;
-  color: #94a3b8;
+  background: var(--text-1);
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -2723,10 +3163,10 @@ onUnmounted(() => {
 }
 
 .markdown-content :deep(.code-copy-btn) {
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: 1px solid rgba(var(--muted-rgb), 0.3);
   border-radius: 5px;
   background: transparent;
-  color: #cbd5e1;
+  color: var(--border-strong);
   font-size: 11px;
   padding: 2px 8px;
   cursor: pointer;
@@ -2736,8 +3176,8 @@ onUnmounted(() => {
 }
 
 .markdown-content :deep(.code-copy-btn:hover) {
-  background: rgba(148, 163, 184, 0.18);
-  color: #ffffff;
+  background: rgba(var(--muted-rgb), 0.18);
+  color: var(--on-accent);
 }
 
 .markdown-content :deep(pre code) {
@@ -2750,15 +3190,15 @@ onUnmounted(() => {
 .markdown-content :deep(blockquote) {
   margin: 8px 0;
   padding: 6px 10px;
-  background: #f8fafc;
-  border-left: 3px solid #6366f1;
+  background: var(--bg);
+  border-left: 3px solid var(--accent-bright);
   border-radius: 0 6px 6px 0;
-  color: #475569;
+  color: var(--text-2);
   font-size: 13px;
 }
 
 .markdown-content :deep(a) {
-  color: #4f46e5;
+  color: var(--accent);
   text-decoration: none;
   word-break: break-all;
 }
@@ -2778,13 +3218,13 @@ onUnmounted(() => {
 
 .markdown-content :deep(th),
 .markdown-content :deep(td) {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   padding: 6px 8px;
   text-align: left;
 }
 
 .markdown-content :deep(th) {
-  background: #f8fafc;
+  background: var(--bg);
   font-weight: 600;
 }
 
@@ -2799,26 +3239,26 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  background: #f1f5f9;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
 .selection-action {
   font-size: 11.5px;
-  color: #4f46e5;
+  color: var(--accent);
   font-weight: 500;
 }
 
 .selection-text {
   padding: 8px 10px;
   font-size: 12.5px;
-  color: #334155;
+  color: var(--text-2);
   line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
   max-height: 160px;
   overflow-y: auto;
-  background: #fafbfc;
+  background: var(--surface);
 }
 
 /* ===== M1-F8 深度研究：进度消息 ===== */
@@ -2827,20 +3267,53 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--text-3);
   align-self: flex-start;
+}
+
+/* ===== dph-C 运行时压缩提示：一次性事件条，平时不占空间 ===== */
+.compress-bubble {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent-border);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  align-self: flex-start;
+}
+
+/* ===== 档位 badge：本条回答由哪个档位的模型生成（分级路由可见性） ===== */
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  line-height: 1.6;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.tier-badge.light {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
 }
 
 .spinner {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid #cbd5e1;
-  border-top-color: #6366f1;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-bright);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   flex-shrink: 0;
@@ -2855,17 +3328,36 @@ onUnmounted(() => {
 /* ===== M1-F8 深度研究：HITL 询问卡片 ===== */
 .ask-bubble {
   padding: 12px;
-  background: #ffffff;
-  border: 1px solid #c7d2fe;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);
+  background: var(--surface-raised);
+  border: 1px solid var(--accent-border);
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.08);
 }
 
 .workflow-ask-question {
   margin: 0 0 10px 0;
   font-size: 13px;
   line-height: 1.5;
-  color: #1e1b4b;
+  color: var(--accent-ink);
   font-weight: 500;
+}
+
+/* ===== HITL 打断证据：把"为什么打断"的决策依据摆给用户 ===== */
+.ask-evidence {
+  margin: 0 0 10px 0;
+  padding: 8px 10px;
+  background: rgba(var(--ink-rgb), 0.04);
+  border-left: 2px solid var(--accent-border);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ask-evidence-item {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-2);
+  word-break: break-all;
 }
 
 .workflow-ask-actions {
@@ -2876,27 +3368,27 @@ onUnmounted(() => {
 
 .workflow-ask-btn {
   padding: 5px 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 14px;
-  background: #f8fafc;
+  background: var(--bg);
   font-size: 12px;
-  color: #475569;
+  color: var(--text-2);
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
 }
 
 .workflow-ask-btn:hover {
-  background: #eef2ff;
-  border-color: #c7d2fe;
-  color: #4338ca;
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
 }
 
 .workflow-ask-btn.primary {
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  background: linear-gradient(135deg, var(--accent-bright) 0%, var(--accent) 100%);
   border-color: transparent;
-  color: #ffffff;
-  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.3);
+  color: var(--on-accent);
+  box-shadow: 0 1px 3px rgba(var(--accent-rgb), 0.3);
 }
 
 .workflow-ask-btn.primary:hover {
@@ -2907,25 +3399,25 @@ onUnmounted(() => {
   flex: 1;
   min-width: 120px;
   padding: 5px 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 14px;
   font-size: 12px;
   outline: none;
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
-  background: #ffffff;
+  background: var(--surface-raised);
 }
 
 .workflow-ask-input:focus {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  border-color: var(--accent-bright);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
 }
 
 .workflow-ask-answered {
   margin: 0;
   font-size: 12px;
-  color: #16a34a;
+  color: var(--success-strong);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -2935,8 +3427,8 @@ onUnmounted(() => {
 .perf-bubble {
   padding: 0;
   overflow: hidden;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
 }
 
 .performance-card {
@@ -2947,7 +3439,7 @@ onUnmounted(() => {
   margin: 0 0 10px 0;
   font-size: 14px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-1);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2964,27 +3456,27 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 2px;
   padding: 8px 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 8px;
   min-width: 0;
 }
 
 .detail-label {
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-3);
 }
 
 .detail-value {
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-1);
   word-break: break-all;
   overflow-wrap: anywhere;
 }
 
 .detail-value.highlight {
-  color: #4f46e5;
+  color: var(--accent);
 }
 
 /* ===== 思考中动画 ===== */
@@ -2992,8 +3484,8 @@ onUnmounted(() => {
   display: inline-flex;
   flex-direction: column;
   gap: 4px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   padding: 10px 12px;
 }
 
@@ -3007,7 +3499,7 @@ onUnmounted(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  background: linear-gradient(135deg, var(--accent-bright) 0%, var(--accent) 100%);
   animation: thinkingAnimation 1.4s infinite ease-in-out both;
 }
 
@@ -3034,7 +3526,7 @@ onUnmounted(() => {
 
 .thinking-text {
   font-size: 12.5px;
-  color: #64748b;
+  color: var(--text-3);
   margin: 0;
   line-height: 1.4;
 }
@@ -3043,18 +3535,18 @@ onUnmounted(() => {
   align-self: flex-start;
   margin-top: 4px;
   padding: 3px 10px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--danger-border);
   border-radius: 6px;
-  background: #fef2f2;
-  color: #dc2626;
+  background: var(--danger-soft);
+  color: var(--danger);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .stop-btn:hover {
-  background: #fee2e2;
-  border-color: #fca5a5;
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
 }
 
 /* ===== 输入区域 ===== */
@@ -3062,10 +3554,10 @@ onUnmounted(() => {
   position: relative;
   flex-shrink: 0;
   padding: 10px 12px 12px;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(var(--overlay-rgb), 0.85);
   backdrop-filter: saturate(180%) blur(10px);
   -webkit-backdrop-filter: saturate(180%) blur(10px);
-  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  border-top: 1px solid rgba(var(--ink-rgb), 0.06);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3080,14 +3572,14 @@ onUnmounted(() => {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  color: #475569;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-2);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 2px 8px rgba(var(--ink-rgb), 0.12);
   transition:
     background-color 0.15s,
     color 0.15s;
@@ -3095,8 +3587,8 @@ onUnmounted(() => {
 }
 
 .scroll-bottom-btn:hover {
-  background: #eef2ff;
-  color: #4338ca;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .quick-actions {
@@ -3113,9 +3605,9 @@ onUnmounted(() => {
   justify-content: center;
   gap: 4px;
   padding: 6px 4px;
-  background: #f8fafc;
-  color: #475569;
-  border: 1px solid #e2e8f0;
+  background: var(--bg);
+  color: var(--text-2);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 11.5px;
   font-weight: 500;
@@ -3138,9 +3630,9 @@ onUnmounted(() => {
 }
 
 .quick-action:hover:not(:disabled) {
-  background: #eef2ff;
-  border-color: #c7d2fe;
-  color: #4338ca;
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
   transform: translateY(-1px);
 }
 
@@ -3149,34 +3641,34 @@ onUnmounted(() => {
 }
 
 .quick-action:disabled {
-  background: #f1f5f9;
-  color: #94a3b8;
-  border-color: #e2e8f0;
+  background: var(--surface);
+  color: var(--text-muted);
+  border-color: var(--border);
   cursor: not-allowed;
 }
 
 .quick-action.research:not(:disabled) {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
-  color: #15803d;
+  background: var(--success-soft);
+  border-color: var(--success-border);
+  color: var(--success-deep);
 }
 
 .quick-action.research:hover:not(:disabled) {
-  background: #dcfce7;
-  border-color: #86efac;
-  color: #166534;
+  background: var(--success-soft);
+  border-color: var(--success-border);
+  color: var(--success-deep);
 }
 
 .quick-action.extract:not(:disabled) {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #1d4ed8;
+  background: var(--info-soft);
+  border-color: var(--info-border);
+  color: var(--info-strong);
 }
 
 .quick-action.extract:hover:not(:disabled) {
-  background: #dbeafe;
-  border-color: #93c5fd;
-  color: #1e40af;
+  background: var(--info-soft);
+  border-color: var(--info-border);
+  color: var(--info-strong);
 }
 
 .input-row {
@@ -3192,13 +3684,13 @@ onUnmounted(() => {
   min-height: 36px;
   max-height: 140px;
   padding: 8px 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 18px;
   font-size: 13px;
   line-height: 1.5;
   font-family: inherit;
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--surface-raised);
+  color: var(--text-1);
   outline: none;
   resize: none;
   overflow-y: auto;
@@ -3208,20 +3700,20 @@ onUnmounted(() => {
 }
 
 .input-field::placeholder {
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .input-field:focus {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  border-color: var(--accent-bright);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
 }
 
 .send-button {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--accent-bright) 0%, var(--accent) 100%);
+  color: var(--on-accent);
   border: none;
   border-radius: 50%;
   cursor: pointer;
@@ -3229,13 +3721,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   transition: all 0.15s;
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
+  box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.25);
 }
 
 .send-button:hover:not(:disabled) {
   filter: brightness(1.1);
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(79, 70, 229, 0.35);
+  box-shadow: 0 4px 10px rgba(var(--accent-rgb), 0.35);
 }
 
 .send-button:active:not(:disabled) {
@@ -3243,7 +3735,7 @@ onUnmounted(() => {
 }
 
 .send-button:disabled {
-  background: #cbd5e1;
+  background: var(--border-strong);
   cursor: not-allowed;
   box-shadow: none;
 }
@@ -3265,14 +3757,14 @@ onUnmounted(() => {
 .chat-messages::-webkit-scrollbar-thumb,
 .history-panel::-webkit-scrollbar-thumb,
 .selection-text::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(var(--muted-rgb), 0.4);
   border-radius: 3px;
   transition: background 0.15s;
 }
 
 .chat-messages::-webkit-scrollbar-thumb:hover,
 .history-panel::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.7);
+  background: rgba(var(--muted-rgb), 0.7);
 }
 
 /* Firefox */
@@ -3280,7 +3772,190 @@ onUnmounted(() => {
 .history-panel,
 .selection-text {
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+  scrollbar-color: rgba(var(--muted-rgb), 0.4) transparent;
+}
+
+/* ===== 开屏（游戏风启动演出：logo 砸落 + 光环扩散 + 真实进度条） ===== */
+.boot-splash {
+  position: absolute;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 38%, rgba(var(--accent-rgb), 0.12), transparent 70%),
+    var(--bg);
+}
+
+.boot-logo-wrap {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+}
+
+/* logo 外圈光环：向外扩散并消隐，循环 */
+.boot-logo-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border-radius: 24px;
+  border: 2px solid rgba(var(--accent-rgb), 0.55);
+  animation: boot-ring 1.4s ease-out infinite;
+}
+
+.boot-logo {
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  animation: boot-logo-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  filter: drop-shadow(0 6px 18px rgba(var(--accent-rgb), 0.45));
+}
+
+.boot-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: 0.14em;
+  animation: boot-rise 0.6s 0.25s ease-out both;
+}
+
+.boot-progress {
+  width: 220px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.boot-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-bright));
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.65);
+  transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.boot-step {
+  font-size: 12px;
+  color: var(--text-2);
+  animation: boot-rise 0.4s ease-out both;
+}
+
+.boot-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+  animation: boot-rise 0.6s 0.45s ease-out both;
+}
+
+/* 开屏淡出（<Transition name="boot-fade"> 的 leave 阶段） */
+.boot-fade-leave-active {
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s ease;
+}
+.boot-fade-leave-to {
+  opacity: 0;
+  transform: scale(1.04);
+}
+
+@keyframes boot-logo-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes boot-ring {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.82);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes boot-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== 流式打字机光标 ===== */
+.message-bubble.streaming::after {
+  content: '▍';
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--accent-bright);
+  animation: cursor-blink 0.9s steps(2, start) infinite;
+}
+
+/* ===== 浏览记忆引用标签 ===== */
+.memory-refs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.memory-refs-label {
+  color: var(--accent-bright);
+}
+.memory-chip {
+  display: inline-block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-bright);
+  cursor: default;
+}
+
+@keyframes cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 动效关怀：系统开启"减弱动态效果"时关掉装饰动画（信息仍完整呈现） */
+@media (prefers-reduced-motion: reduce) {
+  .boot-logo,
+  .boot-title,
+  .boot-step,
+  .boot-tip,
+  .boot-logo-wrap::after,
+  .message-bubble.streaming::after {
+    animation: none;
+  }
 }
 
 /* ===== 极窄宽度适配（< 360px） ===== */

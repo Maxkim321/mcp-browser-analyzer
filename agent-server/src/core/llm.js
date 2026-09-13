@@ -21,6 +21,8 @@ class LLMClient {
     this.temperature = mergedConfig.temperature
     // 分级配置：{ light: { model, ... }, reasoning: { model, ... } }，字段缺省回落主配置
     this.tiers = mergedConfig.tiers || {}
+    // 最近一次调用实际生效的档位/模型（档位 badge 数据源：最终文本轮的归属）
+    this.lastCall = null
   }
 
   /**
@@ -75,10 +77,13 @@ class LLMClient {
    */
   async chat(messages, tools = [], systemPrompt, signal, options = {}) {
     const cfg = this.resolveTierConfig(options.tier)
-    console.log(`[LLM] Calling model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`)
+    this.lastCall = { tier: options.tier || 'main', model: cfg.model, at: Date.now() }
+    console.log(
+      `[LLM] Calling model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`
+    )
 
     const body = this.buildBody(messages, tools, systemPrompt, false, cfg)
-    return this.provider.chat(cfg, body, signal)
+    return this.provider.chat(cfg, body, signal, { tier: options.tier })
   }
 
   /**
@@ -96,10 +101,13 @@ class LLMClient {
    */
   async chatStream(messages, tools = [], systemPrompt, onToken, signal, options = {}) {
     const cfg = this.resolveTierConfig(options.tier)
-    console.log(`[LLM] Streaming model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`)
+    this.lastCall = { tier: options.tier || 'main', model: cfg.model, at: Date.now() }
+    console.log(
+      `[LLM] Streaming model: ${cfg.model}${options.tier ? ` (tier: ${options.tier})` : ''}`
+    )
 
     const body = this.buildBody(messages, tools, systemPrompt, true, cfg)
-    return this.provider.chatStream(cfg, body, onToken, signal)
+    return this.provider.chatStream(cfg, body, onToken, signal, { tier: options.tier })
   }
 
   /**

@@ -19,13 +19,19 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 | | 💬 多轮上下文对话 | 会话持久化（`chrome.storage.local` 分桶存储），历史会话可切换 |
 | | ⚡ 流式输出 | SSE 增量解析 + WebSocket 分片推送，打字机效果；工具调用与文本输出同通道区分 |
 | **深度研究** | 🔍 Deep Research | 自动规划子问题 → 后台静默多页读取 → 信息充分性评估 → 交叉对比 → 流式生成带来源报告；checkpoint 断点恢复；**分级 HITL**——正常路径全程连跑零打断，只在死胡同/预算告警时请求人工拍板（`hitlMode: on-deadend / every-topic / off`），可选计划确认（planReview）把方向调整前置到研究开始前 |
+| **页面操作** | 🖱️ 写操作 + 分级权限审批 | Agent 可点击/填表/选下拉（`click_element`/`fill_input`/`select_option`）：读操作零打断，**每次写操作前推送审批卡片**（展示目标选择器与填入值），超时/断连默认拒绝；写动作预算封顶（默认 8 个/轮）+ dry-run 模式 + 审批/执行全链路审计落痕；执行前强制 `get_interactive_elements` 定位，禁止凭空构造选择器 |
 | **模型路由** | 🎚️ 分级路由 + 多模型抽象 | Provider 适配层（当前 OpenAI 兼容协议，可扩展 Claude/Gemini）与模型选择解耦；调用点按任务标注 tier——grade 打分/检索词改写/上下文压缩走 light 便宜模型，plan/报告走 reasoning 档，未配置档位自动回落主模型；瞬时错误（限流/5xx/网络）自动指数退避重试 |
 | **可靠性** | 🛑 可取消回答 | AbortController 支持随时停止生成，不浪费 token |
 | | 📊 Step 级可观测 | 推理/工具执行进度实时下发前端，用户可看到 Agent 当前在做什么 |
 | | 📝 事件溯源 | append-only JSONL 事件日志，服务重启自动投影重建上下文（断点续跑） |
-| | 📦 上下文压缩 | token 预算 + 冷热分层滚动摘要，长会话不爆 context window |
+| | 📦 上下文压缩 | token 预算 + 冷热分层滚动摘要，长会话不爆 context window；**派生视图架构**——raw 只追加不改写，压缩策略可插拔（rolling-summary/truncate/no-compress），tool_calls 消息组原子性有边界对齐保障 |
+| **度量** | 📏 上下文压缩基准 | 自建保真度基准（埋事实点→压缩→考回）实测：滚动摘要保留率 **100%**、截断式仅 **23.3%**，视图 token 省 69%——策略选型靠数字不靠感觉 |
+| | 📋 黄金评测集 | 固定 fixture + rubric 三层判分（字符串/正则/LLM-as-judge），`pnpm eval` 自动阅卷出成绩单，prompt/模型改动退化当场报警；**写操作轨迹判卷**——期望动作序列按相对顺序比对（工具/选择器/值），评测离线可复现 |
+| | 🖥️ 评测台 + 白盒仪表盘 | `localhost:9999/dashboard` 三视图：**概览**（成本台账/压缩基准/评测基线/记忆 A-B/观测事件）+ **评测台**（测试集可浏览、逐 case 判卷明细、历史通过率趋势）+ **白盒飞行记录仪**（会话事件时间线逐条展开原始 JSON、进程观测流实时轮询） |
+| | 💰 Token 成本账本 | 每次 LLM 调用（含 tier）落 JSONL 台账，`pnpm report` 按档位/模型汇总成本——分级路由的 ROI 有账可查 |
 | | ⏱️ 工具流水线 | 统一权限校验 + 超时控制，为写操作审批预留挂载点 |
 | **个性化** | 🎯 偏好记忆（L3） | 跨会话记住总结风格/翻译语言/回复风格，自动注入提示词 |
+| | 🧠 浏览记忆 RAG（L4 阶段1） | 总结过的页面自动沉淀为记忆卡片（本地 JSONL 只追加），提问时 BM25 检索 top-3 注入上下文，回答自动带"📌 参考了你之前读过的 N 篇"引用标签——跨页面对比/追问旧内容可行；卡片规模 < 1 万暴力检索最优，阶段 2 预留 embedding 升级接口 |
 | | 📚 文章收藏 | 收藏已总结的文章，支持回看检索 |
 | **额外工具** | 📊 页面性能分析 | 双通道：插件采集 LCP 等实时指标 + 服务端 Lighthouse 完整审计（四类得分/核心指标/优化机会） |
 | **🔧 AI 代码审查** | 💻 ai-code-review | 零依赖 CLI + GitHub Actions 自动触发，对 PR/MR 生成行级评论（安全漏洞/圈复杂度/命名规范），支持适配器模式扩展平台 |
@@ -97,6 +103,14 @@ ARK_BASE_URL=https://api.deepseek.com
 ARK_MODEL=deepseek-chat
 ```
 
+可选：配置轻量档模型（分级路由用——打分/检索词改写/上下文压缩走 light 档省钱，不配置则自动回落主模型）：
+
+```env
+LLM_LIGHT_MODEL=kimi-k2.7-code
+LLM_LIGHT_BASE_URL=你的OpenAI兼容接口地址
+LLM_LIGHT_API_KEY=对应密钥
+```
+
 ### 3. 启动 Agent Server（监听 :9999）
 
 ```bash
@@ -108,20 +122,26 @@ pnpm agent-server
 ### 4. 构建并加载 Chrome 插件
 
 ```bash
-pnpm extension        # 构建插件到 chrome-extension/dist（watch 模式）
+pnpm extension:build   # 一次性构建插件（产物在 chrome-extension/extension/dist）
+pnpm extension         # watch 模式，改代码自动重构建
 ```
 
 1. 打开 Chrome，访问 `chrome://extensions/`
 2. 开启右上角「开发者模式」
-3. 点击「加载已解压的扩展程序」，选择 `chrome-extension/dist` 目录
+3. 点击「加载已解压的扩展程序」，选择 `chrome-extension/extension` 目录（即 `manifest.json` 所在层）
 4. 点击扩展图标 → 打开侧边栏，即可开始使用
 
-### 5. 运行测试
+### 5. 测试与质量保障
 
 ```bash
-cd agent-server
-node --test           # 核心模块单测（node:test，零依赖）
+pnpm test             # 108 个单测（node:test 零依赖），锁编排层行为不变量
+pnpm eval             # 黄金评测集：10 个 case 端到端阅卷出成绩单（离线可复现）
+pnpm eval:memory      # 浏览记忆 A/B 对照：recall@3 / 记忆增益 Δ
+pnpm bench            # 压缩保真度基准：滚动摘要 vs 截断 vs 不压缩
+pnpm report           # Token 成本账本：按档位/模型汇总分级路由 ROI
 ```
+
+评测与基准的产物落盘在 `agent-server/eval/results` 与 `agent-server/bench/results`；仪表盘 `localhost:9999/dashboard` 只读这些产物展示（dashboard 不生产数字，只呈现数字）。
 
 ---
 
@@ -205,7 +225,7 @@ npm run review:sample
 ### 🔜 进行中 / 未来
 - **M1 剩余**：会话管理补全（重命名/删除/搜索）· 结构化提取
 - **M2**：写操作（Computer Use，含权限审批流水线）· MCP Client / WebMCP 接入第三方工具生态
-- **L4 记忆**：RAG 向量检索（确有需要时再加，当前 L0-L3 已满足绝大多数场景）
+- ~~**L4 记忆**：RAG 检索~~ → **已完成阶段 1**：浏览记忆卡片库 + BM25 检索（阶段 2 预留 embedding 升级接口，规模 < 1 万条时暴力检索最优）
 
 ## 📄 License
 

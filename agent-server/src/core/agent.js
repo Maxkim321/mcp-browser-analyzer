@@ -1,10 +1,12 @@
 const { LLMClient } = require('./llm.js')
-const { tools } = require('../tools/index.js')
+const { tools, isWriteTool } = require('../tools/index.js')
 const { handleToolCall } = require('../tools/handler.js')
 const config = require('../config/index.js')
-// dph-C 上下文压缩 / dph-D 工具流水线
-const { CONTEXT_SUMMARY_PROMPT, findCompressCount, compressHistory } = require('./context-manager.js')
+// dph-C 上下文管理（摘要提示词）/ dph-D 工具流水线 / 派生视图历史存储
+const { CONTEXT_SUMMARY_PROMPT, estimateMessagesTokens } = require('./context-manager.js')
+const { HistoryStore } = require('./history-store.js')
 const { runToolPipeline } = require('./tool-pipeline.js')
+const traceLog = require('./trace-log.js')
 
 /**
  * AI Agent 编排器
@@ -14,7 +16,44 @@ class Agent {
   constructor(customConfig = {}) {
     this.config = { ...config.agent, ...customConfig }
     this.llm = new LLMClient({ ...config.llm, ...customConfig.llm })
-    this.conversationHistory = []
+    // dph-C 派生视图：raw 只追加不改写，发给 LLM 的 messages 按策略派生（见 history-store.js）
+    this.store = new HistoryStore({
+      rawLimit: this.config.rawLimit,
+      strategy: this.config.compressStrategy,
+      tokenBudget: this.config.tokenBudget,
+    })
+  }
+
+  /** 兼容旧引用：外部读写 conversationHistory 即 store.raw（append-only，禁止原地压缩改写） */
+  get conversationHistory() {
+    return this.store.raw
+  }
+
+  set conversationHistory(v) {
+    this.store.replace(v)
+  }
+
+  /**
+   * 派生当前轮次的 LLM 视图（压缩策略在 store 内实现）
+   * 摘要调用走 light 档：滚动摘要有损压缩，便宜模型足够
+   * @returns {Promise<{messages: Array, compressed: number, cached: boolean}>}
+   */
+  async deriveView() {
+    return this.store.deriveView({
+      summarize: async (text) => {
+        const reply = await this.llm.chat(
+          [
+            { role: 'system', content: CONTEXT_SUMMARY_PROMPT },
+            { role: 'user', content: text },
+          ],
+          [],
+          undefined,
+          undefined,
+          { tier: 'light' }
+        )
+        return reply?.content
+      },
+    })
   }
 
   /**
@@ -63,9 +102,15 @@ class Agent {
     // 工具上下文在整个 process 生命周期内共享，避免每轮迭代被重置
     const toolContext = {
       connectionId: options.connectionId,
+      sessionId: options.sessionId || null,
       todoWriteCount: 0,
       // dph-A 可取消：工具等待插件响应期间也能被 abort（与深度研究同一套取消机制）
       signal: options.signal,
+      // P4 分级权限：权限检查支持按请求注入（ws-server 为每连接构造审批闭包）；
+      // 未注入时回落构造时配置（现有测试/默认放行行为不变）
+      permissionCheck: options.permissionCheck || this.config.permissionCheck,
+      // 写动作预算计数器：获批一次 +1（approval.js 维护），单轮任务生命周期
+      writeActionsUsed: 0,
     }
     // dph-A Turn/Step 执行模型：step 计数器贯穿整个 Turn（一次用户请求 = 一个 Turn），
     // 每个 Step（LLM 推理 / 工具执行）都通过 onStep 下发事件，前端可观测；signal 支持取消
@@ -87,36 +132,35 @@ class Agent {
       // dph-A 可观测：推理 Step 开始
       emitStep({ phase: 'reasoning', status: 'running' })
 
-      // dph-C 上下文压缩：每次推理前检查 token 预算，超出则把早期消息滚动摘要压缩。
-      // 摘要由 LLM 生成（非流式），失败降级为不压缩，不影响主流程
-      if (this.config.tokenBudget) {
-        const compressCount = findCompressCount(this.conversationHistory, this.config.tokenBudget)
-        if (compressCount !== null) {
-          try {
-            const result = await compressHistory(this.conversationHistory, this.config.tokenBudget, async (text) => {
-              const reply = await this.llm.chat(
-                [
-                  { role: 'system', content: CONTEXT_SUMMARY_PROMPT },
-                  { role: 'user', content: text },
-                ],
-                [],
-                undefined,
-                undefined,
-                { tier: 'light' } // 滚动摘要是有损压缩，便宜模型足够，别用强模型烧钱
-              )
-              return reply?.content
-            })
-            this.conversationHistory = result.messages
-            emitStep({ phase: 'compress', status: 'success', compressed: result.compressed })
-            console.log(`[Agent] Context compressed: ${result.compressed} old messages → summary`)
-          } catch (compressError) {
-            console.error('[Agent] Context compression failed, keep raw history:', compressError)
-          }
-        }
+      // dph-C 上下文压缩：派生视图按策略生成（raw 只追加不改写，见 history-store.js）。
+      // 摘要由 LLM 生成（非流式、light 档），失败降级为不压缩，不影响主流程。
+      // 压缩真实发生时：Step 事件带 token 前后值（前端提示条），并落 trace-log（可观测）
+      const { messages: view, compressed } = await this.deriveView()
+      if (compressed > 0) {
+        const tokensBefore = estimateMessagesTokens(this.store.raw)
+        const tokensAfter = estimateMessagesTokens(view)
+        emitStep({ phase: 'compress', status: 'success', compressed, tokensBefore, tokensAfter })
+        traceLog.record({
+          type: 'context_compressed',
+          sessionId: options.sessionId || null,
+          strategy: this.config.compressStrategy,
+          compressed,
+          tokensBefore,
+          tokensAfter,
+        })
+        console.log(
+          `[Agent] Context derived (${this.config.compressStrategy}): ${compressed} old messages → summary (${tokensBefore} → ${tokensAfter} tokens)`
+        )
       }
 
       // 流式调用：工具轮 content 为空（不触发 onToken），最终文本轮实时推送增量
-      const response = await this.llm.chatStream(this.conversationHistory, tools, options.systemPrompt, options.onToken, options.signal)
+      const response = await this.llm.chatStream(
+        view,
+        tools,
+        options.systemPrompt,
+        options.onToken,
+        options.signal
+      )
 
       //需要工具 - 工具调用检测
       if (response.tool_calls && response.tool_calls.length > 0) {
@@ -151,20 +195,30 @@ class Agent {
           conversation: this.conversationHistory,
           iterations: iteration,
           steps: step,
+          // 档位 badge：最终文本轮实际生效的档位/模型（light 摘要调用发生在派生阶段，不影响归属）
+          meta: { tier: this.llm.lastCall?.tier || 'main', model: this.llm.lastCall?.model || null },
         }
       }
     }
 
     // 兜底收敛：达到最大轮次后，禁用工具再请求一次，让模型直接输出最终结论
-    // 避免“数据已采集成功但最后卡在工具循环”导致整体失败
+    // 避免”数据已采集成功但最后卡在工具循环”导致整体失败
     try {
-      const forcedFinalResponse = await this.llm.chatStream([
-        ...this.conversationHistory,
-        {
-          role: 'user',
-          content: '请基于已有工具结果直接输出最终结论，不要再调用任何工具。若数据不足请明确说明不足点。',
-        },
-      ], [], options.systemPrompt, options.onToken, options.signal)
+      const { messages: fallbackView } = await this.deriveView()
+      const forcedFinalResponse = await this.llm.chatStream(
+        [
+          ...fallbackView,
+          {
+            role: 'user',
+            content:
+              '请基于已有工具结果直接输出最终结论，不要再调用任何工具。若数据不足请明确说明不足点。',
+          },
+        ],
+        [],
+        options.systemPrompt,
+        options.onToken,
+        options.signal
+      )
 
       if (forcedFinalResponse?.content) {
         this.conversationHistory.push(forcedFinalResponse)
@@ -250,16 +304,29 @@ class Agent {
       context.todoWriteCount = (context.todoWriteCount || 0) + 1
     }
 
-    // dph-D 工具执行流水线：权限校验（写操作预留）→ 超时控制 → 执行，统一收口
+    // dph-D 工具执行流水线：权限校验（读放行/写审批）→ 超时控制 → 执行，统一收口
     try {
+      const t0 = Date.now()
       const result = await runToolPipeline({
         toolName,
         args: toolArgs,
         context,
         timeoutMs: this.config.toolTimeout,
-        permissionCheck: this.config.permissionCheck,
+        permissionCheck: context.permissionCheck ?? this.config.permissionCheck,
         run: (args, ctx) => handleToolCall(toolName, args, ctx),
       })
+      // P4 审计：写动作真实执行留痕（审批决策由 approval.js 落痕，这里只记真实执行）；
+      // 被拒/dry-run 不是执行——拒绝的审计在 write_approval_result，dry-run 无副作用
+      if (isWriteTool(toolName) && !result.permissionDenied && !result.dryRun) {
+        traceLog.record({
+          type: 'write_action_executed',
+          sessionId: context.sessionId || null,
+          tool: toolName,
+          ok: true,
+          dryRun: false,
+          durationMs: Date.now() - t0,
+        })
+      }
       const toolResult = {
         role: 'tool',
         tool_call_id: toolCall.id,
@@ -270,6 +337,16 @@ class Agent {
       console.log(`[Agent] Tool result:`, result)
     } catch (error) {
       console.error(`[Agent] Tool error:`, error)
+      if (isWriteTool(toolName)) {
+        traceLog.record({
+          type: 'write_action_executed',
+          sessionId: context.sessionId || null,
+          tool: toolName,
+          ok: false,
+          dryRun: false,
+          error: error.message,
+        })
+      }
       this.conversationHistory.push({
         role: 'tool',
         tool_call_id: toolCall.id,
@@ -280,13 +357,12 @@ class Agent {
   }
 
   /**
-   * 裁剪历史消息，保留最近 N 条，限制内存增长
+   * raw 内存上限裁剪（委托 store）：起点对齐 tool 组，避免孤儿 tool 消息；
+   * 与派生视图的 token 预算压缩是两层独立约束——raw 管内存，视图管上下文窗口
    */
   trimHistory() {
-    const historyLimit = this.config.historyLimit
-    if (typeof historyLimit === 'number' && historyLimit > 0 && this.conversationHistory.length > historyLimit) {
-      this.conversationHistory = this.conversationHistory.slice(-historyLimit)
-    }
+    if (Number.isFinite(this.config.rawLimit)) this.store.rawLimit = this.config.rawLimit
+    this.store.trimRaw()
   }
 
   /**
@@ -318,12 +394,20 @@ class Agent {
       return 0
     }
     const clean = history
-      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+      .filter(
+        (m) =>
+          m &&
+          (m.role === 'user' || m.role === 'assistant') &&
+          typeof m.content === 'string' &&
+          m.content.trim()
+      )
       .map((m) => ({ role: m.role, content: m.content.trim() }))
     if (clean.length === 0) return 0
     this.conversationHistory = clean
     this.trimHistory()
-    console.log(`[Agent] Restored ${clean.length} history messages (kept ${this.conversationHistory.length})`)
+    console.log(
+      `[Agent] Restored ${clean.length} history messages (kept ${this.conversationHistory.length})`
+    )
     return clean.length
   }
 }

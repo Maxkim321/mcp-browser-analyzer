@@ -152,3 +152,6 @@ agent-server/data/
 
 # 本地规划/面试文档（不公开）
 docs/
+
+# agent-server 运行时数据（账本/记忆库）
+agent-server/data/

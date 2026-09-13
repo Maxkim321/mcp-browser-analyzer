@@ -1,0 +1,90 @@
+{
+  "arm": "off",
+  "ranAt": "2026-09-12T09:24:00.298Z",
+  "results": [
+    {
+      "id": "memory-bm25-01",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 2582,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "484/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": false,
+          "detail": "缺失: 0.6"
+        }
+      ],
+      "contentPreview": "抱歉，这个我帮不上忙。\n\n当前浏览器里打开的页面是《2026 主流 AI 编程助手订阅方案对比》，内容与检索服务调参无关。我作为浏览器 AI 助手，只能读取和分析**当前页面（或你能提供链接的页面）**的内容，无法访问你的个人记忆、历史阅读记录或团队内部文档。\n\n具体来说：\n\n- 我拿不到你\"之前读过\"的那篇内部检索服务调参记录——它不在当前页面，也不在我可访问的范围内。\n- 而且我本身不会保留跨"
+    },
+    {
+      "id": "memory-release-02",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 2919,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "503/800"
+        },
+        {
+          "name": "regex",
+          "passed": false,
+          "detail": "未匹配: 周[三三]、3\\s*%"
+        }
+      ],
+      "contentPreview": "I checked the current page, but it doesn't contain your team's release-process notes.\n\n**当前页面内容：**\n- 标题：《2026 主流 AI 编程助手订阅方案对比》\n- 正文只有一句占位内容（\"fixture 页面正文：与记忆问题无关\"），charCount 仅 30 字符\n\n也就是说，这个标签页是一份 AI"
+    },
+    {
+      "id": "memory-dbpool-03",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 3137,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "565/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": false,
+          "detail": "缺失: 350、pgbouncer"
+        }
+      ],
+      "contentPreview": "我读完了当前页面的正文，需要先跟你说清楚一个问题：**当前这个页面里没有你说的那篇数据库运维记录。**\n\n目前激活标签页的内容是：\n\n| 项目 | 内容 |\n|---|---|\n| 页面标题 | 2026 主流 AI 编程助手订阅方案对比 |\n| 页面地址 | file://eval/pages/coding-assistant-compare.html |\n| 正文长度 | 仅 30 字符（正文"
+    }
+  ]
+}

@@ -8,6 +8,11 @@
     "agent-server": "pnpm -F agent-server start",
     "extension": "pnpm -F chrome-extension dev",
     "extension:build": "pnpm -F chrome-extension build",
+    "test": "pnpm -F agent-server test",
+    "eval": "pnpm -F agent-server eval",
+    "eval:memory": "pnpm -F agent-server eval:memory",
+    "bench": "pnpm -F agent-server bench",
+    "report": "pnpm -F agent-server report",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -15,6 +20,13 @@
     "prepare": "husky",
     "clean": "rimraf node_modules **/node_modules **/dist",
     "build": "pnpm -r build"
+  },
+  "scripts:info": {
+    "test": "单测：108 个 node:test 行为测试，锁编排层不变量",
+    "eval": "黄金评测集：10 个 case 端到端阅卷（真实调 LLM，约花几分钱，耗时 1-2 分钟）",
+    "eval:memory": "浏览记忆 A/B 对照实验（recall@3 / 记忆增益）",
+    "bench": "压缩保真度基准：滚动摘要 vs 截断 vs 不压缩",
+    "report": "读成本台账出报表（纯读文件不调模型，不花钱）"
   },
   "lint-staged": {
     "*.{js,mjs,cjs}": [

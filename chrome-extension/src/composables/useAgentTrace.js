@@ -137,7 +137,10 @@ export function useAgentTrace() {
       })
       const key = `reasoning:${iteration}`
       if (index.has(key)) return
-      index.set(key, push(createNode({ kind: 'reasoning', label: '推理决策', detail: `第 ${iteration} 轮` })))
+      index.set(
+        key,
+        push(createNode({ kind: 'reasoning', label: '推理决策', detail: `第 ${iteration} 轮` }))
+      )
       return
     }
 
@@ -152,11 +155,16 @@ export function useAgentTrace() {
     }
 
     if (phase === 'compress') {
+      // 服务端会带 tokensBefore/tokensAfter：压缩从"发生了"变成"省了多少"可感知
+      const saved =
+        Number.isFinite(event.tokensBefore) && Number.isFinite(event.tokensAfter)
+          ? `，视图 token ${event.tokensBefore} → ${event.tokensAfter}`
+          : ''
       push(
         createNode({
           kind: 'compress',
           label: '上下文压缩',
-          detail: compressed ? `${compressed} 条早期消息 → 摘要` : '',
+          detail: compressed ? `${compressed} 条早期消息 → 摘要${saved}` : '',
           status: TRACE_STATUS.SUCCESS,
           endedAt: Date.now(),
         })

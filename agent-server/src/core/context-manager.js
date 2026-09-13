@@ -16,7 +16,9 @@ const { CONTEXT_SUMMARY_PROMPT } = require('../config/prompts.js')
 /** 取一条消息的文本内容（content 可能是字符串或结构体） */
 function contentOf(message) {
   if (!message) return ''
-  return typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')
+  return typeof message.content === 'string'
+    ? message.content
+    : JSON.stringify(message.content ?? '')
 }
 
 /**
@@ -45,11 +47,34 @@ function estimateMessagesTokens(messages) {
 }
 
 /**
+ * 对齐压缩边界：边界不能落在 tool_calls 消息组的中间
+ *
+ * OpenAI 协议要求 role='tool' 的消息必须紧跟在带 tool_calls 的 assistant 消息之后。
+ * 若压缩边界正好切在 assistant(tool_calls) 与其 tool 结果之间，剩余历史会以
+ * "孤儿 tool 消息"开头，API 直接 400（"Messages with role 'tool' must be a response
+ * to a preceding message with 'tool_calls'"）。
+ *
+ * 处理：边界向后吞掉连续的 tool 消息（把整组 tool_calls + 结果一起压缩掉）。
+ * 组是原子的：要么全压缩，要么全保留。
+ * @param {Array} messages - 消息列表
+ * @param {number} compressCount - 初始边界
+ * @returns {number} 对齐后的边界（messages[返回值] 一定不是 tool 角色）
+ */
+function alignCompressBoundary(messages, compressCount) {
+  let n = compressCount
+  while (n < messages.length && messages[n] && messages[n].role === 'tool') {
+    n++
+  }
+  return Math.min(n, messages.length)
+}
+
+/**
  * 计算需要压缩的历史前缀长度（前闭后开区间 [0, n)）
  * 规则：
  * 1. 总 token 未超预算 → 返回 null（无需压缩）
  * 2. 超预算 → 从尾部往回预留 keepRatio 比例的"热消息"全文，其余全部压缩
  * 3. 保底：至少压缩一半（防止单条超大消息导致永远压缩不动）
+ * 4. 边界对齐：不把 tool_calls 消息组切成两半（见 alignCompressBoundary）
  * @param {Array} messages - 消息列表
  * @param {number} budget - token 预算
  * @param {number} keepRatio - 热消息保留比例（默认 0.6）
@@ -71,7 +96,8 @@ function findCompressCount(messages, budget, keepRatio = 0.6) {
   }
   const compressCount = messages.length - keepCount
   // 保底至少压缩一条（keepCount 已保证 ≤ len-1，此处防单条超大消息退化）
-  return Math.max(compressCount, 1)
+  // 出口前对齐边界，保证剩余历史不以孤儿 tool 消息开头
+  return alignCompressBoundary(messages, Math.max(compressCount, 1))
 }
 
 /**
@@ -80,7 +106,9 @@ function findCompressCount(messages, budget, keepRatio = 0.6) {
  * @returns {string} 角色标注的对话文本
  */
 function serializeMessages(messages) {
-  return (messages || []).map((m) => `${m.role === 'user' ? '用户' : '助手'}: ${contentOf(m)}`).join('\n\n')
+  return (messages || [])
+    .map((m) => `${m.role === 'user' ? '用户' : '助手'}: ${contentOf(m)}`)
+    .join('\n\n')
 }
 
 /**
