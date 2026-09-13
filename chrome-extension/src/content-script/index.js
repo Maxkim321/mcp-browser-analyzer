@@ -510,11 +510,17 @@ import { Readability } from '@mozilla/readability'
 
   /**
    * 绕过框架代理的 value setter：用原型原生 setter 赋值再派发 input/change，
-   * 否则 Vue/React 的受控组件感知不到变化（表单看似填了，状态其实没变）
+   * 否则 Vue/React 的受控组件感知不到变化（表单看似填了，状态其实没变）。
+   * 三类元素必须各用各的原型——真实环境实测：select 落到 HTMLInputElement 的
+   * setter 会抛 Illegal invocation（跨原型调用内部槽位不合法），真机 E2E 才暴露
    */
   function setNativeValue(el, value) {
     const proto =
-      el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+      el instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : el instanceof HTMLSelectElement
+          ? HTMLSelectElement.prototype
+          : HTMLInputElement.prototype
     const descriptor = Object.getOwnPropertyDescriptor(proto, 'value')
     descriptor.set.call(el, value)
     el.dispatchEvent(new Event('input', { bubbles: true }))
