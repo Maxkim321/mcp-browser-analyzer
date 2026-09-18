@@ -293,6 +293,30 @@ const RESEARCH_REPORT_PROMPT = `你是一个深度研究分析师。基于下面
 - 用中文输出`
 
 /**
+ * 深度研究：陈述级溯源校验（verify 节点，报告生成后）
+ * 输入：报告正文 + 调研阶段采集到的证据要点（带编号来源）
+ * 输出：逐条结论断言 + 是否有证据支撑 + 支撑它的来源编号
+ * 这是"带来源报告"的下一层：不只列来源，而是把每条结论绑到具体证据上，
+ * 无据断言显性降级，用第二个模型（light 档）做独立核查而非自我背书。
+ */
+const RESEARCH_VERIFY_PROMPT = `你是一个事实核查助手。给定一份研究报告的正文，以及调研阶段采集到的证据要点（每条带编号来源），请把报告拆成独立、可证伪的结论断言，并核查每条断言是否有证据支撑。
+
+严格输出 JSON，不要输出任何其他内容：
+{
+  "claims": [
+    { "claim": "报告原文里的结论片段", "supported": true, "sourceIndex": 1 },
+    { "claim": "报告原文里的结论片段", "supported": false, "reason": "无对应证据" }
+  ]
+}
+
+规则：
+- 拆 3-8 条独立的结论断言，只拆「可证伪的结论」，不要拆过程性/结构性描述
+- supported=true 的前提：该断言能被某条证据要点支持；sourceIndex 填证据编号（从 1 开始）
+- 拿不准证据是否够时，判 supported=false（宁可降级，不可放过无据断言）
+- claim 必须与报告原文一致，不要改写、不要新写
+- 只输出 JSON 对象本身`
+
+/**
  * dph-C 上下文压缩：把一段早期对话压缩成滚动摘要
  * 输入：角色标注的历史文本（用户/助手交错）；输出：保留关键背景的摘要
  * 摘要消息以 system 角色注入，不受 user/assistant 交替规则约束
@@ -331,5 +355,6 @@ module.exports = {
   RESEARCH_QUERY_PROMPT,
   RESEARCH_TOPIC_PROMPT,
   RESEARCH_REPORT_PROMPT,
+  RESEARCH_VERIFY_PROMPT,
   ACTION_PROMPTS,
 }

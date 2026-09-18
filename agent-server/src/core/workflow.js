@@ -7,6 +7,7 @@ const {
   RESEARCH_QUERY_PROMPT,
   RESEARCH_TOPIC_PROMPT,
   RESEARCH_REPORT_PROMPT,
+  RESEARCH_VERIFY_PROMPT,
 } = require('../config/prompts.js')
 
 const CHECKPOINT_DIR = path.join(__dirname, '../../checkpoint')
@@ -89,6 +90,9 @@ class ResearchWorkflow {
         case 'report':
           await this.reportNode(state, { onProgress, onToken })
           break
+        case 'verify':
+          await this.verifyNode(state, { onProgress })
+          break
         case 'done':
           return { success: true, content: state.report, state }
         case 'failed':
@@ -150,6 +154,26 @@ class ResearchWorkflow {
       onProgress,
       `已规划 ${state.plan.length} 个子问题：${state.plan.map((t) => t.question).join('；')}`
     )
+    // DAG：规划节点（fan-out 的根）+ 各主题分支节点（等待逐个调研）
+    this.emitNode(state, onProgress, {
+      id: 'plan',
+      kind: 'plan',
+      label: '规划子问题',
+      detail: `拆解为 ${state.plan.length} 个子问题`,
+      status: 'success',
+    })
+    state.plan.forEach((t, i) => {
+      this.emitNode(state, onProgress, {
+        id: `topic:${i}`,
+        parent: 'plan',
+        parents: ['plan'],
+        kind: 'topic',
+        label: t.question,
+        detail: `主题 ${i + 1}`,
+        status: 'running',
+        meta: { topicIndex: i },
+      })
+    })
   }
 
   // ===== 节点：research（逐主题调研，含 grade 条件边 + HITL） =====
@@ -167,7 +191,7 @@ class ResearchWorkflow {
     // 信息已足够（重试轮次内由 grade 判断过）→ 条件边：直接进下一主题（正常路径，不打断）
     if (topic.sufficient) {
       this.emit(state, onProgress, `主题 ${topicLabel}：信息已足够`)
-      this.advanceTopic(state)
+      this.advanceTopic(state, onProgress)
       await this.maybeContinue(state, { onProgress, onAsk })
       return
     }
@@ -179,7 +203,7 @@ class ResearchWorkflow {
         onProgress,
         `主题 ${topicLabel}：多次尝试后信息仍不足（不阻塞，继续后续主题）`
       )
-      this.advanceTopic(state)
+      this.advanceTopic(state, onProgress)
       await this.maybeContinue(state, { deadEnd: true, onProgress, onAsk })
       return
     }
@@ -194,7 +218,7 @@ class ResearchWorkflow {
 
     if (this.pendingUrls(topic).length === 0) {
       this.emit(state, onProgress, `主题 ${topicLabel}：搜索未获得可用链接（跳过本主题）`)
-      this.advanceTopic(state)
+      this.advanceTopic(state, onProgress)
       await this.maybeContinue(state, { deadEnd: true, onProgress, onAsk })
       return
     }
@@ -206,7 +230,7 @@ class ResearchWorkflow {
     let deadEnd = false
     if (topic.sufficient) {
       this.emit(state, onProgress, `主题 ${topicLabel}：调研完成（${topic.points.length} 条要点）`)
-      this.advanceTopic(state)
+      this.advanceTopic(state, onProgress)
     } else if (topic.attempts < this.maxAttempts) {
       // 信息不足且还有余量：让 LLM 基于缺口重写检索词，下一轮重新搜索（"重写查询再搜"）
       const gap = topic.gap || '信息不足'
@@ -216,7 +240,7 @@ class ResearchWorkflow {
       return
     } else {
       this.emit(state, onProgress, `主题 ${topicLabel}：达到重试上限，使用已有信息`)
-      this.advanceTopic(state)
+      this.advanceTopic(state, onProgress)
       deadEnd = true
     }
 
@@ -400,7 +424,8 @@ class ResearchWorkflow {
    */
   async searchTopicUrls(state, topic, connectionId, onProgress) {
     const queries = (topic.queries || []).slice(0, 2)
-    for (const query of queries) {
+    for (let qi = 0; qi < queries.length; qi++) {
+      const query = queries[qi]
       this.emit(state, onProgress, `  搜索：${query}`)
       try {
         const result = await this.toolCall(
@@ -417,14 +442,44 @@ class ResearchWorkflow {
         if (urls.length === 0) {
           this.recordFailure(state, `search:${query}`, '搜索未返回可用链接')
           this.emit(state, onProgress, `  搜索未返回可用链接：${query}`)
+          this.emitNode(state, onProgress, {
+            id: `search:${state.currentTopic}:${qi}`,
+            parent: `topic:${state.currentTopic}`,
+            kind: 'action',
+            action: 'search',
+            label: `搜索：${query}`,
+            detail: '未返回可用链接',
+            status: 'failed',
+            meta: { query, topicIndex: state.currentTopic },
+          })
           continue
         }
         topic.urls = topic.urls.concat(urls).slice(0, this.maxPagesPerTopic * 2)
         this.emit(state, onProgress, `  搜索到 ${urls.length} 个来源`)
+        this.emitNode(state, onProgress, {
+          id: `search:${state.currentTopic}:${qi}`,
+          parent: `topic:${state.currentTopic}`,
+          kind: 'action',
+          action: 'search',
+          label: `搜索：${query}`,
+          detail: `${urls.length} 个来源`,
+          status: 'success',
+          meta: { query, topicIndex: state.currentTopic },
+        })
       } catch (error) {
         if (this.isAborted()) throw this.abortError()
         this.recordFailure(state, `search:${query}`, error.message)
         this.emit(state, onProgress, `  搜索失败：${query}（${error.message}）`)
+        this.emitNode(state, onProgress, {
+          id: `search:${state.currentTopic}:${qi}`,
+          parent: `topic:${state.currentTopic}`,
+          kind: 'action',
+          action: 'search',
+          label: `搜索：${query}`,
+          detail: error.message,
+          status: 'failed',
+          meta: { query, topicIndex: state.currentTopic },
+        })
       }
     }
   }
@@ -440,7 +495,8 @@ class ResearchWorkflow {
     topic.fetchedUrls = topic.fetchedUrls || []
     // 只抓本轮新增的 URL，且限制单轮页数上限（硬约束，不靠 LLM 自觉）
     const targets = this.pendingUrls(topic).slice(0, this.maxPagesPerTopic)
-    for (const url of targets) {
+    for (let fi = 0; fi < targets.length; fi++) {
+      const url = targets[fi]
       this.emit(state, onProgress, `  读取页面：${url}`)
       topic.fetchedUrls.push(url)
       let page = null
@@ -467,6 +523,16 @@ class ResearchWorkflow {
         // 失败必须显性记录进 State：报告里逐条披露，用户才能看出"没来源"是抓取失败而非无信息
         this.recordFailure(state, url, reason)
         this.emit(state, onProgress, `  页面读取失败：${url}（${reason}）`)
+        this.emitNode(state, onProgress, {
+          id: `fetch:${state.currentTopic}:${fi}`,
+          parent: `topic:${state.currentTopic}`,
+          kind: 'action',
+          action: 'fetch',
+          label: '读取页面',
+          detail: reason,
+          status: 'failed',
+          meta: { url, topicIndex: state.currentTopic },
+        })
         continue
       }
 
@@ -474,6 +540,16 @@ class ResearchWorkflow {
         url: page.url || url,
         title: (page.title || url).slice(0, 200),
         truncated: page.truncated === true,
+      })
+      this.emitNode(state, onProgress, {
+        id: `fetch:${state.currentTopic}:${fi}`,
+        parent: `topic:${state.currentTopic}`,
+        kind: 'action',
+        action: 'fetch',
+        label: '读取页面',
+        detail: (page.title || url).slice(0, 80),
+        status: 'success',
+        meta: { url: page.url || url, topicIndex: state.currentTopic },
       })
 
       // grade：LLM 判断该页信息对子问题够不够 + 提炼要点
@@ -507,12 +583,49 @@ class ResearchWorkflow {
         topic.points = topic.points.concat(points)
         topic.sufficient = grade.sufficient === true
         topic.gap = String(grade.gap || '').slice(0, 300)
+        this.bindEvidence(
+          state,
+          topic,
+          points,
+          page.url || url,
+          (page.title || url).slice(0, 200),
+          page.truncated === true
+        )
+        this.emitNode(state, onProgress, {
+          id: `grade:${state.currentTopic}:${fi}`,
+          parent: `topic:${state.currentTopic}`,
+          kind: 'action',
+          action: 'grade',
+          label: '提炼要点',
+          detail: `${points.length} 条 · ${grade.sufficient ? '信息充分' : '信息不足'}`,
+          status: 'success',
+          meta: { topicIndex: state.currentTopic, sufficient: grade.sufficient === true },
+        })
         if (topic.sufficient) break // 信息够了就不再读该主题剩余页面
       } else if (page.content) {
         // grade 解析失败兜底：正文本身作为一条要点，按"不足"继续
-        topic.points.push(String(page.content).slice(0, 120))
+        const point = String(page.content).slice(0, 120)
+        topic.points.push(point)
+        this.bindEvidence(
+          state,
+          topic,
+          [point],
+          page.url || url,
+          (page.title || url).slice(0, 200),
+          page.truncated === true
+        )
         topic.sufficient = false
         topic.gap = '无法评估信息充分性'
+        this.emitNode(state, onProgress, {
+          id: `grade:${state.currentTopic}:${fi}`,
+          parent: `topic:${state.currentTopic}`,
+          kind: 'action',
+          action: 'grade',
+          label: '提炼要点',
+          detail: '评估失败，正文兜底',
+          status: 'failed',
+          meta: { topicIndex: state.currentTopic },
+        })
       }
     }
     return newSources
@@ -557,6 +670,23 @@ class ResearchWorkflow {
     }
   }
 
+  /**
+   * 把提炼要点绑定到其来源页面，形成「证据要点（带编号来源）」。
+   * state.evidence 按抓取顺序累积，verify 节点据此逐条核查报告结论是否可溯源。
+   */
+  bindEvidence(state, topic, points, url, title, truncated) {
+    state.evidence = state.evidence || []
+    for (const point of points) {
+      state.evidence.push({
+        point,
+        url,
+        title,
+        truncated,
+        topic: topic.question,
+      })
+    }
+  }
+
   /** 记录抓取/搜索失败（去重），供报告如实披露 */
   recordFailure(state, target, reason) {
     state.failures = state.failures || []
@@ -572,6 +702,14 @@ class ResearchWorkflow {
     if (state.plan.length <= 1) {
       state.step = 'report'
       this.emit(state, onProgress, '仅一个主题，跳过交叉对比，直接生成报告')
+      this.emitNode(state, onProgress, {
+        id: 'compare',
+        kind: 'compare',
+        label: '交叉对比',
+        detail: '仅一个主题，跳过',
+        parents: state.plan.map((_, i) => `topic:${i}`),
+        status: 'success',
+      })
       return
     }
     this.emit(state, onProgress, '正在交叉对比各主题信息...')
@@ -581,11 +719,28 @@ class ResearchWorkflow {
       .map((t) => ({ question: t.question, points: t.points }))
     state.step = 'report'
     this.emit(state, onProgress, '交叉对比完成')
+    this.emitNode(state, onProgress, {
+      id: 'compare',
+      kind: 'compare',
+      label: '交叉对比',
+      detail: `${state.comparePoints.length} 个主题要点对比`,
+      parents: state.plan.map((_, i) => `topic:${i}`),
+      status: 'success',
+    })
   }
 
   // ===== 节点：report（生成研究报告） =====
   async reportNode(state, { onProgress, onToken }) {
     this.emit(state, onProgress, '正在生成研究报告...')
+    this.emitNode(state, onProgress, {
+      id: 'report',
+      parent: 'compare',
+      parents: ['compare'],
+      kind: 'report',
+      label: '生成报告',
+      detail: '流式生成中',
+      status: 'running',
+    })
     const topicsText = state.plan
       .map(
         (t, i) =>
@@ -618,8 +773,112 @@ class ResearchWorkflow {
       this.signal
     )
     state.report = response.content || '（未能生成报告）'
+    state.step = 'verify'
+    this.emit(state, onProgress, '研究报告生成完毕，开始溯源校验')
+    this.emitNode(state, onProgress, {
+      id: 'report',
+      kind: 'report',
+      label: '生成报告',
+      detail: '报告生成完毕',
+      status: 'success',
+    })
+  }
+
+  // ===== 节点：verify（陈述级溯源校验） =====
+  async verifyNode(state, { onProgress }) {
+    this.emit(state, onProgress, '正在逐条校验报告结论的溯源...')
+    this.emitNode(state, onProgress, {
+      id: 'verify',
+      parent: 'report',
+      parents: ['report'],
+      kind: 'verify',
+      label: '溯源校验',
+      detail: '逐条核查结论支撑',
+      status: 'running',
+    })
+
+    // 证据要点按抓取顺序编号（从 1 开始），verify 提示词用编号回指来源
+    const evidenceText = (state.evidence || [])
+      .map(
+        (e, i) =>
+          `[${i + 1}] ${e.point}（来源：${e.title} - ${e.url}${e.truncated ? ' [正文已截断]' : ''}）`
+      )
+      .join('\n')
+
+    // 无证据可查时直接收尾，不做无意义的模型调用（也不伪造"已校验"）
+    if ((state.evidence || []).length === 0) {
+      state.step = 'done'
+      this.emit(state, onProgress, '无证据要点可校验，跳过溯源标注')
+      this.emitNode(state, onProgress, {
+        id: 'verify',
+        kind: 'verify',
+        label: '溯源校验',
+        detail: '无证据要点，跳过',
+        status: 'success',
+      })
+      return
+    }
+
+    let verify = null
+    try {
+      const response = await this.llm.chat(
+        [
+          {
+            role: 'user',
+            content:
+              `研究报告正文：\n${state.report}\n\n` +
+              `证据要点（带编号来源）：\n${evidenceText}`,
+          },
+        ],
+        [],
+        RESEARCH_VERIFY_PROMPT,
+        this.signal,
+        { tier: 'light' } // 溯源核查是窄任务（拆断言 + 判定支撑），走便宜模型且独立于报告生成模型
+      )
+      verify = parseJSON(response.content)
+    } catch (error) {
+      if (this.isAborted()) throw this.abortError()
+      console.warn('[Workflow] verify failed:', error.message)
+    }
+
+    const claims = Array.isArray(verify?.claims) ? verify.claims : []
+    const ungrounded = claims
+      .filter((c) => c && c.supported === false)
+      .map(
+        (c) =>
+          `- ${String(c.claim).slice(0, 200)}${
+            c.reason ? `（${String(c.reason).slice(0, 100)}）` : ''
+          }`
+      )
+
+    // 未溯源断言显性降级：追加到报告末尾，明确标注"推测性"，不静默删除也不伪装成有据
+    if (ungrounded.length > 0) {
+      state.report +=
+        `\n\n## 溯源校验（自动）\n以下结论未匹配到可溯源的证据要点，仅供参考（推测性）：\n` +
+        ungrounded.join('\n')
+    } else if (claims.length > 0) {
+      state.report += `\n\n## 溯源校验（自动）\n全部结论均匹配到证据来源。`
+    }
+
+    if (claims.length > 0) {
+      state.verification = {
+        total: claims.length,
+        supported: claims.filter((c) => c?.supported === true).length,
+        ungrounded: ungrounded.length,
+      }
+    }
+
     state.step = 'done'
-    this.emit(state, onProgress, '研究报告生成完毕')
+    this.emit(state, onProgress, '溯源校验完成')
+    this.emitNode(state, onProgress, {
+      id: 'verify',
+      kind: 'verify',
+      label: '溯源校验',
+      detail: (state.verification
+        ? `${state.verification.supported}/${state.verification.total} 条有据，${state.verification.ungrounded} 条推测`
+        : '校验完成'),
+      status: 'success',
+    })
   }
 
   // ===== 基础设施 =====
@@ -635,8 +894,21 @@ class ResearchWorkflow {
   }
 
   // 每完成一个主题推进游标（研究循环的条件边：全部完成退出）
-  advanceTopic(state) {
+  // onProgress 传入时同步 emit 该主题 DAG 节点终态（success/failed），不传则仅推进游标（向后兼容）
+  advanceTopic(state, onProgress) {
+    const doneIndex = state.currentTopic
     state.currentTopic++
+    if (onProgress && state.plan[doneIndex]) {
+      const t = state.plan[doneIndex]
+      this.emitNode(state, onProgress, {
+        id: `topic:${doneIndex}`,
+        kind: 'topic',
+        label: t.question,
+        detail: t.sufficient ? `${t.points.length} 条要点` : '信息不足',
+        status: t.sufficient ? 'success' : 'failed',
+        meta: { topicIndex: doneIndex },
+      })
+    }
   }
 
   // HITL：暂停工作流等待用户答复；超时默认继续（不阻塞研究）
@@ -684,6 +956,19 @@ class ResearchWorkflow {
     }
   }
 
+  // 结构化节点推送（研究过程 DAG 可视化）：与自然语言 emit 并行
+  // node 含稳定的 id/parent/parents，前端据此把状态机画成有向图（规划→主题分支→交叉对比→报告/校验）
+  emitNode(state, onProgress, node) {
+    if (typeof onProgress === 'function') {
+      onProgress({
+        taskId: state.taskId,
+        step: state.step,
+        message: node.label || node.detail || '',
+        node,
+      })
+    }
+  }
+
   // ===== checkpoint：节点级持久化，崩溃/重启可恢复 =====
 
   /**
@@ -711,6 +996,7 @@ class ResearchWorkflow {
       currentTopic: 0,
       sources: [],
       failures: [], // 搜索/抓取失败记录，报告中如实披露
+      evidence: [], // 提炼要点与来源页面的绑定（陈述级溯源校验的证据）
       comparePoints: [],
       report: null,
       step: 'plan', // 状态机当前所在节点

@@ -324,11 +324,16 @@
             </button>
           </div>
           <!-- Agent 执行轨迹：随该条回答一起持久化，刷新后仍可回看做过哪些步骤 -->
-          <AgentTrace v-if="msg.trace && msg.trace.length" :nodes="msg.trace" />
+          <AgentTrace
+            v-if="msg.trace && msg.trace.length"
+            :nodes="msg.trace"
+            :graph="msg.traceGraph"
+          />
           <!-- Agent 执行轨迹（当前流式回答，实时追踪） -->
           <AgentTrace
             v-if="msg.streaming && traceNodes.length"
             :nodes="traceNodes"
+            :graph="traceGraph"
             :active="traceActive"
           />
           <!-- P3 浏览记忆：本次回答参考了记忆库中的旧页面；悬浮展示"为什么命中"（BM25 分数 + 命中词） -->
@@ -400,17 +405,23 @@
           </div>
           <!-- P4 分级权限 HITL：写操作审批卡片——AI 要动你的页面，先给你看清它要干什么 -->
           <div class="message-bubble ask-bubble" v-if="msg.type === 'write_approval'">
-            <p class="workflow-ask-question">🔐 AI 请求执行写操作：{{ writeToolLabel(msg.tool) }}</p>
+            <p class="workflow-ask-question">
+              🔐 AI 请求执行写操作：{{ writeToolLabel(msg.tool) }}
+            </p>
             <div class="ask-evidence">
               <div class="ask-evidence-item">目标：{{ msg.args?.selector }}</div>
               <div v-if="msg.args?.value" class="ask-evidence-item">内容：{{ msg.args.value }}</div>
-              <div v-if="msg.args?.description" class="ask-evidence-item">说明：{{ msg.args.description }}</div>
+              <div v-if="msg.args?.description" class="ask-evidence-item">
+                说明：{{ msg.args.description }}
+              </div>
             </div>
             <div v-if="msg.pending" class="workflow-ask-actions">
               <button class="workflow-ask-btn primary" @click="answerWriteApproval(msg, true)">
                 允许执行
               </button>
-              <button class="workflow-ask-btn" @click="answerWriteApproval(msg, false)">拒绝</button>
+              <button class="workflow-ask-btn" @click="answerWriteApproval(msg, false)">
+                拒绝
+              </button>
             </div>
             <p v-else class="workflow-ask-answered">
               {{ msg.approved ? '✅ 已放行' : '❌ 已拒绝' }}
@@ -461,7 +472,12 @@
             <p class="thinking-text">AI 助手正在思考...</p>
           </div>
           <!-- 实时轨迹 -->
-          <AgentTrace v-if="traceNodes.length" :nodes="traceNodes" :active="traceActive" />
+          <AgentTrace
+            v-if="traceNodes.length"
+            :nodes="traceNodes"
+            :graph="traceGraph"
+            :active="traceActive"
+          />
           <button v-if="traceNodes.length" class="stop-btn" @click="cancelAgentTask">
             ⏹ 停止生成
           </button>
@@ -804,12 +820,14 @@ const completeKnowledge = async (kp) => {
 const {
   nodes: traceNodes,
   active: traceActive,
+  graph: traceGraph,
   begin: beginTrace,
   reset: resetTrace,
   applyStep: applyTraceStep,
   applyWorkflow: applyTraceWorkflow,
   complete: completeTrace,
   snapshot: snapshotTrace,
+  graphSnapshot: snapshotTraceGraph,
 } = useAgentTrace()
 
 /**
@@ -820,6 +838,9 @@ const finishTrace = (message, status = TRACE_STATUS.SUCCESS) => {
   completeTrace(status)
   if (message && traceNodes.value.length) {
     message.trace = snapshotTrace()
+  }
+  if (message && traceGraph.value.length) {
+    message.traceGraph = snapshotTraceGraph()
   }
   resetTrace()
 }

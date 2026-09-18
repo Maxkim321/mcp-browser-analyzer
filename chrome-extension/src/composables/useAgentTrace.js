@@ -79,20 +79,26 @@ const finalize = (node, status) => {
     node.status = status
     node.endedAt = Date.now()
   }
-  node.children.forEach((child) => finalize(child, status))
+  if (node.children) node.children.forEach((child) => finalize(child, status))
 }
 
 export function useAgentTrace() {
   /** 当前 Turn 的轨迹节点树（顶层为阶段/步骤节点） */
   const nodes = ref([])
+  /** 深度研究 DAG 节点（扁平数组，含 parent/parents，用于有向图渲染） */
+  const graph = ref([])
   /** Turn 是否进行中：决定 UI 显示"执行中"还是最终折叠态 */
   const active = ref(false)
   /** 归并用索引：逻辑键 → 节点，保证同一单元的事件更新而非追加 */
   let index = new Map()
+  /** DAG 归并用索引：稳定节点 id → 图节点 */
+  let graphIndex = new Map()
 
   const reset = () => {
     nodes.value = []
     index = new Map()
+    graph.value = []
+    graphIndex = new Map()
     active.value = false
   }
 
@@ -185,7 +191,14 @@ export function useAgentTrace() {
    * - 缩进文案 → 作为当前阶段的子步骤；失败语义单独标红且不被覆盖
    */
   const applyWorkflow = (event) => {
-    if (!event || !event.message) return
+    if (!event) return
+    // 结构化 DAG 节点优先：深度研究状态机直接给稳定的 id/parent/parents，
+    // 前端据此画有向图，而非仅靠自然语言 message 猜层级
+    if (event.node) {
+      applyWorkflowNode(event.node)
+      return
+    }
+    if (!event.message) return
     if (!active.value) begin()
 
     const { step, message } = event
@@ -239,14 +252,65 @@ export function useAgentTrace() {
     }
   }
 
+  /**
+   * 归约深度研究结构化节点（workflow_progress.node）
+   *
+   * 服务端直接下发稳定的 id/parent/parents，前端不再靠自然语言猜层级。
+   * - 同 id 重复 emit = 该节点状态推进（如 report 从 running → success），按 id 归并更新
+   * - parent 表达树状挂载（action 挂在 topic 下），供折叠卡片内展示
+   * - parents 表达 DAG 依赖（如 compare 汇聚所有 topic），供有向图连线
+   */
+  const applyWorkflowNode = (node) => {
+    if (!node || !node.id) return
+    if (!active.value) begin()
+
+    const existing = graphIndex.get(node.id)
+    if (existing) {
+      if (node.label) existing.label = node.label
+      if (node.detail != null) existing.detail = node.detail
+      if (node.action) existing.action = node.action
+      if (Array.isArray(node.parents)) existing.parents = node.parents
+      if (node.status && node.status !== existing.status) {
+        existing.status = node.status
+        if (node.status !== TRACE_STATUS.RUNNING) existing.endedAt = Date.now()
+      }
+      return
+    }
+
+    const status = node.status || TRACE_STATUS.RUNNING
+    const created = {
+      id: node.id,
+      kind: node.kind || 'action',
+      label: node.label || node.detail || node.id,
+      detail: node.detail || '',
+      parent: node.parent || null,
+      parents: Array.isArray(node.parents)
+        ? node.parents
+        : node.parent
+          ? [node.parent]
+          : [],
+      action: node.action || null,
+      status,
+      startedAt: Date.now(),
+      endedAt: status === TRACE_STATUS.RUNNING ? null : Date.now(),
+      meta: node.meta || {},
+    }
+    graph.value.push(created)
+    graphIndex.set(node.id, created)
+  }
+
   /** Turn 结束：把残留的 running 节点收敛到终态，防止 UI 永久 loading */
   const complete = (status = TRACE_STATUS.SUCCESS) => {
     nodes.value.forEach((node) => finalize(node, status))
+    graph.value.forEach((node) => finalize(node, status))
     active.value = false
   }
 
   /** 导出为可序列化快照，随消息一起持久化 */
   const snapshot = () => JSON.parse(JSON.stringify(nodes.value))
+
+  /** 导出 DAG 为可序列化快照（随消息持久化，刷新后仍能画图） */
+  const graphSnapshot = () => JSON.parse(JSON.stringify(graph.value))
 
   /** 顶层节点数，作为折叠态的摘要信息 */
   const total = computed(() => nodes.value.length)
@@ -262,6 +326,7 @@ export function useAgentTrace() {
 
   return {
     nodes,
+    graph,
     active,
     total,
     currentLabel,
@@ -271,5 +336,6 @@ export function useAgentTrace() {
     applyWorkflow,
     complete,
     snapshot,
+    graphSnapshot,
   }
 }
