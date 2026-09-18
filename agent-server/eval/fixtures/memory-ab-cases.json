@@ -28,6 +28,87 @@
         "must_mention": ["350", "pgbouncer"],
         "max_chars": 800
       }
+    },
+    {
+      "id": "memory-cache-04",
+      "prompt": "我之前读过团队内部的缓存方案调优记录，热点数据的 TTL 设成了多少秒？淘汰策略用的是哪种？",
+      "expectedUrl": "file://eval/cards/cache-tuning.html",
+      "rubric": {
+        "must_mention": ["45", "allkeys-lfu"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-ratelimit-05",
+      "prompt": "我们服务治理的笔记里，核心接口的限流阈值是多少 QPS？熔断失败率阈值定在多少？",
+      "expectedUrl": "file://eval/cards/rate-limit.html",
+      "rubric": {
+        "must_mention": ["800", "12%"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-mq-06",
+      "prompt": "团队消息队列的运维记录里，消费失败最多重试几次？死信消息保留多少小时？",
+      "expectedUrl": "file://eval/cards/mq-ops.html",
+      "rubric": {
+        "regex": ["9\\s*次", "72\\s*小时"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-monitoring-07",
+      "prompt": "监控告警的配置记录里，接口 P99 延迟超过多少毫秒告警？错误率告警阈值是百分之几？",
+      "expectedUrl": "file://eval/cards/monitoring-alert.html",
+      "rubric": {
+        "must_mention": ["420", "0.5%"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-auth-08",
+      "prompt": "鉴权模块的记录里，访问令牌的有效期设成多久？刷新令牌过期时间多长？",
+      "expectedUrl": "file://eval/cards/auth-token.html",
+      "rubric": {
+        "regex": ["15\\s*分钟", "7\\s*天"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-loadtest-09",
+      "prompt": "压测报告里，接口的目标 QPS 定在多少？容量水位线是多少？",
+      "expectedUrl": "file://eval/cards/load-test.html",
+      "rubric": {
+        "must_mention": ["2400", "65%"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-log-10",
+      "prompt": "日志管理的记录里，访问日志保留多少天？错误日志保留多少天？",
+      "expectedUrl": "file://eval/cards/log-retention.html",
+      "rubric": {
+        "must_mention": ["30", "180"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-payment-11",
+      "prompt": "支付对账的笔记里，对账差异超过多少元会触发人工介入？对账批次每天几点跑？",
+      "expectedUrl": "file://eval/cards/payment-reconcile.html",
+      "rubric": {
+        "regex": ["5\\s*元", "3\\s*点"],
+        "max_chars": 800
+      }
+    },
+    {
+      "id": "memory-backup-12",
+      "prompt": "数据备份的记录里，增量备份多久做一次？备份保留几份？",
+      "expectedUrl": "file://eval/cards/backup-policy.html",
+      "rubric": {
+        "regex": ["6\\s*小时", "14\\s*份"],
+        "max_chars": 800
+      }
     }
   ]
 }
