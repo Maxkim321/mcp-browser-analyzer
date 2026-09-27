@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-15T02:26:33.886Z",
+  "ranAt": "2026-09-27T13:37:08.912Z",
   "total": 12,
   "recallAt3": 1,
   "withMemory": {
@@ -15,7 +15,7 @@
     {
       "id": "memory-bm25-01",
       "recallHit": true,
-      "recallScore": 31.009,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "bm25",
         "k1",
@@ -30,7 +30,7 @@
     {
       "id": "memory-release-02",
       "recallHit": true,
-      "recallScore": 34.92,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "发布",
         "布流",
@@ -45,7 +45,7 @@
     {
       "id": "memory-dbpool-03",
       "recallHit": true,
-      "recallScore": 26.417,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "数据",
         "据库",
@@ -60,7 +60,7 @@
     {
       "id": "memory-cache-04",
       "recallHit": true,
-      "recallScore": 40.462,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "ttl",
         "内部",
@@ -75,7 +75,7 @@
     {
       "id": "memory-ratelimit-05",
       "recallHit": true,
-      "recallScore": 43.517,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "qps",
         "服务",
@@ -90,7 +90,7 @@
     {
       "id": "memory-mq-06",
       "recallHit": true,
-      "recallScore": 48.424,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "消息",
         "息队",
@@ -105,7 +105,7 @@
     {
       "id": "memory-monitoring-07",
       "recallHit": true,
-      "recallScore": 41.965,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "p99",
         "监控",
@@ -120,7 +120,7 @@
     {
       "id": "memory-auth-08",
       "recallHit": true,
-      "recallScore": 28.155,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "鉴权",
         "记录",
@@ -135,7 +135,7 @@
     {
       "id": "memory-loadtest-09",
       "recallHit": true,
-      "recallScore": 30.006,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "qps",
         "压测",
@@ -150,7 +150,7 @@
     {
       "id": "memory-log-10",
       "recallHit": true,
-      "recallScore": 23.835,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "日志",
         "记录",
@@ -165,7 +165,7 @@
     {
       "id": "memory-payment-11",
       "recallHit": true,
-      "recallScore": 47.855,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "支付",
         "付对",
@@ -180,7 +180,7 @@
     {
       "id": "memory-backup-12",
       "recallHit": true,
-      "recallScore": 27.615,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "数据",
         "据备",

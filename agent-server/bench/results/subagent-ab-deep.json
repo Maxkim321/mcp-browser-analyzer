@@ -1,0 +1,88 @@
+{
+  "date": "2026-09-19T04:31:38.703Z",
+  "scenario": "deep",
+  "question": "HarmonyMesh 协议 v2.3 规范中定义的默认 gossip 同步间隔是多少秒？",
+  "caveat": "工具零延迟 mock（离线可复现）：墙钟主要反映 LLM 串行往返；老管线真实抓页的串行延迟未计入，worker 并行批抓优势被低估。单次运行，模型随机性存在。deep 场景关键事实为编造协议的非默认数字（防先验蒙对）。",
+  "legacy": {
+    "mode": "legacy",
+    "success": true,
+    "wallMs": 73715,
+    "llmCalls": 7,
+    "promptTokens": 2425,
+    "completionTokens": 3470,
+    "totalTokens": 5895,
+    "toolCalls": {
+      "web_search": 8,
+      "fetch_url": 6
+    },
+    "fetchedUrls": [
+      "https://fixture.local/harmonymesh-intro",
+      "https://fixture.local/harmonymesh-compare",
+      "https://fixture.local/harmonymesh-faq",
+      "https://fixture.local/harmonymesh-intro",
+      "https://fixture.local/harmonymesh-compare",
+      "https://fixture.local/harmonymesh-faq"
+    ],
+    "topics": [
+      {
+        "question": "HarmonyMesh 协议 v2.3 规范中 gossip 同步间隔的默认值是多少秒？",
+        "sufficient": false,
+        "points": 12
+      },
+      {
+        "question": "HarmonyMesh 协议 v2.3 规范中关于 gossip 同步间隔的定义或配置项是什么？",
+        "sufficient": false,
+        "points": 7
+      }
+    ],
+    "evidence": 19,
+    "sources": 6,
+    "reportChars": 2698,
+    "reportSnippet": "## 结论\n\n未能确定 HarmonyMesh 协议 v2.3 规范中定义的默认 gossip 同步间隔秒数。所提供的全部调研要点均未给出该数值，仅反复说明\"具体数值以 v2.3 规范为准\"，而规范原文链接（https://fixture.local/harmonymesh-spec-v23，见附录 B）未被成功抓取，四次搜索也均未返回可用链接。因此本报告无法给出任何具体秒数，也不作推测。\n\n## 分主题调研结果\n\n### 主题 1：HarmonyMesh 协议 v2.3 规范中 gossip 同步间隔的默认值是多少秒？\n\n**信息充分度：不充分**\n\n要点整理：\n- HarmonyMesh 协议 v2.3 由 OpenMesh 工作组于 2024 年发布。\n- 该协议采用 gossip 模型做去中心化节点状态同步，设计目标为弱网环境下的最终一致性。\n- gossip 同步间隔等运行参数由 v2.3 规范统一约束，属于协议级可协商参数、规范强约束参数，各厂商实现必须一致。\n- 完整参数定义位于规范原文链接；详细参数对比矩阵在 v2.3 规范附录 B，附录 B 链接为 https://fixture.local/harmonymesh-spec-v23。\n- **正文未给出 gossip 同步间隔默认值**；具体数值需以 v2.3 规范为准。\n\n判断：该主题直接指向研究问题，但所有要",
+    "judge": {
+      "pass": false,
+      "detail": "47秒命中=false gossip提及=true 规范页引用=true"
+    }
+  },
+  "subagent": {
+    "mode": "subagent",
+    "success": true,
+    "wallMs": 48692,
+    "llmCalls": 7,
+    "promptTokens": 8020,
+    "completionTokens": 3504,
+    "totalTokens": 11524,
+    "toolCalls": {
+      "web_search": 2,
+      "fetch_url": 4
+    },
+    "fetchedUrls": [
+      "https://fixture.local/harmonymesh-intro",
+      "https://fixture.local/harmonymesh-compare",
+      "https://fixture.local/harmonymesh-faq",
+      "https://fixture.local/harmonymesh-spec-v23"
+    ],
+    "topics": [
+      {
+        "question": "HarmonyMesh 协议 v2.3 规范中默认 gossip 同步间隔是多少秒？",
+        "sufficient": true,
+        "points": 5
+      }
+    ],
+    "evidence": 5,
+    "sources": 4,
+    "reportChars": 1247,
+    "reportSnippet": "## 结论\n\nHarmonyMesh 协议 v2.3 规范中定义的默认 gossip 同步间隔为 **47 秒**。该值由规范 §4.2 明确规定，属协议级强约束参数，各实现不得自行调整，时钟漂移超过 ±3 秒时须按规范值重新对齐。\n\n## 分主题调研结果\n\n### 主题 1：HarmonyMesh 协议 v2.3 规范中默认 gossip 同步间隔是多少秒？\n\n**要点：**\n\n- **核心结论**：HarmonyMesh 协议规范 v2.3 §4.2 规定，默认 gossip 同步间隔为 **47 秒**。\n- **约束性质**：该 47 秒间隔是规范强约束参数，各实现不得自行调整；时钟漂移超过 ±3 秒时须按规范值重新对齐。\n- **参数层级**：同步间隔属协议级可协商参数，而非节点本地配置，目的是保证异构设备网络的收敛可预测。\n- **FAQ 佐证**：FAQ 确认 gossip 同步间隔不可自行修改，为规范强约束，各厂商实现必须保持一致。\n- **相关参数**：规范 §4.3 规定被动失效检测窗口为间隔的 6 倍（即 47 × 6 = 282 秒）；§5.1 规定分区重组阈值为 128 节点。\n\n**信息充分度：充分**\n\n四个来源（协议概述、协议对比、FAQ、协议规范 v2.3）相互印证，核心数值 47 秒在规范正文与 FAQ 中一致出现，且附带约束条件与关联参数，信息",
+    "judge": {
+      "pass": true,
+      "detail": "47秒命中=true gossip提及=true 规范页引用=true"
+    }
+  },
+  "delta": {
+    "wallMsPct": -34,
+    "llmCallsDelta": 0,
+    "tokensPct": 95,
+    "promptTokensPct": 231,
+    "completionTokensPct": 1
+  }
+}

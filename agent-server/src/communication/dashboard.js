@@ -80,6 +80,36 @@ function evalPayload() {
   return readJson(EVAL_FILE)
 }
 
+const ROUTING_EVENT_TYPES = [
+  'research_routed',
+  'research_escalated',
+  'research_escalated_result',
+  'research_worker_started',
+  'research_worker_done',
+]
+
+/**
+ * P6 研究管线路由监控：trace 事件聚合（纯只读——聚合的是已落痕的事件，不生产数字）
+ * 概览卡片回答一个问题："路由器把主题都分给了谁，升级兜底救回了几次"
+ */
+function routingPayload() {
+  const events = traceLog.readAll().filter((e) => ROUTING_EVENT_TYPES.includes(e.type))
+  const routed = events.filter((e) => e.type === 'research_routed')
+  const escalResults = events.filter((e) => e.type === 'research_escalated_result')
+  return {
+    totals: {
+      routedLegacy: routed.filter((e) => e.pipeline === 'legacy').length,
+      routedWorker: routed.filter((e) => e.pipeline === 'worker').length,
+      depthShallow: routed.filter((e) => e.depth === 'shallow').length,
+      depthDeep: routed.filter((e) => e.depth === 'deep').length,
+      escalations: events.filter((e) => e.type === 'research_escalated').length,
+      escalationsRescued: escalResults.filter((e) => e.rescued === true).length,
+      workerRuns: events.filter((e) => e.type === 'research_worker_done').length,
+    },
+    recent: events.slice(-30).reverse(),
+  }
+}
+
 /** 浏览记忆卡片概况 + A/B 对照数字（有/无记忆通过率与 recall@3） */
 function memoryPayload() {
   let cards = 0
@@ -136,6 +166,9 @@ function handleRequest(req, res) {
     case '/api/trace':
       sendJson(res, 200, { events: traceLog.readAll().slice(-100).reverse() })
       break
+    case '/api/routing':
+      sendJson(res, 200, routingPayload())
+      break
     case '/api/memory':
       sendJson(res, 200, memoryPayload())
       break
@@ -156,6 +189,7 @@ module.exports = {
   evalHistoryPayload,
   sessionsPayload,
   sessionEventsPayload,
+  routingPayload,
 }
 
 // ===== 评测台 + 白盒面板的数据装配（纯读文件，导出以便单测注入目录） =====

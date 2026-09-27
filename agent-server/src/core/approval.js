@@ -73,12 +73,22 @@ function createPermissionCheck({
       return { dryRun: true }
     }
 
-    traceLog.record({ type: 'write_approval_requested', sessionId, tool: toolName, argsPreview })
+    // P7 染色感知审批：本轮上下文检出过疑似注入（context.taintedSources 由 injection-guard 维护），
+    // 审批请求带上 taint 证据——卡片亮警告，决策仍在人（检测不阻断，误报不杀流程）
+    const taint = Array.isArray(context?.taintedSources) ? context.taintedSources : []
+
+    traceLog.record({
+      type: 'write_approval_requested',
+      sessionId,
+      tool: toolName,
+      argsPreview,
+      tainted: taint.length > 0,
+    })
 
     // 审批往返：等不到明确授权就是拒绝（超时/abort 由 requestApproval 的实现兜底成拒绝）
     let answer
     try {
-      answer = await requestApproval({ toolName, args })
+      answer = await requestApproval({ toolName, args, taint })
     } catch (error) {
       answer = { approved: false, note: `审批通道异常：${error.message}` }
     }

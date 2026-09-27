@@ -414,6 +414,16 @@
               <div v-if="msg.args?.description" class="ask-evidence-item">
                 说明：{{ msg.args.description }}
               </div>
+              <!-- P7 注入防御：本轮上下文检出过疑似指令注入——把风险亮到人审面前 -->
+              <div
+                v-if="msg.taint && msg.taint.length"
+                class="ask-evidence-item"
+                style="color: var(--danger-strong)"
+              >
+                ⚠️ 本轮上下文含疑似指令注入内容（命中 {{ msg.taint.length }} 处{{
+                  msg.taint[0]?.patterns?.length ? '：' + msg.taint[0].patterns.join('、') : ''
+                }}），请格外谨慎确认目标与内容
+              </div>
             </div>
             <div v-if="msg.pending" class="workflow-ask-actions">
               <button class="workflow-ask-btn primary" @click="answerWriteApproval(msg, true)">
@@ -1622,6 +1632,7 @@ const connectWebSocket = () => {
               requestId: data.requestId,
               tool: data.tool,
               args: data.args || {},
+              taint: Array.isArray(data.taint) ? data.taint : [],
               pending: true,
               approved: false,
               timestamp: Date.now(),

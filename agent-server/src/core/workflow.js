@@ -2,6 +2,9 @@ const fs = require('fs')
 const path = require('path')
 const { v4: uuidv4 } = require('uuid')
 const { handleToolCall } = require('../tools/handler.js')
+const traceLog = require('./trace-log.js')
+const { runTopicAgent } = require('./topic-agent.js')
+const { parseJSON } = require('./parse-json.js')
 const {
   RESEARCH_PLAN_PROMPT,
   RESEARCH_QUERY_PROMPT,
@@ -56,6 +59,14 @@ class ResearchWorkflow {
     this.hitlTimeoutMs = options.hitlTimeoutMs || 120000 // HITL 等待用户答复超时
     // 预算硬上限：累计抓取页数达到该值时（on-deadend 模式）询问用户是否继续消耗
     this.maxTotalPages = options.maxTotalPages || 15
+    // P6 研究管线路由（三态）：
+    // - 'legacy'（默认）：全走旧管线（先搜后抓 + 逐页 grade），子 agent 不参与
+    // - 'subagent'：全走子 agent（= 旧的 subagentMode: true，保留为对照臂）
+    // - 'auto'：按 plan 标注的 topic.depth 分流（deep→worker，shallow→旧管线），
+    //   且 shallow 主题死胡同时升级一次 worker 兜底（标错只影响成本不影响正确性）
+    this.routingMode = options.routingMode || (options.subagentMode === true ? 'subagent' : 'legacy')
+    // worker 的 ReAct 轮次硬上限（每次 process 兜底强制收敛，防单 worker 无限循环）
+    this.workerMaxSteps = options.workerMaxSteps || 6
   }
 
   /**
@@ -124,6 +135,7 @@ class ResearchWorkflow {
         {
           question: state.question,
           queries: [state.question],
+          depth: 'shallow', // 解析失败走保守路由（shallow），错了有升级兜底
           urls: [],
           points: [],
           sufficient: false,
@@ -140,6 +152,8 @@ class ResearchWorkflow {
         return {
           question,
           queries: queries.length > 0 ? queries : [question],
+          // 路由标签（P6 auto 模式）：规划模型顺手标注；缺省/非法回落 shallow（保守方向）
+          depth: t.depth === 'deep' ? 'deep' : 'shallow',
           urls: [],
           points: [],
           sufficient: false,
@@ -185,7 +199,24 @@ class ResearchWorkflow {
       return
     }
 
+    // P6 路由决策：subagent 全走 worker；auto 按 plan 标注的 depth 分流
+    // （deep→worker 多跳追踪，shallow→旧管线；标错的死胡同有升级兜底）
     const topic = state.plan[state.currentTopic]
+    const useWorker =
+      this.routingMode === 'subagent' || (this.routingMode === 'auto' && topic.depth === 'deep')
+    if (this.routingMode === 'auto' && topic.attempts === 0) {
+      // 首次进入该主题才记路由决策（重试重入不重复记），白盒面板可回放
+      traceLog.record({
+        type: 'research_routed',
+        topicIndex: state.currentTopic,
+        depth: topic.depth === 'deep' ? 'deep' : 'shallow',
+        pipeline: useWorker ? 'worker' : 'legacy',
+      })
+    }
+    if (useWorker) {
+      return this.researchNodeWithWorker(state, { connectionId, onProgress, onAsk })
+    }
+
     const topicLabel = `${state.currentTopic + 1}/${state.plan.length}「${topic.question}」`
 
     // 信息已足够（重试轮次内由 grade 判断过）→ 条件边：直接进下一主题（正常路径，不打断）
@@ -198,13 +229,17 @@ class ResearchWorkflow {
 
     // 重试次数超限 → 条件边兜底：带着已有信息进下一主题，不阻塞整个研究（死胡同，on-deadend 模式会打断）
     if (topic.attempts >= this.maxAttempts) {
+      // auto 模式：真死胡同前先升级一次子 agent（预判 shallow 但答案可能在索引外）
+      const rescued = await this.maybeEscalateToWorker(state, topic, { connectionId, onProgress })
       this.emit(
         state,
         onProgress,
-        `主题 ${topicLabel}：多次尝试后信息仍不足（不阻塞，继续后续主题）`
+        rescued
+          ? `主题 ${topicLabel}：升级子 agent 救回（${topic.points.length} 条要点）`
+          : `主题 ${topicLabel}：多次尝试后信息仍不足（不阻塞，继续后续主题）`
       )
       this.advanceTopic(state, onProgress)
-      await this.maybeContinue(state, { deadEnd: true, onProgress, onAsk })
+      await this.maybeContinue(state, { deadEnd: !rescued, onProgress, onAsk })
       return
     }
 
@@ -217,9 +252,17 @@ class ResearchWorkflow {
     }
 
     if (this.pendingUrls(topic).length === 0) {
-      this.emit(state, onProgress, `主题 ${topicLabel}：搜索未获得可用链接（跳过本主题）`)
+      // auto 模式：旧管线搜索无果，子 agent 可能用不同检索词找到（死胡同前最后自救）
+      const rescued = await this.maybeEscalateToWorker(state, topic, { connectionId, onProgress })
+      this.emit(
+        state,
+        onProgress,
+        rescued
+          ? `主题 ${topicLabel}：升级子 agent 找到来源（${topic.points.length} 条要点）`
+          : `主题 ${topicLabel}：搜索未获得可用链接（跳过本主题）`
+      )
       this.advanceTopic(state, onProgress)
-      await this.maybeContinue(state, { deadEnd: true, onProgress, onAsk })
+      await this.maybeContinue(state, { deadEnd: !rescued, onProgress, onAsk })
       return
     }
 
@@ -239,12 +282,244 @@ class ResearchWorkflow {
       // 同主题重试不询问用户：否则同一个"已完成 N/M"会连问多次，用户以为卡死
       return
     } else {
+      // 重试耗尽：auto 模式先升级一次子 agent（多跳追踪），救不回才算真死胡同
+      const rescued = await this.maybeEscalateToWorker(state, topic, { connectionId, onProgress })
+      if (rescued) {
+        this.emit(
+          state,
+          onProgress,
+          `主题 ${topicLabel}：升级子 agent 救回（${topic.points.length} 条要点）`
+        )
+        this.advanceTopic(state, onProgress)
+      } else {
+        this.emit(state, onProgress, `主题 ${topicLabel}：达到重试上限，使用已有信息`)
+        this.advanceTopic(state, onProgress)
+        deadEnd = true
+      }
+    }
+
+    await this.maybeContinue(state, { deadEnd, onProgress, onAsk })
+  }
+
+  /**
+   * P6 子 agent 模式的 research 节点：编排权下移——单个受限 ReAct worker 自主完成
+   * "搜索→多页阅读→交叉印证→充分性判断"，父层只保留预算硬约束与 HITL 分叉点。
+   * 与旧管线的语义对齐：
+   * - 主题仍串行推进（currentTopic 游标 + checkpoint + maybeContinue 全部不变），
+   *   worker 内部并发受 Agent parallelToolCalls 限制——跨主题并行属于边界之外（v2）
+   * - worker 内部自己改写检索词多跳追踪（不再走 suggestMoreQueries 全局重试）；
+   *   父层重试语义保留：attempts < maxAttempts 时带 gap 提示再派一个 worker
+   * - 产出归并后与旧管线同一 State 形状（points/sources/evidence/failures），
+   *   compare/report/verify/HITL 零感知
+   */
+  async researchNodeWithWorker(state, { connectionId, onProgress, onAsk }) {
+    const topic = state.plan[state.currentTopic]
+    const topicIndex = state.currentTopic
+    const topicLabel = `${topicIndex + 1}/${state.plan.length}「${topic.question}」`
+    // 预检（与旧管线同构，checkpoint 恢复重入时防超预算）：已充分→推进；重试耗尽→死胡同
+    if (topic.sufficient) {
+      this.emit(state, onProgress, `主题 ${topicLabel}：信息已足够`)
+      this.advanceTopic(state, onProgress)
+      await this.maybeContinue(state, { onProgress, onAsk })
+      return
+    }
+    if (topic.attempts >= this.maxAttempts) {
+      this.emit(state, onProgress, `主题 ${topicLabel}：达到重试上限，使用已有信息`)
+      this.advanceTopic(state, onProgress)
+      await this.maybeContinue(state, { deadEnd: true, onProgress, onAsk })
+      return
+    }
+    topic.attempts++
+    this.emit(
+      state,
+      onProgress,
+      `正在调研主题 ${topicLabel}（第 ${topic.attempts} 轮，子 agent 模式）`
+    )
+
+    const outcome = await this.runWorkerForTopic(state, topic, topicIndex, {
+      connectionId,
+      onProgress,
+      gapHint: topic.attempts > 1 ? topic.gap || '' : '',
+    })
+
+    // 条件边：与旧管线同构——充分推进 / 预算内重试 / 耗尽死胡同（on-deadend 模式会打断）
+    let deadEnd = false
+    if (outcome.sufficient) {
+      this.emit(state, onProgress, `主题 ${topicLabel}：调研完成（${topic.points.length} 条要点）`)
+      this.advanceTopic(state, onProgress)
+    } else if (topic.attempts < this.maxAttempts) {
+      this.emit(
+        state,
+        onProgress,
+        `主题 ${topicLabel}：信息不足（${topic.gap || '信息不足'}），派发补充调研...`
+      )
+      // 同主题重试不询问用户：与旧管线同口径（否则同一个"已完成 N/M"会连问多次）
+      return
+    } else {
       this.emit(state, onProgress, `主题 ${topicLabel}：达到重试上限，使用已有信息`)
       this.advanceTopic(state, onProgress)
       deadEnd = true
     }
 
     await this.maybeContinue(state, { deadEnd, onProgress, onAsk })
+  }
+
+  /**
+   * 派发一次子 agent 并把产出归并进 State（trace 生命周期 + 终态节点 + 归并全部收口在这里，
+   * 供 researchNodeWithWorker 与死胡同升级兜底两条路径共用——两处的归并语义必须完全一致）
+   */
+  async runWorkerForTopic(state, topic, topicIndex, { connectionId, onProgress, gapHint }) {
+    traceLog.record({
+      type: 'research_worker_started',
+      topicIndex,
+      attempt: topic.attempts,
+      question: topic.question,
+      maxSteps: this.workerMaxSteps,
+      escalated: topic.escalated === true,
+    })
+
+    let outcome
+    try {
+      outcome = await runTopicAgent(topic, {
+        llmInstance: this.llm,
+        connectionId,
+        signal: this.signal,
+        maxSteps: this.workerMaxSteps,
+        gapHint,
+        onStep: (stepInfo) =>
+          this.onWorkerStep(state, topicIndex, topic.attempts, stepInfo, onProgress),
+      })
+    } catch (error) {
+      // ABORTED 直接上抛（start 主循环 → ws-server 回"已停止"）；其余异常按失败记录，
+      // 不让单个 worker 的崩溃拖垮整个研究（失败隔离）
+      if (this.isAborted() || error?.code === 'ABORTED') throw this.abortError()
+      console.warn('[Workflow] topic worker failed:', error.message)
+      this.recordFailure(state, `worker:topic-${topicIndex}`, error.message)
+      outcome = {
+        sufficient: false,
+        points: [],
+        gap: `调研 worker 执行失败：${error.message}`,
+        sources: [],
+        failures: [],
+      }
+    }
+
+    this.applyWorkerOutcome(state, topic, topicIndex, outcome, onProgress)
+    return outcome
+  }
+
+  /** worker 产出归并：要点/证据/来源/失败记录全部带溯源，与旧管线同一 State 形状 */
+  applyWorkerOutcome(state, topic, topicIndex, outcome, onProgress) {
+    traceLog.record({
+      type: 'research_worker_done',
+      topicIndex,
+      attempt: topic.attempts,
+      sufficient: outcome.sufficient,
+      points: outcome.points.length,
+      sources: outcome.sources.length,
+      iterations: outcome.meta.iterations,
+      escalated: topic.escalated === true,
+    })
+
+    // worker 终态节点：单次 worker 运行一个汇总节点（工具级节点无法在 agent 循环内
+    // 回填终态，汇总节点保证 DAG 上每次 worker 运行有明确的成功/失败收尾）
+    this.emitNode(state, onProgress, {
+      id: `worker:${topicIndex}:${topic.attempts}:done`,
+      parent: `topic:${topicIndex}`,
+      parents: [`topic:${topicIndex}`],
+      kind: 'action',
+      action: 'worker_result',
+      label: '子 agent 调研完成',
+      detail: `${outcome.points.length} 条要点 · ${outcome.sources.length} 个来源`,
+      status: outcome.sufficient ? 'success' : 'failed',
+      meta: { topicIndex, agent: `worker:${topicIndex}` },
+    })
+
+    // 要点跨轮 concat（与旧管线 grade 逐页累积同口径），不覆盖上一轮产出
+    topic.points = topic.points.concat(outcome.points.map((p) => p.text))
+    topic.sufficient = outcome.sufficient
+    topic.gap = outcome.gap
+    state.sources = this.mergeSources(state.sources, outcome.sources)
+    // 重试去重：记下本轮读过的页面，下一轮 worker 的提示词会带上，避免重复读取
+    topic.fetchedUrls = (topic.fetchedUrls || []).concat(outcome.sources.map((s) => s.url))
+    state.evidence = state.evidence || []
+    for (const p of outcome.points) {
+      state.evidence.push({
+        point: p.text,
+        url: p.url,
+        title: p.title || p.url,
+        truncated: false,
+        topic: topic.question,
+      })
+    }
+    for (const f of outcome.failures) {
+      this.recordFailure(state, f.url, f.reason)
+    }
+  }
+
+  /**
+   * P6 auto 模式的死胡同升级兜底：旧管线条重试耗尽仍不充分时，先派一次子 agent
+   * （多跳能力能到旧管线到不了的地方），救不回才升级为真死胡同触发 HITL。
+   * 每主题只升一次（topic.escalated 进 State，checkpoint 恢复后不重复升级）——
+   * 最坏情况是多等一轮子 agent 的时间才收到打断，不会无限烧。
+   * @returns {Promise<boolean>} 是否被 worker 救回（sufficient）
+   */
+  async maybeEscalateToWorker(state, topic, { connectionId, onProgress }) {
+    if (this.routingMode !== 'auto') return false
+    if (topic.escalated) return false
+    topic.escalated = true
+    const topicIndex = state.currentTopic
+    traceLog.record({
+      type: 'research_escalated',
+      topicIndex,
+      attempt: topic.attempts,
+      gap: (topic.gap || '').slice(0, 120),
+    })
+    this.emit(state, onProgress, `旧管线多轮不足，升级子 agent 尝试多跳追踪...`)
+    const outcome = await this.runWorkerForTopic(state, topic, topicIndex, {
+      connectionId,
+      onProgress,
+      gapHint: topic.gap || '',
+    })
+    traceLog.record({
+      type: 'research_escalated_result',
+      topicIndex,
+      rescued: outcome.sufficient === true,
+      points: outcome.points.length,
+    })
+    return outcome.sufficient === true
+  }
+
+  /**
+   * worker 的 dph-A Step 事件 → 研究 DAG 节点（只渲染工具执行节点，保持图可读；
+   * id 带 attempt 防同主题重试时节点撞 id；worker 归属记进 meta.agent，
+   * 白盒飞行记录仪/评测轨迹据此区分主链与 worker 链）
+   */
+  onWorkerStep(state, topicIndex, attempt, stepInfo, onProgress) {
+    if (!stepInfo || stepInfo.phase !== 'tool') return
+    this.emitNode(state, onProgress, {
+      id: `worker:${topicIndex}:${attempt}:${stepInfo.step}`,
+      parent: `topic:${topicIndex}`,
+      parents: [`topic:${topicIndex}`],
+      kind: 'action',
+      action: 'worker_tool',
+      label: `调研工具：${stepInfo.tool || '未知'}`,
+      detail: '执行中',
+      status: 'running',
+      meta: { topicIndex, agent: `worker:${topicIndex}` },
+    })
+  }
+
+  /** 来源合并去重（按 URL）：worker 产出并入 State.sources，预算告警口径不变 */
+  mergeSources(existing, incoming) {
+    const seen = new Set((existing || []).map((s) => s.url))
+    const merged = (existing || []).slice()
+    for (const s of incoming || []) {
+      if (!s.url || seen.has(s.url)) continue
+      seen.add(s.url)
+      merged.push(s)
+    }
+    return merged
   }
 
   /**
@@ -326,6 +601,7 @@ class ResearchWorkflow {
         queriesTried: deadTopic?.queries || [],
         pagesFromTopic: deadTopic?.urls?.length || 0,
         pointsFromTopic: deadTopic?.points?.length || 0,
+        escalated: deadTopic?.escalated === true, // 升级子 agent 也试过——打断证据更完整
       })
     )
     if (answer.cancel || answer.text === '直接出报告') {
@@ -338,6 +614,7 @@ class ResearchWorkflow {
       state.plan.splice(state.currentTopic, 0, {
         question,
         queries: [question],
+        depth: 'shallow', // 用户插入方向默认走旧管线（升级兜底可救）
         urls: [],
         points: [],
         sufficient: false,
@@ -368,6 +645,7 @@ class ResearchWorkflow {
       state.plan.push({
         question,
         queries: [question],
+        depth: 'shallow', // 计划确认追加方向默认走旧管线（升级兜底可救）
         urls: [],
         points: [],
         sufficient: false,
@@ -403,6 +681,7 @@ class ResearchWorkflow {
       state.plan.splice(state.currentTopic, 0, {
         question,
         queries: [question],
+        depth: 'shallow', // 用户插入方向默认走旧管线（升级兜底可救）
         urls: [],
         points: [],
         sufficient: false,
@@ -1033,46 +1312,6 @@ class ResearchWorkflow {
   }
 }
 
-/**
- * 容错解析 LLM 输出的 JSON：
- * - 可能被 ```json 代码块包裹
- * - 可能混有前后缀文字
- * 提取首个 {...} 或 [...] 并 JSON.parse，失败返回 null
- */
-function parseJSON(text) {
-  if (typeof text !== 'string') return null
-  let t = text.trim()
-  // 去掉 ```json ... ``` 代码块
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fence) t = fence[1].trim()
-  // 提取首个对象/数组
-  const first = t.search(/[[{]/)
-  if (first === -1) return null
-  const candidates = [t.slice(first)]
-  for (const s of candidates) {
-    try {
-      return JSON.parse(s)
-    } catch {
-      // 尝试按括号配对截取
-      const open = s[0]
-      const close = open === '{' ? '}' : ']'
-      let depth = 0
-      for (let i = 0; i < s.length; i++) {
-        if (s[i] === open) depth++
-        else if (s[i] === close) {
-          depth--
-          if (depth === 0) {
-            try {
-              return JSON.parse(s.slice(0, i + 1))
-            } catch {
-              return null
-            }
-          }
-        }
-      }
-    }
-  }
-  return null
-}
+// parseJSON 已提取为共享模块 parse-json.js（topic-agent.js 共用同一口径），此处 re-export 向后兼容
 
 module.exports = { ResearchWorkflow, parseJSON }

@@ -11,7 +11,12 @@
     "eval": "node eval/run-eval.js",
     "eval:memory": "node eval/run-memory-ab.js",
     "bench": "node bench/compression.bench.js",
-    "report": "node eval/cost-report.js"
+    "bench:subagent": "node bench/subagent-ab.bench.js",
+    "report": "node eval/cost-report.js",
+    "eval:hybrid": "node eval/run-hybrid-ab.js",
+    "embed:sync": "node src/memory/embed-sync.js",
+    "mcp:demo": "node mcp-demo.js",
+    "mcp:e2e": "node mcp-e2e.js"
   },
   "dependencies": {
     "chrome-launcher": "^1.2.1",

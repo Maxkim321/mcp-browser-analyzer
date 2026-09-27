@@ -62,3 +62,78 @@ test('dph-B: 断点续跑（崩溃重启后重建上下文）', () => {
   // 清理
   fs.rmSync(path.join(DATA_DIR, `${sid}.jsonl`), { force: true })
 })
+
+// ===== seq 主键（事件寻址：部分重放/增量投影/完整性校验的地基） =====
+
+test('dph-B seq: 追加时分配单调递增序号并持久化落盘', () => {
+  const sid = `test-seq-${Date.now()}`
+  eventLog.appendEvent(sid, 'user', 'q1')
+  eventLog.appendEvent(sid, 'assistant', 'a1')
+  eventLog.appendEvent(sid, 'user', 'q2')
+
+  const events = eventLog.getEvents(sid)
+  assert.deepStrictEqual(
+    events.map((e) => e.seq),
+    [1, 2, 3]
+  )
+  // 落盘行里真带 seq（不是读取时才补的）
+  const raw = fs
+    .readFileSync(path.join(DATA_DIR, `${sid}.jsonl`), 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l))
+  assert.deepStrictEqual(
+    raw.map((e) => e.seq),
+    [1, 2, 3]
+  )
+  fs.rmSync(path.join(DATA_DIR, `${sid}.jsonl`), { force: true })
+})
+
+test('dph-B seq: 旧格式行（无 seq）按位置补齐，新旧行混存序号不回退', () => {
+  const sid = `test-seq-legacy-${Date.now()}`
+  const file = path.join(DATA_DIR, `${sid}.jsonl`)
+  // 直接写入两条旧格式行（无 seq 字段，模拟历史数据）
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ type: 'user', content: '旧1', ts: 1 }) +
+      '\n' +
+      JSON.stringify({ type: 'assistant', content: '旧2', ts: 2 }) +
+      '\n'
+  )
+  const legacy = eventLog.getEvents(sid)
+  assert.deepStrictEqual(
+    legacy.map((e) => e.seq),
+    [1, 2]
+  )
+  // 追加新事件：seq 从 3 继续（重启种子化取 max(存储 seq, 行号)），不与补齐值冲突
+  eventLog.appendEvent(sid, 'user', '新3')
+  const mixed = eventLog.getEvents(sid)
+  assert.strictEqual(mixed.length, 3)
+  assert.strictEqual(mixed[2].seq, 3)
+  assert.strictEqual(mixed[2].content, '新3')
+  fs.rmSync(file, { force: true })
+})
+
+test('dph-B seq: upToSeq 部分读取（时间旅行分叉的游标）', () => {
+  const sid = `test-seq-partial-${Date.now()}`
+  eventLog.appendEvent(sid, 'user', 'q1')
+  eventLog.appendEvent(sid, 'assistant', 'a1')
+  eventLog.appendEvent(sid, 'user', 'q2')
+
+  assert.strictEqual(eventLog.getEvents(sid, { upToSeq: 1 }).length, 1)
+  assert.deepStrictEqual(
+    eventLog.getEvents(sid, { upToSeq: 2 }).map((e) => e.seq),
+    [1, 2]
+  )
+  // 不传 upToSeq = 全量（旧行为不变）
+  assert.strictEqual(eventLog.getEvents(sid).length, 3)
+  fs.rmSync(path.join(DATA_DIR, `${sid}.jsonl`), { force: true })
+})
+
+test('dph-B seq: extra 不可覆盖 seq（日志主键由日志分配）', () => {
+  const sid = `test-seq-guard-${Date.now()}`
+  eventLog.appendEvent(sid, 'user', 'x', { seq: 999 })
+  const events = eventLog.getEvents(sid)
+  assert.strictEqual(events[0].seq, 1)
+  fs.rmSync(path.join(DATA_DIR, `${sid}.jsonl`), { force: true })
+})

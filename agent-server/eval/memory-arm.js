@@ -88,14 +88,15 @@ async function main() {
     // 组装方式对齐 ws-server：pageContext 注入 + 命中记忆块注入（off 臂跳过）
     let systemPrompt = appendPageContext(SYSTEM_PROMPT, pageContext)
     if (arm === 'on') {
-      const recalled = memoryWire.recallForPrompt(c.prompt, pageContext)
+      // P8：recallForPrompt 为 async（混合检索查询向量化）
+      const recalled = await memoryWire.recallForPrompt(c.prompt, pageContext)
       if (recalled) systemPrompt += `\n\n${recalled.block}`
     }
 
     // 检索层确定性验证（免 LLM）：期望卡片是否真的被召回进 top-3
     let recall = { hit: false, score: null, matchedTerms: [] }
     if (arm === 'on') {
-      const recalled = memoryWire.recallForPrompt(c.prompt, pageContext)
+      const recalled = await memoryWire.recallForPrompt(c.prompt, pageContext)
       const hit = recalled?.refs?.find((r) => r.url === c.expectedUrl)
       if (hit) recall = { hit: true, score: hit.score, matchedTerms: hit.matchedTerms || [] }
     }

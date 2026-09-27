@@ -319,4 +319,13 @@ function isWriteTool(toolName) {
   return !!tool && tool.dangerLevel === 'write'
 }
 
-module.exports = { tools, isWriteTool }
+/** P9：动态工具注册口（MCP 等外部工具）——push 进同一共享数组：LLM 工具表、
+ * isWriteTool、pipeline 审批自动全部看到，任何调用方零改动。重名拒绝返回 false。 */
+function registerDynamicTool(tool) {
+  if (!tool || typeof tool.name !== 'string' || !tool.name) return false
+  if (tools.some((t) => t.name === tool.name)) return false
+  tools.push(tool)
+  return true
+}
+
+module.exports = { tools, isWriteTool, registerDynamicTool }

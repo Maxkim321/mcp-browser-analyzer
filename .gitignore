@@ -158,3 +158,9 @@ agent-server/data/
 
 # pnpm 本地缓存（曾误提交过，防止再犯）
 .pnpm-store/
+mcp-e2e-scope/
+
+# UI e2e 测试环境（Chrome for Testing 与临时 profile）
+.chrome-for-testing/
+.chrome-e2e-profile/
+.chrome-e2e-profile-cft/
