@@ -1,0 +1,114 @@
+{
+  "date": "2026-09-19T08:16:29.269Z",
+  "scenario": "shallow",
+  "router": {
+    "mode": "router",
+    "success": true,
+    "wallMs": 473805,
+    "llmCalls": 7,
+    "promptTokens": 4276,
+    "completionTokens": 8672,
+    "totalTokens": 12948,
+    "toolCalls": {
+      "web_search": 4,
+      "fetch_url": 4
+    },
+    "fetchedUrls": [
+      "https://fixture.local/mcp-overview",
+      "https://fixture.local/mcp-overview",
+      "https://fixture.local/mcp-tools",
+      "https://fixture.local/mcp-ecosystem"
+    ],
+    "topics": [
+      {
+        "question": "MCP（Model Context Protocol）的定义、核心概念和基本架构是什么？",
+        "sufficient": true,
+        "points": 5
+      },
+      {
+        "question": "MCP 的生态现状如何？包括主要参与者、典型应用场景和工具支持情况。",
+        "sufficient": true,
+        "points": 15
+      }
+    ],
+    "evidence": 20,
+    "sources": 4,
+    "reportChars": 2326,
+    "reportSnippet": "## 结论\n\nMCP（Model Context Protocol）是 Anthropic 于 2024 年 11 月发布的开放协议，旨在统一 LLM 应用与外部数据源、工具的连接。它基于 JSON-RPC 2.0，定义 tools、resources、prompts 三类原语，传输层支持 stdio 与 Streamable HTTP，设计哲学为“一次实现、处处可用”。生态方面，Anthropic、OpenAI、Google 已宣布支持，Cursor、VS Code、Claude Code 等主流 IDE 内置客户端，社区服务端超一万，已成 LLM 工具生态事实标准，但治理仍处早期，存在版本碎片化与工具投毒风险。\n\n## 分主题调研结果\n\n### 主题 1：MCP 的定义、核心概念和基本架构\n\n**要点：**\n- MCP 是 Anthropic 于 2024 年 11 月发布的开放协议。\n- 目标是统一 LLM 应用与外部数据源、工具的连接。\n- 基于 JSON-RPC 2.0，定义 tools、resources、prompts 三类原语。\n- 传输层支持 stdio 本地进程与 Streamable HTTP 远程服务。\n- 设计哲学为“一次实现、处处可用”，服务端实现一次即可复用。\n\n**信息充分度：充分。** 该主题覆盖了 MCP 的发布方、发布时间、协议基础、核心原语、",
+    "judge": null,
+    "routing": [
+      {
+        "type": "research_routed",
+        "topicIndex": 0,
+        "depth": "shallow",
+        "pipeline": "legacy"
+      },
+      {
+        "type": "research_routed",
+        "topicIndex": 1,
+        "depth": "shallow",
+        "pipeline": "legacy"
+      }
+    ]
+  },
+  "prevFixed": {
+    "legacy": {
+      "mode": "legacy",
+      "success": true,
+      "wallMs": 51795,
+      "llmCalls": 5,
+      "promptTokens": 1815,
+      "completionTokens": 3090,
+      "totalTokens": 4905,
+      "toolCalls": {
+        "web_search": 6,
+        "fetch_url": 4
+      },
+      "topics": [
+        {
+          "question": "MCP的定义、核心概念与架构设计是什么？",
+          "sufficient": true,
+          "points": 5
+        },
+        {
+          "question": "MCP的生态系统现状如何（包括主要参与者、工具、应用案例）？",
+          "sufficient": false,
+          "points": 10
+        }
+      ],
+      "evidence": 15,
+      "sources": 4,
+      "workerNodes": 0,
+      "reportChars": 2277
+    },
+    "subagent": {
+      "mode": "subagent",
+      "success": true,
+      "wallMs": 214058,
+      "llmCalls": 18,
+      "promptTokens": 29601,
+      "completionTokens": 9684,
+      "totalTokens": 39285,
+      "toolCalls": {
+        "web_search": 10,
+        "fetch_url": 18
+      },
+      "topics": [
+        {
+          "question": "MCP（Model Context Protocol）的定义与核心概念是什么？",
+          "sufficient": true,
+          "points": 6
+        },
+        {
+          "question": "MCP 的生态现状如何？包括主要参与者、工具、应用案例和发展趋势。",
+          "sufficient": false,
+          "points": 0
+        }
+      ],
+      "evidence": 6,
+      "sources": 3,
+      "workerNodes": 31,
+      "reportChars": 3174
+    }
+  }
+}

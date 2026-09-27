@@ -83,7 +83,7 @@ class LLMClient {
     )
 
     const body = this.buildBody(messages, tools, systemPrompt, false, cfg)
-    return this.provider.chat(cfg, body, signal, { tier: options.tier })
+    return this.provider.chat(cfg, body, signal, { tier: options.tier, agent: options.agent })
   }
 
   /**
@@ -107,7 +107,10 @@ class LLMClient {
     )
 
     const body = this.buildBody(messages, tools, systemPrompt, true, cfg)
-    return this.provider.chatStream(cfg, body, onToken, signal, { tier: options.tier })
+    return this.provider.chatStream(cfg, body, onToken, signal, {
+      tier: options.tier,
+      agent: options.agent,
+    })
   }
 
   /**

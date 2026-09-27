@@ -29,7 +29,7 @@ test('parseJSON: 解析被代码块包裹/带前后缀的 JSON', () => {
  * mock LLM：按 systemPrompt 分派
  * 注意顺序：RESEARCH_PLAN_PROMPT 也含"检索词"，必须先判"规划"
  */
-function createMockLLM({ plan, topics, report, queries = ['补充检索词'] }) {
+function createMockLLM({ plan, topics, report, queries = ['补充检索词'], verify = null }) {
   let topicCall = 0
   return {
     lastReportPrompt: '',
@@ -39,6 +39,10 @@ function createMockLLM({ plan, topics, report, queries = ['补充检索词'] }) 
       }
       if (systemPrompt.includes('检索词优化')) {
         return { role: 'assistant', content: JSON.stringify(queries) }
+      }
+      // 溯源校验提示词含"调研分析"字样时，先判"事实核查"再判"调研"（顺序敏感）
+      if (systemPrompt.includes('事实核查')) {
+        return { role: 'assistant', content: verify ? JSON.stringify(verify) : 'x' }
       }
       if (systemPrompt.includes('调研')) {
         const grade = topics[Math.min(topicCall, topics.length - 1)]
@@ -317,4 +321,40 @@ test('workflow: plan 解析失败时按单主题兜底继续（用原问题当�
   assert.strictEqual(result.state.plan.length, 1)
   assert.deepStrictEqual(result.state.plan[0].queries, ['无法拆解的问题？'])
   assert.strictEqual(calls[0].args.query, '无法拆解的问题？')
+})
+
+test('workflow: 报告后 verify 节点逐条校验溯源，未溯源断言显性降级', async () => {
+  const llm = createMockLLM({
+    plan: { subQuestions: [{ question: '主题一', queries: ['主题一 资料'] }] },
+    topics: [{ sufficient: true, points: ['MCP 是模型上下文协议'], gap: '' }],
+    report: '## 结论\nMCP 是模型上下文协议。此外它是 Google 开发的。',
+    verify: {
+      claims: [
+        { claim: 'MCP 是模型上下文协议。', supported: true, sourceIndex: 1 },
+        { claim: '此外它是 Google 开发的。', supported: false, reason: '无对应证据' },
+      ],
+    },
+  })
+  const { toolCaller } = createMockTools({
+    searchResults: [[{ title: '结果1', url: 'https://a.com/1' }]],
+    pages: ['MCP 页面正文'],
+  })
+
+  const wf = new ResearchWorkflow(llm, { toolCaller, checkpoint: false, hitl: false })
+  const progress = []
+  const result = await wf.start('某问题？', { onProgress: (p) => progress.push(p.message) })
+
+  assert.strictEqual(result.success, true)
+  assert.strictEqual(result.state.step, 'done')
+  // 证据要点已绑定来源
+  assert.strictEqual(result.state.evidence.length, 1)
+  assert.strictEqual(result.state.evidence[0].point, 'MCP 是模型上下文协议')
+  assert.ok(result.state.evidence[0].url.includes('a.com'))
+  // 报告末尾追加溯源校验，未溯源断言被显性标注为"推测性"
+  assert.ok(result.content.includes('溯源校验'))
+  assert.ok(result.content.includes('Google 开发的'))
+  assert.ok(result.content.includes('推测性'))
+  // 校验统计落进 State
+  assert.deepStrictEqual(result.state.verification, { total: 2, supported: 1, ungrounded: 1 })
+  assert.ok(progress.some((m) => m.includes('溯源校验完成')))
 })

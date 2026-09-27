@@ -5,6 +5,7 @@ require('dotenv').config()
 const config = require('./config/index.js')
 const { tools } = require('./tools/index.js')
 const { setUsageSink, setTraceSink } = require('./core/llm-providers.js')
+const { setEmbedUsageSink } = require('./memory/embedder.js')
 const usageLog = require('./core/usage-log.js')
 const usageTracker = require('./core/usage-tracker.js')
 const traceLog = require('./core/trace-log.js')
@@ -16,8 +17,34 @@ setUsageSink((info) => {
   usageTracker.record(info)
 })
 
+// P8：embedding 调用同样入账（tier=embedding），与 LLM 调用同一本台账
+setEmbedUsageSink((info) => {
+  usageLog.record({ ...info, completion_tokens: 0 })
+  usageTracker.record({ ...info, completion_tokens: 0 })
+})
+
 // 运行时可观测事件（重试/降级/压缩）落 trace-log，dashboard /api/trace 呈现
 setTraceSink((event) => traceLog.record(event))
+
+// P9：MCP server 接入（配置了 MCP_SERVERS 才启动）。异步注册不阻塞 WS 监听——
+// 注册完成的日志出现前 LLM 工具表里还没有 mcp_* 工具，属预期行为。
+const mcpRegistry = require('./tools/mcp-registry.js')
+if (config.mcp.servers.length > 0) {
+  Promise.allSettled(config.mcp.servers.map((s) => mcpRegistry.registerMcpServer(s))).then(
+    (results) => {
+      results.forEach((r, i) => {
+        const serverName = config.mcp.servers[i].name
+        if (r.status === 'fulfilled') {
+          console.log(`🔌 [MCP] server「${serverName}」已接入，纳管工具: ${r.value.registered.join(', ') || '(无)'}`)
+          if (r.value.rejected.length > 0)
+            console.warn(`🚫 [MCP] server「${serverName}」拒绝注册: ${JSON.stringify(r.value.rejected)}`)
+        } else {
+          console.warn(`❌ [MCP] server「${serverName}」接入失败: ${r.reason?.message}`)
+        }
+      })
+    }
+  )
+}
 
 /**
  * 启动前校验关键配置，缺失时快速失败并给出明确提示

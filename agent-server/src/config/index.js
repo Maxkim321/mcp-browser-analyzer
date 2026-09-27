@@ -36,6 +36,8 @@ const config = {
       'doubao-seed-2-0-pro-260215': { input: 4, output: 16 },
       // Kimi：思考型模型，reasoning token 计入 completion 计费——TODO 单价按 Moonshot 控制台核对修正
       'kimi-k2.7-code': { input: 4, output: 16 },
+      // P8 embedding：方舟 doubao-embedding-vision，按 input 计费——TODO 单价按方舟控制台核对修正
+      'doubao-embedding-vision': { input: 0.7, output: 0 },
     },
   },
 
@@ -59,6 +61,51 @@ const config = {
     writeDryRun: process.env.WRITE_DRY_RUN === 'on',
     // P4 写操作审批等待时长（毫秒），超时默认拒绝——授权语义下等不到授权=没有授权
     writeApprovalTimeout: Number(process.env.WRITE_APPROVAL_TIMEOUT || 120000),
+  },
+
+  // P6 深度研究管线路由（三态）：
+  // - legacy（默认）：全走旧管线（先搜后抓 + 逐页 grade），子 agent 不参与
+  // - subagent：全走子 agent（兼容旧 RESEARCH_SUBAGENT_MODE=on，保留为对照臂）
+  // - auto：按 plan 标注的 depth 分流（deep→worker 多跳，shallow→旧管线），
+  //   shallow 主题死胡同时升级一次 worker 兜底——标错只影响成本不影响正确性
+  research: {
+    routing:
+      process.env.RESEARCH_ROUTING ||
+      (process.env.RESEARCH_SUBAGENT_MODE === 'on' ? 'subagent' : 'legacy'),
+    workerMaxSteps: Number(process.env.RESEARCH_WORKER_MAX_STEPS || 6),
+  },
+
+  // P9 MCP 客户端接入：MCP_SERVERS 为 JSON 数组 [{"name","command","args","env?","shell?"}]，
+  // 例（Windows 本地文件系统 server）：[{"name":"fs","command":"npx","shell":true,
+  //   "args":["-y","@modelcontextprotocol/server-filesystem","D:/notes"]}]
+  // 接入即纳管：注册期注入扫描（tool poisoning 防线）→ dangerLevel 自动定级（默认最危险）
+  // → 走现有审批/超时/事件溯源管线。未配置 = 不启动，零开销。
+  mcp: {
+    servers: (() => {
+      try {
+        return JSON.parse(process.env.MCP_SERVERS || '[]')
+      } catch {
+        console.warn('[Config] MCP_SERVERS 不是合法 JSON，忽略')
+        return []
+      }
+    })(),
+  },
+
+  // P8 记忆混合检索：
+  // - retrieval：bm25（纯关键词，行为与 P3 完全一致）/ vector（纯语义，对照臂）/
+  //   hybrid（BM25 + 向量 RRF 融合）/ auto（默认：配了 EMBED_* 即 hybrid，否则 bm25，
+  //   未配置时行为零变化——回归安全）
+  // - rrfK：RRF 融合常数（文献常用 60，越大各通道越平均）；vectorPool：每路候选池深度
+  // - embed：神经向量化（OpenAI 兼容 /embeddings；方舟 doubao-embedding-vision 实测 2048 维）
+  memory: {
+    retrieval: process.env.MEMORY_RETRIEVAL || 'auto',
+    rrfK: 60,
+    vectorPool: 20,
+    embed: {
+      baseURL: process.env.EMBED_BASE_URL,
+      apiKey: process.env.EMBED_API_KEY,
+      model: process.env.EMBED_MODEL,
+    },
   },
 }
 

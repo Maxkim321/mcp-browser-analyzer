@@ -1,0 +1,103 @@
+{
+  "description": "P8 混合检索语义对抗集。构造原则：query 与期望卡片零词面重合（BM25 的 CJK 双字组必然失手），并混入词面重叠但语义无关的干扰卡（BM25 会主动排错卡）。期望卡片 = targets，干扰卡 = seed 里带 lexical-trap 注释的条目。判分只看期望 url 是否进 top-3（确定性，免 LLM）。",
+  "seed": [
+    {
+      "url": "https://eval.local/perf-first-paint",
+      "title": "首屏渲染卡顿排查实录",
+      "summary": "长列表没做虚拟滚动，主线程被长任务占满，滚动掉帧明显；图片没有懒加载，打开页面一次性拉全部资源。用 Performance 面板定位到三段长任务，拆分并延后非关键脚本后帧率恢复正常。"
+    },
+    {
+      "url": "https://eval.local/vue-reactive",
+      "title": "Vue 响应式原理学习笔记",
+      "summary": "依赖收集在 getter 里完成，setter 触发派发更新；组件级更新粒度配合 watcher 调度队列，nextTick 批量刷新视图。"
+    },
+    {
+      "url": "https://eval.local/h2-hol",
+      "title": "HTTP/2 Head-of-Line Blocking Deep Dive",
+      "summary": "TCP guarantees ordered delivery, so a single lost packet stalls every multiplexed stream until retransmission completes. QUIC solves this with independent per-stream acknowledgment."
+    },
+    {
+      "url": "https://eval.local/event-loop",
+      "title": "浏览器事件循环与微任务",
+      "summary": "宏任务队列每轮只取一个，微任务队列在该轮宏任务结束后立即清空；Promise.then 与 MutationObserver 都走微任务通道，setTimeout 是新一轮宏任务。"
+    },
+    {
+      "url": "https://eval.local/sentry",
+      "title": "Sentry 接入与全局异常捕获",
+      "summary": "window.onerror 与 unhandledrejection 双通道上报，sourcemap 还原压缩后的堆栈，面包屑记录操作路径，告警按项目聚合去重。"
+    },
+    {
+      "url": "https://eval.local/upload",
+      "title": "大文件分片上传方案",
+      "summary": "按 5MB 切片并行上传，文件级 MD5 做秒传判断，断点续传记录已传切片，失败切片单独重试不拖累整批。"
+    },
+    {
+      "url": "https://eval.local/css-contain",
+      "title": "CSS Containment Explained",
+      "summary": "The contain property isolates a subtree so layout and paint changes inside it never propagate outside. content-visibility skips rendering of off-screen sections entirely."
+    },
+    {
+      "url": "https://eval.local/idb-quota",
+      "title": "IndexedDB 容量配额踩坑",
+      "summary": "写入超限抛 QuotaExceededError，先按 LRU 淘汰最久未读的附件 blob，仍不够则提示手动清理，降级方案是内存缓存兜底。"
+    },
+    {
+      "url": "https://eval.local/ws-heartbeat",
+      "title": "WebSocket 心跳与重连实践",
+      "summary": "30 秒间隔 ping 保活，三次未收到 pong 判定假死；指数退避重连，重连成功后拉取离线期间的消息做补偿。"
+    },
+    {
+      "url": "https://eval.local/debounce",
+      "title": "防抖节流使用场景整理",
+      "summary": "联想输入用防抖，按钮防连点用节流；滚动监听必须节流，resize 用防抖加立即执行标记。"
+    },
+    {
+      "url": "https://eval.local/tokens",
+      "title": "Design Token 落地实践",
+      "summary": "把颜色字号间距收敛进 tokens.json，脚本生成多套风格包，运行时只切 CSS 变量，走查对不上先查 token 版本。"
+    },
+    {
+      "url": "https://eval.local/watermark",
+      "title": "前端水印防篡改记录",
+      "summary": "Canvas 画出半透明字样铺满容器，MutationObserver 盯住 DOM 改动，被删掉立即重绘恢复，配置驱动复用到编辑与发布两处。"
+    },
+    {
+      "url": "https://eval.local/seo-trap",
+      "title": "SEO 搜索引擎优化入门",
+      "summary": "tdk 三件套、外链建设、结构化数据标记，让爬虫更容易理解页面结构；内容质量仍是排序的根本。",
+      "lexical-trap": "命中 S1 的'优化/页面'词面但语义无关（营销向）"
+    },
+    {
+      "url": "https://eval.local/vmodel-trap",
+      "title": "表单双向绑定踩坑记",
+      "summary": "v-model 在原生控件与自定义组件上的差异，不可变数据流下受控与非受控的边界问题。",
+      "lexical-trap": "命中 S2 的'数据/绑定'词面但语义无关（表单向）"
+    },
+    {
+      "url": "https://eval.local/gameloop-trap",
+      "title": "游戏主循环 Game Loop 设计",
+      "summary": "requestAnimationFrame 驱动渲染循环，固定时间步长模拟物理，插值渲染避免画面抖动。",
+      "lexical-trap": "命中 S4 的 'loop' ASCII 词面但语义无关（游戏向）"
+    },
+    {
+      "url": "https://eval.local/monitor-trap",
+      "title": "前端监控指标体系搭建",
+      "summary": "FP/FCP/LCP 采集口径，PerformanceObserver 采样上报，大盘聚合与同环比告警。",
+      "lexical-trap": "命中 S5 的'前端/监控'词面但语义无关（指标向）"
+    }
+  ],
+  "cases": [
+    { "id": "S1-paraphrase", "kind": "paraphrase", "prompt": "有没有讲网页加载速度优化的文章", "expectedUrl": "https://eval.local/perf-first-paint" },
+    { "id": "S2-paraphrase", "kind": "paraphrase", "prompt": "讲框架数据双向绑定底层机制的是哪篇", "expectedUrl": "https://eval.local/vue-reactive" },
+    { "id": "S3-crosslang", "kind": "cross-lang", "prompt": "讲队头阻塞原理的那篇文章在哪", "expectedUrl": "https://eval.local/h2-hol" },
+    { "id": "S4-crosslang", "kind": "cross-lang", "prompt": "event loop microtask scheduling article", "expectedUrl": "https://eval.local/event-loop" },
+    { "id": "S5-intent", "kind": "intent", "prompt": "我之前看过一篇讲前端错误监控的页面", "expectedUrl": "https://eval.local/sentry" },
+    { "id": "S6-paraphrase", "kind": "paraphrase", "prompt": "超大附件传不上去怎么处理的笔记", "expectedUrl": "https://eval.local/upload" },
+    { "id": "S7-crosslang", "kind": "cross-lang", "prompt": "讲浏览器渲染隔离与跳过渲染的那篇英文笔记", "expectedUrl": "https://eval.local/css-contain" },
+    { "id": "S8-paraphrase", "kind": "paraphrase", "prompt": "浏览器存储空间不够了怎么办", "expectedUrl": "https://eval.local/idb-quota" },
+    { "id": "S9-paraphrase", "kind": "paraphrase", "prompt": "长连接掉线后自动恢复的那篇", "expectedUrl": "https://eval.local/ws-heartbeat" },
+    { "id": "S10-crosslang", "kind": "cross-lang", "prompt": "debounce throttle 适用场景对比", "expectedUrl": "https://eval.local/debounce" },
+    { "id": "S11-intent", "kind": "intent", "prompt": "上次那篇讲换肤方案的文章在哪", "expectedUrl": "https://eval.local/tokens" },
+    { "id": "S12-paraphrase", "kind": "paraphrase", "prompt": "用户删不掉的页面角标是怎么实现的", "expectedUrl": "https://eval.local/watermark" }
+  ]
+}

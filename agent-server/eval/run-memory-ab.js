@@ -26,11 +26,19 @@ const EMPTY_FILE = path.join(RESULTS_DIR, '.tmp-empty-memory.jsonl')
 
 function runArm(arm, memoryFile) {
   const out = path.join(RESULTS_DIR, `memory-ab-${arm}.json`)
+  // P8：向量库同样按臂隔离（on 臂的 auto 模式会写卡片向量，不隔离会污染真实库）
+  const vectorsFile = path.join(RESULTS_DIR, `.tmp-vectors-${arm}.jsonl`)
   const res = spawnSync(process.execPath, [path.join(EVAL_DIR, 'memory-arm.js'), `--out=${out}`], {
-    env: { ...process.env, MEMORY_ARM: arm, MEMORY_FILE: memoryFile },
+    env: {
+      ...process.env,
+      MEMORY_ARM: arm,
+      MEMORY_FILE: memoryFile,
+      MEMORY_VECTORS_FILE: vectorsFile,
+    },
     encoding: 'utf8',
     stdio: 'inherit',
   })
+  fs.rmSync(vectorsFile, { force: true })
   if (res.status !== 0) throw new Error(`${arm} 臂执行失败（exit ${res.status}）`)
   return JSON.parse(fs.readFileSync(out, 'utf8'))
 }

@@ -504,6 +504,15 @@
         </section>
 
         <section>
+          <h2>🧭 研究管线路由</h2>
+          <p class="desc">
+            深度研究的路由决策留痕（trace 聚合：plan 标注 depth 分流，shallow→旧管线 / deep→子 agent，死胡同升级兜底）
+          </p>
+          <div id="routing-info"></div>
+          <div id="routing-recent"></div>
+        </section>
+
+        <section>
           <h2>🛰 运行时观测事件</h2>
           <p class="desc">压缩/重试/降级真实发生时的留痕（data/trace-log.jsonl，最近 100 条）</p>
           <div class="trace-list" id="trace-list"></div>
@@ -801,6 +810,43 @@
         return { cls, label, detail }
       }
 
+      async function renderRouting() {
+        try {
+          const d = await getJSON('/api/routing')
+          const t = d.totals || {}
+          const total = (t.routedLegacy || 0) + (t.routedWorker || 0)
+          $('routing-info').innerHTML = total
+            ? `<div class="cards">
+          <div class="stat"><div class="v">${fmtInt(total)}</div><div class="k">路由决策</div></div>
+          <div class="stat"><div class="v">${fmtInt(t.routedLegacy || 0)}</div><div class="k">→ 旧管线</div></div>
+          <div class="stat"><div class="v">${fmtInt(t.routedWorker || 0)}</div><div class="k">→ 子 agent</div></div>
+          <div class="stat"><div class="v">${fmtInt(t.escalations || 0)}</div><div class="k">升级兜底</div></div>
+        </div>
+        <div class="note">deep ${fmtInt(t.depthDeep || 0)} / shallow ${fmtInt(t.depthShallow || 0)} · 升级救回 ${fmtInt(t.escalationsRescued || 0)}/${fmtInt(t.escalations || 0)} · 子 agent 运行 ${fmtInt(t.workerRuns || 0)} 次</div>`
+            : '<div class="empty">尚无路由记录：RESEARCH_ROUTING=auto 下发起一次深度研究后可见</div>'
+          $('routing-recent').innerHTML = (d.recent || [])
+            .slice(0, 12)
+            .map((e) => {
+              const detail =
+                e.type === 'research_routed'
+                  ? `topic#${esc(String(e.topicIndex ?? '-'))} depth=${esc(e.depth || '-')} → ${esc(e.pipeline || '-')}`
+                  : e.type === 'research_escalated'
+                    ? `topic#${esc(String(e.topicIndex ?? '-'))} 死胡同升级（gap: ${esc((e.gap || '').slice(0, 24))}）`
+                    : e.type === 'research_escalated_result'
+                      ? `topic#${esc(String(e.topicIndex ?? '-'))} 救回=${e.rescued === true ? '✓' : '✗'}`
+                      : e.type === 'research_worker_done'
+                        ? `topic#${esc(String(e.topicIndex ?? '-'))} ${e.sufficient ? '充分' : '不充分'} · ${fmtInt(e.points || 0)} 要点`
+                        : `topic#${esc(String(e.topicIndex ?? '-'))} 启动`
+              return `<div class="trace-item"><span class="t">${esc(
+                String(e.ts || '').replace('T', ' ').slice(5, 19)
+              )}</span><span><span class="pill">${esc(e.type.replace('research_', ''))}</span>${detail}</span></div>`
+            })
+            .join('')
+        } catch {
+          $('routing-info').innerHTML = '<div class="empty">/api/routing 读取失败</div>'
+        }
+      }
+
       async function renderTrace() {
         try {
           const d = await getJSON('/api/trace')
@@ -1092,6 +1138,7 @@
           renderCompression(),
           renderEval(),
           renderMemory(),
+          renderRouting(),
           renderTrace(),
         ])
       }

@@ -649,6 +649,11 @@ function setToolOverrides(map) {
   toolOverrides = map || {}
 }
 
+/** P9：动态工具处理器注册口（MCP 等外部工具的调用实现挂进来；定义在 tools/index.js） */
+function registerToolHandler(name, fn) {
+  if (typeof name === 'string' && name && typeof fn === 'function') toolHandlers[name] = fn
+}
+
 /**
  * 处理 MCP 工具调用
  * @param {string} name - 工具名称
@@ -775,5 +780,6 @@ module.exports = {
   handleToolCall,
   handlePluginResponse,
   setToolOverrides,
+  registerToolHandler,
   traceManager,
 }

@@ -27,6 +27,8 @@ function emitUsage(info) {
     usageSink({
       model: info.model,
       tier: info.tier || null,
+      // agent 归属标签（子 agent 分账）：主会话为 null，研究 worker 为 'research-worker'
+      agent: info.agent || null,
       prompt_tokens: info.usage.prompt_tokens ?? null,
       completion_tokens: info.usage.completion_tokens ?? null,
       duration_ms: info.durationMs ?? null,
@@ -140,6 +142,7 @@ const openaiCompatible = {
         emitUsage({
           model: cfg.model,
           tier: meta.tier,
+          agent: meta.agent,
           usage: data.usage,
           durationMs: Date.now() - t0,
         })
@@ -262,7 +265,7 @@ const openaiCompatible = {
         function: { name: tc.function.name, arguments: tc.function.arguments },
       }))
     }
-    emitUsage({ model: cfg.model, tier: meta.tier, usage, durationMs: Date.now() - t0 })
+    emitUsage({ model: cfg.model, tier: meta.tier, agent: meta.agent, usage, durationMs: Date.now() - t0 })
     return message
   },
 }

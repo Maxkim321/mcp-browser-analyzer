@@ -1,0 +1,592 @@
+{
+  "set": "semantic",
+  "ranAt": "2026-09-27T13:34:58.094Z",
+  "corpusSize": 16,
+  "modes": {
+    "bm25": {
+      "rows": [
+        {
+          "id": "S1-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 1,
+          "score": 5.476,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 2,
+          "topUrls": [
+            "perf-first-paint",
+            "seo-trap"
+          ]
+        },
+        {
+          "id": "S2-paraphrase",
+          "kind": "paraphrase",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 1,
+          "topUrls": [
+            "vmodel-trap",
+            "seo-trap"
+          ]
+        },
+        {
+          "id": "S3-crosslang",
+          "kind": "cross-lang",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 0,
+          "topUrls": [
+            "vue-reactive"
+          ]
+        },
+        {
+          "id": "S4-crosslang",
+          "kind": "cross-lang",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 0,
+          "topUrls": [
+            "gameloop-trap"
+          ]
+        },
+        {
+          "id": "S5-intent",
+          "kind": "intent",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 1,
+          "topUrls": [
+            "monitor-trap",
+            "vmodel-trap",
+            "seo-trap"
+          ]
+        },
+        {
+          "id": "S6-paraphrase",
+          "kind": "paraphrase",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 1,
+          "topUrls": [
+            "tokens",
+            "vue-reactive",
+            "idb-quota"
+          ]
+        },
+        {
+          "id": "S7-crosslang",
+          "kind": "cross-lang",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 0,
+          "topUrls": [
+            "event-loop",
+            "gameloop-trap",
+            "vue-reactive"
+          ]
+        },
+        {
+          "id": "S8-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 2,
+          "score": 3.453,
+          "channels": {
+            "bm25": 2,
+            "vector": null
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "event-loop",
+            "idb-quota"
+          ]
+        },
+        {
+          "id": "S9-paraphrase",
+          "kind": "paraphrase",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 1,
+          "topUrls": [
+            "watermark",
+            "perf-first-paint"
+          ]
+        },
+        {
+          "id": "S10-crosslang",
+          "kind": "cross-lang",
+          "hit": true,
+          "rank": 1,
+          "score": 7.017,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "debounce"
+          ]
+        },
+        {
+          "id": "S11-intent",
+          "kind": "intent",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 1,
+          "topUrls": [
+            "idb-quota",
+            "upload"
+          ]
+        },
+        {
+          "id": "S12-paraphrase",
+          "kind": "paraphrase",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 0,
+          "topUrls": [
+            "seo-trap",
+            "perf-first-paint"
+          ]
+        }
+      ],
+      "recallAt3": 0.25,
+      "recallAt1": 0.167,
+      "avgLatencyMs": 1
+    },
+    "vector": {
+      "rows": [
+        {
+          "id": "S1-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 1,
+          "score": 0.5388,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 223,
+          "topUrls": [
+            "perf-first-paint",
+            "seo-trap",
+            "monitor-trap"
+          ]
+        },
+        {
+          "id": "S2-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 2,
+          "score": 0.5149,
+          "channels": {
+            "bm25": null,
+            "vector": 2
+          },
+          "latencyMs": 160,
+          "topUrls": [
+            "vmodel-trap",
+            "vue-reactive",
+            "event-loop"
+          ]
+        },
+        {
+          "id": "S3-crosslang",
+          "kind": "cross-lang",
+          "hit": true,
+          "rank": 1,
+          "score": 0.5321,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 181,
+          "topUrls": [
+            "h2-hol",
+            "perf-first-paint",
+            "vue-reactive"
+          ]
+        },
+        {
+          "id": "S4-crosslang",
+          "kind": "cross-lang",
+          "hit": true,
+          "rank": 1,
+          "score": 0.6552,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 141,
+          "topUrls": [
+            "event-loop",
+            "css-contain",
+            "h2-hol"
+          ]
+        },
+        {
+          "id": "S5-intent",
+          "kind": "intent",
+          "hit": true,
+          "rank": 2,
+          "score": 0.5782,
+          "channels": {
+            "bm25": null,
+            "vector": 2
+          },
+          "latencyMs": 177,
+          "topUrls": [
+            "monitor-trap",
+            "sentry",
+            "watermark"
+          ]
+        },
+        {
+          "id": "S6-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 1,
+          "score": 0.5401,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 152,
+          "topUrls": [
+            "upload",
+            "idb-quota",
+            "vmodel-trap"
+          ]
+        },
+        {
+          "id": "S7-crosslang",
+          "kind": "cross-lang",
+          "hit": true,
+          "rank": 1,
+          "score": 0.6259,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 177,
+          "topUrls": [
+            "css-contain",
+            "perf-first-paint",
+            "event-loop"
+          ]
+        },
+        {
+          "id": "S8-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 1,
+          "score": 0.5111,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 123,
+          "topUrls": [
+            "idb-quota",
+            "event-loop",
+            "upload"
+          ]
+        },
+        {
+          "id": "S9-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 1,
+          "score": 0.6324,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 121,
+          "topUrls": [
+            "ws-heartbeat",
+            "upload",
+            "h2-hol"
+          ]
+        },
+        {
+          "id": "S10-crosslang",
+          "kind": "cross-lang",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7684,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 192,
+          "topUrls": [
+            "debounce",
+            "vmodel-trap",
+            "ws-heartbeat"
+          ]
+        },
+        {
+          "id": "S11-intent",
+          "kind": "intent",
+          "hit": true,
+          "rank": 1,
+          "score": 0.4346,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 170,
+          "topUrls": [
+            "tokens",
+            "css-contain",
+            "vmodel-trap"
+          ]
+        },
+        {
+          "id": "S12-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 1,
+          "score": 0.4999,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 399,
+          "topUrls": [
+            "watermark",
+            "vmodel-trap",
+            "idb-quota"
+          ]
+        }
+      ],
+      "recallAt3": 1,
+      "recallAt1": 0.833,
+      "avgLatencyMs": 185
+    },
+    "hybrid": {
+      "rows": [
+        {
+          "id": "S1-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 2,
+          "topUrls": [
+            "perf-first-paint",
+            "seo-trap",
+            "monitor-trap"
+          ]
+        },
+        {
+          "id": "S2-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 3,
+          "score": 0.0161,
+          "channels": {
+            "bm25": null,
+            "vector": 2
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "vmodel-trap",
+            "seo-trap",
+            "vue-reactive"
+          ]
+        },
+        {
+          "id": "S3-crosslang",
+          "kind": "cross-lang",
+          "hit": true,
+          "rank": 2,
+          "score": 0.0164,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "vue-reactive",
+            "h2-hol",
+            "perf-first-paint"
+          ]
+        },
+        {
+          "id": "S4-crosslang",
+          "kind": "cross-lang",
+          "hit": true,
+          "rank": 2,
+          "score": 0.0164,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 2,
+          "topUrls": [
+            "gameloop-trap",
+            "event-loop",
+            "css-contain"
+          ]
+        },
+        {
+          "id": "S5-intent",
+          "kind": "intent",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 2,
+          "topUrls": [
+            "monitor-trap",
+            "watermark",
+            "vmodel-trap"
+          ]
+        },
+        {
+          "id": "S6-paraphrase",
+          "kind": "paraphrase",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 3,
+          "topUrls": [
+            "idb-quota",
+            "vue-reactive",
+            "tokens"
+          ]
+        },
+        {
+          "id": "S7-crosslang",
+          "kind": "cross-lang",
+          "hit": false,
+          "rank": null,
+          "score": null,
+          "channels": null,
+          "latencyMs": 3,
+          "topUrls": [
+            "event-loop",
+            "perf-first-paint",
+            "gameloop-trap"
+          ]
+        },
+        {
+          "id": "S8-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 2,
+          "score": 0.0325,
+          "channels": {
+            "bm25": 2,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "event-loop",
+            "idb-quota",
+            "upload"
+          ]
+        },
+        {
+          "id": "S9-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 3,
+          "score": 0.0164,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 2,
+          "topUrls": [
+            "perf-first-paint",
+            "watermark",
+            "ws-heartbeat"
+          ]
+        },
+        {
+          "id": "S10-crosslang",
+          "kind": "cross-lang",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 2,
+          "topUrls": [
+            "debounce",
+            "vmodel-trap",
+            "ws-heartbeat"
+          ]
+        },
+        {
+          "id": "S11-intent",
+          "kind": "intent",
+          "hit": true,
+          "rank": 3,
+          "score": 0.0164,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 2,
+          "topUrls": [
+            "upload",
+            "idb-quota",
+            "tokens"
+          ]
+        },
+        {
+          "id": "S12-paraphrase",
+          "kind": "paraphrase",
+          "hit": true,
+          "rank": 3,
+          "score": 0.0164,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 2,
+          "topUrls": [
+            "perf-first-paint",
+            "seo-trap",
+            "watermark"
+          ]
+        }
+      ],
+      "recallAt3": 0.75,
+      "recallAt1": 0.167,
+      "avgLatencyMs": 2
+    }
+  }
+}

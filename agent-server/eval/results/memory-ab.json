@@ -1,9 +1,9 @@
 {
-  "ranAt": "2026-09-12T09:24:00.321Z",
-  "total": 3,
+  "ranAt": "2026-09-27T13:37:08.912Z",
+  "total": 12,
   "recallAt3": 1,
   "withMemory": {
-    "pass": 3,
+    "pass": 12,
     "rate": 1
   },
   "withoutMemory": {
@@ -15,7 +15,7 @@
     {
       "id": "memory-bm25-01",
       "recallHit": true,
-      "recallScore": 17.589,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "bm25",
         "k1",
@@ -30,7 +30,7 @@
     {
       "id": "memory-release-02",
       "recallHit": true,
-      "recallScore": 21.531,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "发布",
         "布流",
@@ -45,7 +45,7 @@
     {
       "id": "memory-dbpool-03",
       "recallHit": true,
-      "recallScore": 14.759,
+      "recallScore": 0.0164,
       "matchedTerms": [
         "数据",
         "据库",
@@ -53,6 +53,141 @@
         "运维",
         "维记",
         "记录"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-cache-04",
+      "recallHit": true,
+      "recallScore": 0.0164,
+      "matchedTerms": [
+        "ttl",
+        "内部",
+        "缓存",
+        "存方",
+        "方案",
+        "案调"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-ratelimit-05",
+      "recallHit": true,
+      "recallScore": 0.0164,
+      "matchedTerms": [
+        "qps",
+        "服务",
+        "务治",
+        "治理",
+        "核心",
+        "心接"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-mq-06",
+      "recallHit": true,
+      "recallScore": 0.0164,
+      "matchedTerms": [
+        "消息",
+        "息队",
+        "队列",
+        "运维",
+        "维记",
+        "记录"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-monitoring-07",
+      "recallHit": true,
+      "recallScore": 0.0164,
+      "matchedTerms": [
+        "p99",
+        "监控",
+        "控告",
+        "告警",
+        "配置",
+        "接口"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-auth-08",
+      "recallHit": true,
+      "recallScore": 0.0164,
+      "matchedTerms": [
+        "鉴权",
+        "记录",
+        "访问",
+        "问令",
+        "令牌",
+        "有效"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-loadtest-09",
+      "recallHit": true,
+      "recallScore": 0.0164,
+      "matchedTerms": [
+        "qps",
+        "压测",
+        "接口",
+        "目标",
+        "定在",
+        "容量"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-log-10",
+      "recallHit": true,
+      "recallScore": 0.0164,
+      "matchedTerms": [
+        "日志",
+        "记录",
+        "访问",
+        "问日",
+        "志保",
+        "保留"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-payment-11",
+      "recallHit": true,
+      "recallScore": 0.0164,
+      "matchedTerms": [
+        "支付",
+        "付对",
+        "对账",
+        "账差",
+        "差异",
+        "异超"
+      ],
+      "withMemory": true,
+      "withoutMemory": false
+    },
+    {
+      "id": "memory-backup-12",
+      "recallHit": true,
+      "recallScore": 0.0164,
+      "matchedTerms": [
+        "数据",
+        "据备",
+        "备份",
+        "记录",
+        "增量",
+        "量备"
       ],
       "withMemory": true,
       "withoutMemory": false

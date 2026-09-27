@@ -1,0 +1,640 @@
+{
+  "set": "regression",
+  "ranAt": "2026-09-27T13:34:54.606Z",
+  "corpusSize": 12,
+  "modes": {
+    "bm25": {
+      "rows": [
+        {
+          "id": "memory-bm25-01",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 31.009,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/bm25-tuning.html",
+            "file://eval/cards/db-pool.html",
+            "file://eval/cards/rate-limit.html"
+          ]
+        },
+        {
+          "id": "memory-release-02",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 34.92,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/release-process.html",
+            "file://eval/cards/load-test.html",
+            "file://eval/cards/rate-limit.html"
+          ]
+        },
+        {
+          "id": "memory-dbpool-03",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 26.417,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/db-pool.html",
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/bm25-tuning.html"
+          ]
+        },
+        {
+          "id": "memory-cache-04",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 40.462,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "file://eval/cards/cache-tuning.html",
+            "file://eval/cards/bm25-tuning.html",
+            "file://eval/cards/backup-policy.html"
+          ]
+        },
+        {
+          "id": "memory-ratelimit-05",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 43.517,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/rate-limit.html",
+            "file://eval/cards/load-test.html",
+            "file://eval/cards/release-process.html"
+          ]
+        },
+        {
+          "id": "memory-mq-06",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 48.424,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/db-pool.html",
+            "file://eval/cards/backup-policy.html"
+          ]
+        },
+        {
+          "id": "memory-monitoring-07",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 41.965,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/monitoring-alert.html",
+            "file://eval/cards/release-process.html",
+            "file://eval/cards/db-pool.html"
+          ]
+        },
+        {
+          "id": "memory-auth-08",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 28.155,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "file://eval/cards/auth-token.html",
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/db-pool.html"
+          ]
+        },
+        {
+          "id": "memory-loadtest-09",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 30.006,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/load-test.html",
+            "file://eval/cards/rate-limit.html",
+            "file://eval/cards/release-process.html"
+          ]
+        },
+        {
+          "id": "memory-log-10",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 23.835,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/auth-token.html",
+            "file://eval/cards/backup-policy.html"
+          ]
+        },
+        {
+          "id": "memory-payment-11",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 47.855,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "file://eval/cards/payment-reconcile.html",
+            "file://eval/cards/release-process.html",
+            "file://eval/cards/load-test.html"
+          ]
+        },
+        {
+          "id": "memory-backup-12",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 27.615,
+          "channels": {
+            "bm25": 1,
+            "vector": null
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/backup-policy.html",
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/mq-ops.html"
+          ]
+        }
+      ],
+      "recallAt3": 1,
+      "recallAt1": 1,
+      "avgLatencyMs": 1
+    },
+    "vector": {
+      "rows": [
+        {
+          "id": "memory-bm25-01",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7954,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 151,
+          "topUrls": [
+            "file://eval/cards/bm25-tuning.html",
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/cache-tuning.html"
+          ]
+        },
+        {
+          "id": "memory-release-02",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7906,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 207,
+          "topUrls": [
+            "file://eval/cards/release-process.html",
+            "file://eval/cards/monitoring-alert.html",
+            "file://eval/cards/load-test.html"
+          ]
+        },
+        {
+          "id": "memory-dbpool-03",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7561,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 178,
+          "topUrls": [
+            "file://eval/cards/db-pool.html",
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/load-test.html"
+          ]
+        },
+        {
+          "id": "memory-cache-04",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7879,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 149,
+          "topUrls": [
+            "file://eval/cards/cache-tuning.html",
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/load-test.html"
+          ]
+        },
+        {
+          "id": "memory-ratelimit-05",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7897,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 294,
+          "topUrls": [
+            "file://eval/cards/rate-limit.html",
+            "file://eval/cards/load-test.html",
+            "file://eval/cards/monitoring-alert.html"
+          ]
+        },
+        {
+          "id": "memory-mq-06",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7715,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 164,
+          "topUrls": [
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/backup-policy.html"
+          ]
+        },
+        {
+          "id": "memory-monitoring-07",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.8043,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 187,
+          "topUrls": [
+            "file://eval/cards/monitoring-alert.html",
+            "file://eval/cards/db-pool.html",
+            "file://eval/cards/log-retention.html"
+          ]
+        },
+        {
+          "id": "memory-auth-08",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7403,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 182,
+          "topUrls": [
+            "file://eval/cards/auth-token.html",
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/cache-tuning.html"
+          ]
+        },
+        {
+          "id": "memory-loadtest-09",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7892,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 171,
+          "topUrls": [
+            "file://eval/cards/load-test.html",
+            "file://eval/cards/rate-limit.html",
+            "file://eval/cards/monitoring-alert.html"
+          ]
+        },
+        {
+          "id": "memory-log-10",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7735,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 195,
+          "topUrls": [
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/backup-policy.html",
+            "file://eval/cards/auth-token.html"
+          ]
+        },
+        {
+          "id": "memory-payment-11",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.8118,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 183,
+          "topUrls": [
+            "file://eval/cards/payment-reconcile.html",
+            "file://eval/cards/release-process.html",
+            "file://eval/cards/monitoring-alert.html"
+          ]
+        },
+        {
+          "id": "memory-backup-12",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.7775,
+          "channels": {
+            "bm25": null,
+            "vector": 1
+          },
+          "latencyMs": 192,
+          "topUrls": [
+            "file://eval/cards/backup-policy.html",
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/db-pool.html"
+          ]
+        }
+      ],
+      "recallAt3": 1,
+      "recallAt1": 1,
+      "avgLatencyMs": 188
+    },
+    "hybrid": {
+      "rows": [
+        {
+          "id": "memory-bm25-01",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/bm25-tuning.html",
+            "file://eval/cards/db-pool.html",
+            "file://eval/cards/load-test.html"
+          ]
+        },
+        {
+          "id": "memory-release-02",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/release-process.html",
+            "file://eval/cards/load-test.html",
+            "file://eval/cards/monitoring-alert.html"
+          ]
+        },
+        {
+          "id": "memory-dbpool-03",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/db-pool.html",
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/backup-policy.html"
+          ]
+        },
+        {
+          "id": "memory-cache-04",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "file://eval/cards/cache-tuning.html",
+            "file://eval/cards/bm25-tuning.html",
+            "file://eval/cards/db-pool.html"
+          ]
+        },
+        {
+          "id": "memory-ratelimit-05",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/rate-limit.html",
+            "file://eval/cards/load-test.html",
+            "file://eval/cards/release-process.html"
+          ]
+        },
+        {
+          "id": "memory-mq-06",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/backup-policy.html"
+          ]
+        },
+        {
+          "id": "memory-monitoring-07",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/monitoring-alert.html",
+            "file://eval/cards/db-pool.html",
+            "file://eval/cards/rate-limit.html"
+          ]
+        },
+        {
+          "id": "memory-auth-08",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "file://eval/cards/auth-token.html",
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/backup-policy.html"
+          ]
+        },
+        {
+          "id": "memory-loadtest-09",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/load-test.html",
+            "file://eval/cards/rate-limit.html",
+            "file://eval/cards/monitoring-alert.html"
+          ]
+        },
+        {
+          "id": "memory-log-10",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 0,
+          "topUrls": [
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/auth-token.html",
+            "file://eval/cards/backup-policy.html"
+          ]
+        },
+        {
+          "id": "memory-payment-11",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/payment-reconcile.html",
+            "file://eval/cards/release-process.html",
+            "file://eval/cards/monitoring-alert.html"
+          ]
+        },
+        {
+          "id": "memory-backup-12",
+          "kind": "keyword",
+          "hit": true,
+          "rank": 1,
+          "score": 0.0328,
+          "channels": {
+            "bm25": 1,
+            "vector": 1
+          },
+          "latencyMs": 1,
+          "topUrls": [
+            "file://eval/cards/backup-policy.html",
+            "file://eval/cards/log-retention.html",
+            "file://eval/cards/mq-ops.html"
+          ]
+        }
+      ],
+      "recallAt3": 1,
+      "recallAt1": 1,
+      "avgLatencyMs": 1
+    }
+  }
+}

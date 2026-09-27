@@ -37,9 +37,10 @@ const pendingWriteApprovals = new Map()
  * @param {string} toolName - 写工具名
  * @param {object} args - 工具参数（审批卡片展示 selector/value）
  * @param {AbortSignal} [signal] - 取消信号
+ * @param {Array} [taint] - P7 注入染色证据（本轮检出的可疑来源，卡片据此亮警告）
  * @returns {Promise<{approved:boolean,note?:string,timeout?:boolean}>}
  */
-function requestWriteApproval(id, toolName, args, signal) {
+function requestWriteApproval(id, toolName, args, signal, taint = []) {
   return new Promise((resolve) => {
     const approvalId = uuidv4()
     const settle = (result) => {
@@ -60,6 +61,7 @@ function requestWriteApproval(id, toolName, args, signal) {
       requestId: approvalId,
       tool: toolName,
       args,
+      taint: Array.isArray(taint) ? taint : [],
     })
     // 连接不可用：没有审批人，直接拒绝（不留 120s 空等）
     if (!sent) settle({ approved: false, note: '侧边栏连接不可用，无法请求审批' })
@@ -382,9 +384,10 @@ async function handleMessage(id, msg, agent) {
           systemPrompt = appendPrefs(systemPrompt, msg.prefs)
         }
         // P3 浏览记忆：提问时检索相关旧卡片注入上下文（固定动作不注入，避免破坏结构化模板）
+        // P8：recallForPrompt 改为 async（混合检索需查询向量化）
         let memoryRefs = []
         if (!msg.action && MEMORY_ENABLED) {
-          const recalled = memoryWire.recallForPrompt(msg.prompt, msg.pageContext)
+          const recalled = await memoryWire.recallForPrompt(msg.prompt, msg.pageContext)
           if (recalled) {
             systemPrompt = `${systemPrompt}\n\n${recalled.block}`
             memoryRefs = recalled.refs
@@ -399,8 +402,8 @@ async function handleMessage(id, msg, agent) {
         // P4 分级权限：为本次任务构造写操作审批闭包
         // （读操作零打断；写操作逐次审批；预算/dry-run/审计口径见 approval.js）
         const permissionCheck = createPermissionCheck({
-          requestApproval: ({ toolName, args }) =>
-            requestWriteApproval(id, toolName, args, controller.signal),
+          requestApproval: ({ toolName, args, taint }) =>
+            requestWriteApproval(id, toolName, args, controller.signal, taint),
           writeBudget: config.agent.maxWriteActions,
           dryRun: config.agent.writeDryRun,
           sessionId,
@@ -535,6 +538,9 @@ async function runResearch(id, question, llmOverride = {}) {
     maxTopics: 3,
     maxPagesPerTopic: 3,
     maxAttempts: 2,
+    // P6 管线路由（RESEARCH_ROUTING=legacy/subagent/auto）：auto 按 plan 的 depth 标注分流
+    routingMode: config.research.routing,
+    workerMaxSteps: config.research.workerMaxSteps,
   })
   activeWorkflows.set(id, workflow)
 

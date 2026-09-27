@@ -1,3 +1,12 @@
 {"url":"file://eval/cards/bm25-tuning.html","title":"检索服务调参记录（内部）","summary":"团队内部调参结论：搜索相关性不理想，对 BM25 参数做了网格搜索。最终线上配置 k1 调到 1.2（默认 1.5 偏重词频），b 调到 0.6（默认 0.75，长文档惩罚过强）。调整后人工评估相关性提升约 12%。注意这不是教科书默认值，是我们自己的数据集上试出来的。"}
 {"url":"file://eval/cards/release-process.html","title":"发布流程 v3 笔记（内部）","summary":"滚动发布窗口固定在每周三凌晨 2 点到 4 点（避开周二大促复盘会）。自动回滚阈值：5 分钟内错误率超过 3% 即触发回滚，由值守机器人执行。灰度批次 5% → 25% → 100%，每批观察 15 分钟。"}
 {"url":"file://eval/cards/db-pool.html","title":"数据库运维记录（内部）","summary":"订单库连接数告警频繁，max_connections 从 100 调到 350，同时引入 pgbouncer 做连接池复用（transaction 模式）。慢查询超时阈值设为 800ms，超过即记录并告警。变更当晚连接等待队列清零。"}
+{"url":"file://eval/cards/cache-tuning.html","title":"缓存方案调优记录（内部）","summary":"热点数据 TTL 定为 45 秒（默认 3600 秒），淘汰策略从 volatile-lru 改为 allkeys-lfu，并加布隆过滤器拦截缓存穿透。"}
+{"url":"file://eval/cards/rate-limit.html","title":"服务治理限流熔断配置（内部）","summary":"核心接口限流阈值 800 QPS（网关默认 5000），熔断失败率阈值 12%，半开探测窗口 30 秒，触发后冷却 60 秒。"}
+{"url":"file://eval/cards/mq-ops.html","title":"消息队列运维记录（内部）","summary":"消费失败最多重试 9 次（官方默认 16 次），退避从固定 2 秒改为指数退避，死信消息保留 72 小时后归档冷存储。"}
+{"url":"file://eval/cards/monitoring-alert.html","title":"监控告警阈值配置（内部）","summary":"接口 P99 延迟超过 420 毫秒触发告警，错误率告警阈值 0.5%，需连续 3 个周期命中才通知。"}
+{"url":"file://eval/cards/auth-token.html","title":"鉴权令牌策略记录（内部）","summary":"访问令牌有效期 15 分钟（默认 60 分钟），刷新令牌 7 天，采用双令牌轮换机制。"}
+{"url":"file://eval/cards/load-test.html","title":"压测目标与容量记录（内部）","summary":"接口目标 QPS 定在 2400，容量水位线 65%，超过即触发自动扩容。"}
+{"url":"file://eval/cards/log-retention.html","title":"日志保留策略记录（内部）","summary":"访问日志保留 30 天（默认 90 天），错误日志保留 180 天，均归档到冷存储。"}
+{"url":"file://eval/cards/payment-reconcile.html","title":"支付对账规则记录（内部）","summary":"对账差异超过 5 元触发人工介入，对账批次每天凌晨 3 点运行，超时阈值 45 分钟。"}
+{"url":"file://eval/cards/backup-policy.html","title":"数据备份策略记录（内部）","summary":"全量备份每天一次，增量备份每 6 小时一次，备份保留 14 份（默认 7 份）。"}

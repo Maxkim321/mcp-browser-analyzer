@@ -1,6 +1,6 @@
 {
   "arm": "off",
-  "ranAt": "2026-09-12T09:24:00.298Z",
+  "ranAt": "2026-09-27T13:37:08.894Z",
   "results": [
     {
       "id": "memory-bm25-01",
@@ -10,7 +10,147 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2582,
+      "durationMs": 1868,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "505/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": false,
+          "detail": "缺失: 1.2、0.6"
+        }
+      ],
+      "contentPreview": "我无法回答这个问题。\n\n原因有两点：\n\n1. **我无法访问你们的团队内部文档。** 我只能读取当前浏览器页面内容（`get_page_content`）、抓取公开 URL（`fetch_url`）或用搜索引擎检索公开网页（`web_search`）。内部知识库、私有 Wiki、内网文档都不在我的可访问范围内。\n\n2. **当前页面也不相关。** 当前激活标签页是《2026 主流 AI 编程助手订"
+    },
+    {
+      "id": "memory-release-02",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 2294,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "513/800"
+        },
+        {
+          "name": "regex",
+          "passed": false,
+          "detail": "未匹配: 周[三三]、3\\s*%"
+        }
+      ],
+      "contentPreview": "我查不到你要的信息，需要说明一下原因：\n\n**当前页面内容与你的问题无关。** 当前标签页是《2026 主流 AI 编程助手订阅方案对比》（`file://eval/pages/coding-assistant-compare.html`），正文只有一句占位内容：\n\n> (fixture 页面正文：与记忆问题无关)\n\n里面**没有**任何关于发布流程、滚动发布窗口、自动回滚错误率阈值的内容。你问的"
+    },
+    {
+      "id": "memory-dbpool-03",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 3293,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "678/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": false,
+          "detail": "缺失: 350、pgbouncer"
+        }
+      ],
+      "contentPreview": "当前页面里找不到这篇内容，我需要先说明一下情况。\n\n## 结论：当前页面没有这篇数据库运维记录\n\n我刚读取了当前激活标签页的正文，结果是：\n\n| 项目 | 内容 |\n|---|---|\n| 页面标题 | 2026 主流 AI 编程助手订阅方案对比 |\n| 页面地址 | file://eval/pages/coding-assistant-compare.html |\n| 正文内容 | （fixtu"
+    },
+    {
+      "id": "memory-cache-04",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 1549,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "364/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": false,
+          "detail": "缺失: 45、allkeys-lfu"
+        }
+      ],
+      "contentPreview": "我无法回答这个问题——这个信息不在当前页面里，也不在我的对话记忆中。\n\n当前页面是《2026 主流 AI 编程助手订阅方案对比》，内容与缓存方案无关；而\"团队内部的缓存方案调优记录\"属于你本地/内部资料，我这边既没有这份文档，也没有你之前阅读它的记录（跨会话不保留记忆）。\n\n如果你希望我帮你查，可以这样做：\n\n1. **把那份文档的链接或内容发给我**（或告诉我它在哪个内部系统/页面上），我读取后"
+    },
+    {
+      "id": "memory-ratelimit-05",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 2768,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "514/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": false,
+          "detail": "缺失: 800、12%"
+        }
+      ],
+      "contentPreview": "我查了一下，需要先说明一个情况：\n\n**当前页面并不是你的服务治理笔记。**\n\n- 当前激活标签页：`file://eval/pages/coding-assistant-compare.html`\n- 页面标题：**「2026 主流 AI 编程助手订阅方案对比」**\n- 正文内容：与「服务治理」无关（内容为空占位）\n\n所以这个页面上**没有**任何限流阈值、熔断失败率的信息，我无法从中提取到你问"
+    },
+    {
+      "id": "memory-mq-06",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 2472,
       "checks": [
         {
           "name": "success",
@@ -23,22 +163,22 @@
           "detail": "484/800"
         },
         {
-          "name": "must_mention",
+          "name": "regex",
           "passed": false,
-          "detail": "缺失: 0.6"
+          "detail": "未匹配: 9\\s*次"
         }
       ],
-      "contentPreview": "抱歉，这个我帮不上忙。\n\n当前浏览器里打开的页面是《2026 主流 AI 编程助手订阅方案对比》，内容与检索服务调参无关。我作为浏览器 AI 助手，只能读取和分析**当前页面（或你能提供链接的页面）**的内容，无法访问你的个人记忆、历史阅读记录或团队内部文档。\n\n具体来说：\n\n- 我拿不到你\"之前读过\"的那篇内部检索服务调参记录——它不在当前页面，也不在我可访问的范围内。\n- 而且我本身不会保留跨"
+      "contentPreview": "我查了当前页面，但**页面上没有你要的信息**。\n\n**当前页面情况：**\n- 标题：2026 主流 AI 编程助手订阅方案对比\n- 正文内容：`(fixture 页面正文：与记忆问题无关)`\n- 字符数：仅 30 字符\n\n这是一个关于 AI 编程助手订阅方案对比的页面，正文里**完全没有提到消息队列、消费重试次数或死信消息保留时间**这类运维记录内容。\n\n**关于你的问题：**\n- 消费失败最多"
     },
     {
-      "id": "memory-release-02",
+      "id": "memory-monitoring-07",
       "passed": false,
       "recall": {
         "hit": false,
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2919,
+      "durationMs": 2293,
       "checks": [
         {
           "name": "success",
@@ -48,25 +188,53 @@
         {
           "name": "max_chars",
           "passed": true,
-          "detail": "503/800"
+          "detail": "357/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": false,
+          "detail": "缺失: 420、0.5%"
+        }
+      ],
+      "contentPreview": "抱歉，我无法回答这个问题。\n\n**原因说明：**\n\n1. **当前页面内容与问题无关**：当前激活标签页是《2026 主流 AI 编程助手订阅方案对比》，正文内容与「监控告警配置」没有任何关系，页面里不存在 P99 延迟阈值或错误率阈值的记录。\n\n2. **我没有相关记忆**：我没有你的监控告警配置记录，也无法访问历史会话中可能提到过的这类私有配置信息。\n\n**建议的下一步：**\n\n- 如果你确实"
+    },
+    {
+      "id": "memory-auth-08",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 2567,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "498/800"
         },
         {
           "name": "regex",
           "passed": false,
-          "detail": "未匹配: 周[三三]、3\\s*%"
+          "detail": "未匹配: 15\\s*分钟、7\\s*天"
         }
       ],
-      "contentPreview": "I checked the current page, but it doesn't contain your team's release-process notes.\n\n**当前页面内容：**\n- 标题：《2026 主流 AI 编程助手订阅方案对比》\n- 正文只有一句占位内容（\"fixture 页面正文：与记忆问题无关\"），charCount 仅 30 字符\n\n也就是说，这个标签页是一份 AI"
+      "contentPreview": "我查了当前页面，但没能回答你的问题。\n\n**当前页面情况：**\n- 标题：2026 主流 AI 编程助手订阅方案对比\n- 正文内容：`(fixture 页面正文：与记忆问题无关)`，实际正文只有 30 个字符\n\n这个页面是**订阅方案对比**内容，里面**不包含任何鉴权模块、访问令牌（access token）或刷新令牌（refresh token）有效期**的信息。所以关于\"访问令牌有效期多久、"
     },
     {
-      "id": "memory-dbpool-03",
+      "id": "memory-loadtest-09",
       "passed": false,
       "recall": {
         "hit": false,
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 3137,
+      "durationMs": 2048,
       "checks": [
         {
           "name": "success",
@@ -76,15 +244,99 @@
         {
           "name": "max_chars",
           "passed": true,
-          "detail": "565/800"
+          "detail": "342/800"
         },
         {
           "name": "must_mention",
           "passed": false,
-          "detail": "缺失: 350、pgbouncer"
+          "detail": "缺失: 2400、65%"
         }
       ],
-      "contentPreview": "我读完了当前页面的正文，需要先跟你说清楚一个问题：**当前这个页面里没有你说的那篇数据库运维记录。**\n\n目前激活标签页的内容是：\n\n| 项目 | 内容 |\n|---|---|\n| 页面标题 | 2026 主流 AI 编程助手订阅方案对比 |\n| 页面地址 | file://eval/pages/coding-assistant-compare.html |\n| 正文长度 | 仅 30 字符（正文"
+      "contentPreview": "当前页面是一份《2026 主流 AI 编程助手订阅方案对比》，正文里只有占位内容，**没有任何压测报告**，因此查不到你问的「接口目标 QPS」和「容量水位线」。\n\n我这边也没有你历史压测报告的记忆或缓存，无法凭记忆作答。\n\n补充说明几点：\n- 页面标题和地址（`coding-assistant-compare.html`）都指向订阅方案对比，与压测/容量规划无关，可能是标签页开错了。\n- 正文提"
+    },
+    {
+      "id": "memory-log-10",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 2500,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "374/800"
+        },
+        {
+          "name": "must_mention",
+          "passed": false,
+          "detail": "缺失: 180"
+        }
+      ],
+      "contentPreview": "当前页面正文只返回了占位内容（`(fixture 页面正文：与记忆问题无关)`，共 30 字符），**没有包含任何日志管理或保留天数的信息**。\n\n因此我无法从当前页面回答\"访问日志保留多少天、错误日志保留多少天\"。\n\n补充说明几点：\n\n1. **页面内容采集正常**，但该页面标题为《2026 主流 AI 编程助手订阅方案对比》，本身与\"日志管理\"主题无关，正文也无相关数据。\n2. 你问的\"日志管"
+    },
+    {
+      "id": "memory-payment-11",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 3289,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "601/800"
+        },
+        {
+          "name": "regex",
+          "passed": false,
+          "detail": "未匹配: 5\\s*元、3\\s*点"
+        }
+      ],
+      "contentPreview": "我查了一下当前页面，需要如实告诉你：**当前页面上没有支付对账的笔记内容**。\n\n当前激活标签页是 `file://eval/pages/coding-assistant-compare.html`，标题为「2026 主流 AI 编程助手订阅方案对比」，正文提取结果只有一行占位文本（\"(fixture 页面正文：与记忆问题无关)\"），完全不涉及支付对账、差异阈值或批次调度时间。\n\n另外说明一点：我"
+    },
+    {
+      "id": "memory-backup-12",
+      "passed": false,
+      "recall": {
+        "hit": false,
+        "score": null,
+        "matchedTerms": []
+      },
+      "durationMs": 2177,
+      "checks": [
+        {
+          "name": "success",
+          "passed": true,
+          "detail": "调用成功"
+        },
+        {
+          "name": "max_chars",
+          "passed": true,
+          "detail": "339/800"
+        },
+        {
+          "name": "regex",
+          "passed": false,
+          "detail": "未匹配: 6\\s*小时、14\\s*份"
+        }
+      ],
+      "contentPreview": "我查了一下，但结论是：**当前页面里没有你说的「数据备份记录」这类内容。**\n\n当前页面是：\n- 标题：**2026 主流 AI 编程助手订阅方案对比**\n- 正文提取结果只有一句占位内容：「(fixture 页面正文：与记忆问题无关)」\n\n所以关于「增量备份多久做一次、备份保留几份」这些问题，页面上**没有任何相关信息**，我无法基于页面作答。\n\n需要我帮你做下面哪件事？\n1. 你切换到真正包含"
     }
   ]
 }

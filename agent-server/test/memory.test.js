@@ -65,7 +65,9 @@ test('wire: recallForPrompt 返回格式化块与引用；rememberFromResult 过
     title: 'DeepSeek Harness 架构解析',
     summary: '一切皆插件，Cordis 事件驱动设计，能力 seam 可替换 Provider，subagent 家族支持多智能体编排。',
   })
-  const recalled = wire.recallForPrompt('dsh 的插件化设计有什么优点？', { url: 'https://current.page' })
+  const recalled = await wire.recallForPrompt('dsh 的插件化设计有什么优点？', {
+    url: 'https://current.page',
+  })
   assert.ok(recalled.block.includes('浏览记忆'))
   assert.ok(recalled.refs.length >= 1)
   assert.ok(

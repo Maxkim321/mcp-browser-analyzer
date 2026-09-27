@@ -1,0 +1,70 @@
+{
+  "date": "2026-09-19T04:05:32.158Z",
+  "question": "MCP（Model Context Protocol）是什么？它的核心概念和生态现状如何？",
+  "caveat": "工具零延迟 mock（离线可复现）：墙钟主要反映 LLM 串行往返；老管线真实抓页的串行延迟未计入，worker 并行批抓优势被低估。单次运行，模型随机性存在。",
+  "legacy": {
+    "mode": "legacy",
+    "success": true,
+    "wallMs": 51795,
+    "llmCalls": 5,
+    "promptTokens": 1815,
+    "completionTokens": 3090,
+    "totalTokens": 4905,
+    "toolCalls": {
+      "web_search": 6,
+      "fetch_url": 4
+    },
+    "topics": [
+      {
+        "question": "MCP的定义、核心概念与架构设计是什么？",
+        "sufficient": true,
+        "points": 5
+      },
+      {
+        "question": "MCP的生态系统现状如何（包括主要参与者、工具、应用案例）？",
+        "sufficient": false,
+        "points": 10
+      }
+    ],
+    "evidence": 15,
+    "sources": 4,
+    "workerNodes": 0,
+    "reportChars": 2277
+  },
+  "subagent": {
+    "mode": "subagent",
+    "success": true,
+    "wallMs": 214058,
+    "llmCalls": 18,
+    "promptTokens": 29601,
+    "completionTokens": 9684,
+    "totalTokens": 39285,
+    "toolCalls": {
+      "web_search": 10,
+      "fetch_url": 18
+    },
+    "topics": [
+      {
+        "question": "MCP（Model Context Protocol）的定义与核心概念是什么？",
+        "sufficient": true,
+        "points": 6
+      },
+      {
+        "question": "MCP 的生态现状如何？包括主要参与者、工具、应用案例和发展趋势。",
+        "sufficient": false,
+        "points": 0
+      }
+    ],
+    "evidence": 6,
+    "sources": 3,
+    "workerNodes": 31,
+    "reportChars": 3174
+  },
+  "delta": {
+    "wallMsPct": 313,
+    "llmCallsDelta": 13,
+    "tokensPct": 701,
+    "promptTokensPct": 1531,
+    "completionTokensPct": 213
+  }
+}

@@ -83,9 +83,40 @@ function installToolOverrides() {
   handler.init({ manager: { getIds: () => [], getCount: () => 0 }, send: () => true })
 }
 
+/**
+ * 从 fixture HTML 提取表格结构（模拟 content script 的 extractStructuredContent 输出形状，
+ * 离线确定性）。P7 之前 fixture 一直缺 structured 字段——模型靠"即兴"从纯文本里拼答案才通过；
+ * 注入分隔包装让模型变严格后暴露了这个保真度缺口，按生产行为补齐。
+ */
+function extractTablesFromHtml(html) {
+  const tables = []
+  const tableRe = /<table[\s\S]*?<\/table>/gi
+  let m
+  let index = 0
+  while ((m = tableRe.exec(html)) !== null) {
+    const rows = []
+    const rowRe = /<tr[\s\S]*?<\/tr>/gi
+    let rm
+    while ((rm = rowRe.exec(m[0])) !== null) {
+      const cells = []
+      const cellRe = /<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi
+      let cm
+      while ((cm = cellRe.exec(rm[0])) !== null) {
+        cells.push(cm[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+      }
+      if (cells.length > 0) rows.push(cells)
+    }
+    if (rows.length > 0) {
+      tables.push({ index, headers: rows[0], rows: rows.slice(1), truncated: false })
+      index++
+    }
+  }
+  return tables.length > 0 ? { type: 'tables', tables, tablesCount: tables.length } : null
+}
+
 function fixturePageOverride(fixtureRel) {
   return async () => {
-    const { title, text } = loadFixture(fixtureRel)
+    const { title, text, html } = loadFixture(fixtureRel)
     return {
       content: [
         {
@@ -95,6 +126,7 @@ function fixturePageOverride(fixtureRel) {
             title,
             content: text,
             charCount: text.length,
+            structured: extractTablesFromHtml(html), // 与 content script 真实返回同形状（无表格为 null）
           }),
         },
       ],

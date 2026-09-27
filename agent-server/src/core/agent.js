@@ -7,6 +7,7 @@ const { CONTEXT_SUMMARY_PROMPT, estimateMessagesTokens } = require('./context-ma
 const { HistoryStore } = require('./history-store.js')
 const { runToolPipeline } = require('./tool-pipeline.js')
 const traceLog = require('./trace-log.js')
+const { READ_WEB_TOOLS, scanInjection, wrapUntrusted, extractSource } = require('./injection-guard.js')
 
 /**
  * AI Agent 编排器
@@ -15,7 +16,8 @@ const traceLog = require('./trace-log.js')
 class Agent {
   constructor(customConfig = {}) {
     this.config = { ...config.agent, ...customConfig }
-    this.llm = new LLMClient({ ...config.llm, ...customConfig.llm })
+    // LLM 实例可注入（深度研究子 agent 复用工作流的 LLMClient，继承插件下发的模型配置）
+    this.llm = customConfig.llmInstance || new LLMClient({ ...config.llm, ...customConfig.llm })
     // dph-C 派生视图：raw 只追加不改写，发给 LLM 的 messages 按策略派生（见 history-store.js）
     this.store = new HistoryStore({
       rawLimit: this.config.rawLimit,
@@ -98,6 +100,13 @@ class Agent {
      * 工具执行结果反馈给LLM继续推理，直到得出最终答案。
      */
     const maxIterations = options.maxIterations || this.config.maxIterations
+    // 工具白名单（子 agent 能力收窄）：传入时 LLM 只看到这些工具，且执行层硬闸
+    // allowedTools 同步生效（不依赖"提示词里没给"的自觉，硬约束写死在代码）
+    const toolDefs = Array.isArray(options.tools) && options.tools.length > 0 ? options.tools : tools
+    const allowedTools =
+      Array.isArray(options.tools) && options.tools.length > 0
+        ? new Set(options.tools.map((t) => t.name))
+        : null
     let iteration = 0
     // 工具上下文在整个 process 生命周期内共享，避免每轮迭代被重置
     const toolContext = {
@@ -111,6 +120,10 @@ class Agent {
       permissionCheck: options.permissionCheck || this.config.permissionCheck,
       // 写动作预算计数器：获批一次 +1（approval.js 维护），单轮任务生命周期
       writeActionsUsed: 0,
+      // P7 注入防御：本轮已检出的可疑来源（injection-guard 写入），写操作审批据此展示风险警告
+      taintedSources: [],
+      // 子 agent 执行层白名单硬闸（null = 不限制，主 agent 行为不变）
+      allowedTools,
     }
     // dph-A Turn/Step 执行模型：step 计数器贯穿整个 Turn（一次用户请求 = 一个 Turn），
     // 每个 Step（LLM 推理 / 工具执行）都通过 onStep 下发事件，前端可观测；signal 支持取消
@@ -154,12 +167,14 @@ class Agent {
       }
 
       // 流式调用：工具轮 content 为空（不触发 onToken），最终文本轮实时推送增量
+      // agent 归属标签：子 agent 的 usage 台账借此与主会话区分（per-worker 分账）
       const response = await this.llm.chatStream(
         view,
-        tools,
+        toolDefs,
         options.systemPrompt,
         options.onToken,
-        options.signal
+        options.signal,
+        { agent: options.agent }
       )
 
       //需要工具 - 工具调用检测
@@ -289,6 +304,19 @@ class Agent {
 
     console.log(`[Agent] Calling tool: ${toolName}`, toolArgs)
 
+    // 子 agent 执行层硬闸：白名单外的工具一律跳过（结果回喂 LLM 可自纠），
+    // 即使模型幻觉出白名单外的工具名也不会真实执行——不依赖提示词自觉
+    if (context.allowedTools && !context.allowedTools.has(toolName)) {
+      this.conversationHistory.push({
+        role: 'tool',
+        tool_call_id: toolCall.id,
+        content: `Skipped: tool ${toolName} is not allowed for this task.`,
+      })
+      this.trimHistory()
+      console.log(`[Agent] Blocked tool (not in allowedTools): ${toolName}`)
+      return
+    }
+
     // 限制 todo_write 在单次任务中最多执行一次，避免模型陷入反复更新任务列表
     if (toolName === 'todo_write') {
       if ((context.todoWriteCount || 0) >= 1) {
@@ -327,6 +355,35 @@ class Agent {
           durationMs: Date.now() - t0,
         })
       }
+
+      // P7 注入防御：不可信网页内容 → 分隔包装（layer 1）+ 注入模式扫描染色（layer 2）。
+      // 检测不阻断（启发式有误报）：写操作反正逐次人审，检测的价值是把"上下文可疑"
+      // 亮到审批卡片与审计上。worker（只读）同样被扫——研究投毒的防线之一。
+      if (!result.permissionDenied && !result.dryRun && READ_WEB_TOOLS.includes(toolName)) {
+        const rawText = result?.content?.[0]?.text
+        if (typeof rawText === 'string' && rawText) {
+          const scan = scanInjection(rawText)
+          if (scan.suspicious) {
+            context.taintedSources.push({
+              tool: toolName,
+              patterns: scan.matches.map((m) => m.id),
+              snippet: scan.matches[0]?.snippet || '',
+            })
+            traceLog.record({
+              type: 'taint_detected',
+              sessionId: context.sessionId || null,
+              tool: toolName,
+              patterns: scan.matches.map((m) => m.id),
+              snippet: scan.matches[0]?.snippet || '',
+            })
+          }
+          result.content[0].text = wrapUntrusted(rawText, {
+            source: extractSource(rawText, toolName),
+            scan,
+          })
+        }
+      }
+
       const toolResult = {
         role: 'tool',
         tool_call_id: toolCall.id,
