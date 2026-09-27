@@ -4,7 +4,7 @@
 
 一个住在浏览器**侧边栏**里的 AI 助手：不切页面，就能总结网页、划词即问、围绕页面内容追问，甚至自动完成一次带来源的**深度研究**。内置**AI 代码审查**能力，可通过 GitHub Actions 自动对 PR 生成行级评论。
 
-Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Agent 编排） · AI Code Review CLI
+Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Agent 编排） · **MCP 宿主（自研 Client）** · AI Code Review CLI
 
 </div>
 
@@ -23,6 +23,14 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 **质量度量上屏**——成本台账、压缩保真度基准、黄金评测基线、记忆 A/B 全部可视化（`localhost:9999/dashboard`）：
 
 ![Agent 仪表盘](assets/demo-dashboard.png)
+
+**MCP 外部工具接入**——自研 MCP Client 接入官方 filesystem server，LLM 自主调用 `mcp_fs_write_file`，写操作触发审批卡片：
+
+![MCP 写操作审批卡](assets/demo-mcp-approval.png)
+
+**实用任务闭环**——"总结当前页面，把要点存成笔记"：真实读取页面 → LLM 结构化总结 → MCP 审批落盘 → 记忆引用标签全程可见：
+
+![MCP 实用任务：总结页面并落盘笔记](assets/demo-mcp-notes.png)
 
 ---
 
@@ -47,8 +55,9 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 | | 💰 Token 成本账本 | 每次 LLM 调用（含 tier）落 JSONL 台账，`pnpm report` 按档位/模型汇总成本——分级路由的 ROI 有账可查 |
 | | ⏱️ 工具流水线 | 统一权限校验 + 超时控制，为写操作审批预留挂载点 |
 | **个性化** | 🎯 偏好记忆（L3） | 跨会话记住总结风格/翻译语言/回复风格，自动注入提示词 |
-| | 🧠 浏览记忆 RAG（L4 阶段1） | 总结过的页面自动沉淀为记忆卡片（本地 JSONL 只追加），提问时 BM25 检索 top-3 注入上下文，回答自动带"📌 参考了你之前读过的 N 篇"引用标签——跨页面对比/追问旧内容可行；卡片规模 < 1 万暴力检索最优，阶段 2 预留 embedding 升级接口 |
+| | 🧠 浏览记忆 RAG（L4 混合检索） | 总结过的页面自动沉淀为记忆卡片（本地 JSONL 只追加），提问时**混合检索**——BM25（CJK 双字组）+ embedding（方舟 2048 维）双路召回 RRF 融合——top-3 注入上下文，回答自动带"📌 参考了你之前读过的 N 篇"引用标签；三路对照实测：关键词集 100% 不回退、语义对抗集 25%→75%（6/12 语义救援）；向量通道失败自动降级 BM25 并打 degraded 标记，auto 模式未配向量时与纯 BM25 行为一致 |
 | | 📚 文章收藏 | 收藏已总结的文章，支持回看检索 |
+| **外部工具生态** | 🔌 MCP Client（自研） | stdio + JSON-RPC 2.0，兼容 2026-07-28 stateless 与存量握手两代规范；官方 filesystem server 一键接入 14 个工具；**注册期治理三道闸**——工具描述注入扫描（对抗 tool poisoning 注册期攻击，命中拒绝并留痕）→ dangerLevel 自动定级（分不了级默认按写操作走人审）→ 调用统一走审批/超时/事件溯源管线 |
 | **额外工具** | 📊 页面性能分析 | 双通道：插件采集 LCP 等实时指标 + 服务端 Lighthouse 完整审计（四类得分/核心指标/优化机会） |
 | **🔧 AI 代码审查** | 💻 ai-code-review | 零依赖 CLI + GitHub Actions 自动触发，对 PR/MR 生成行级评论（安全漏洞/圈复杂度/命名规范），支持适配器模式扩展平台 |
 
@@ -88,7 +97,8 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 ### 关键设计决策
 
 - **三层编排**：固定任务用 Prompt 模板保证结构化输出；开放对话走 ReAct 循环灵活调用工具；深度研究用自研状态机（对齐 LangGraph 四概念：State/节点/条件边/checkpoint/HITL），~200 行零依赖可单测
-- **记忆分层**：L0 当前上下文 → L1 会话历史 → L2 滚动摘要 → L3 偏好 KV，不盲目上向量检索
+- **记忆分层 + 混合检索**：L0 当前上下文 → L1 会话历史 → L2 滚动摘要 → L3 偏好 KV → L4 浏览记忆卡片；卡片检索用 BM25 + embedding 双路 RRF 融合（只用名次免疫量纲），向量通道失败自动降级 BM25——两个场景都不塌方
+- **MCP 宿主治理**：接入即纳管——注册期注入扫描（tool poisoning 是注册期攻击面，描述是元数据无误报代价）→ dangerLevel 自动定级（分不了级默认按写操作走人审）→ 复用审批/超时/事件溯源管线；协议"先探测、被拒再握手"，兼容 2026-07-28 stateless 与存量两代规范
 - **ai-code-review 适配器模式**：核心审查逻辑与平台解耦，Mock/GitHub/GitLab 三种适配器可插拔
 - **Skills 可插拔**：安全审查/复杂度检查/命名规范各成模块，precheck（确定性扫描）+ LLM 审查双层保障
 
@@ -127,6 +137,22 @@ LLM_LIGHT_BASE_URL=你的OpenAI兼容接口地址
 LLM_LIGHT_API_KEY=对应密钥
 ```
 
+可选：记忆混合检索的向量通道（方舟 doubao-embedding-vision，2048 维；不配置则纯 BM25，行为完全一致）：
+
+```env
+EMBED_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
+EMBED_API_KEY=你的方舟密钥
+EMBED_MODEL=doubao-embedding-vision
+```
+
+可选：接入第三方 MCP server（JSON 数组，可多个并存；未配置不启动）：
+
+```env
+MCP_SERVERS=[{"name":"fs","command":"npx","shell":true,"args":["-y","@modelcontextprotocol/server-filesystem","D:/你的笔记目录"]}]
+```
+
+接入即纳管：工具自动过注册期注入扫描与 dangerLevel 定级，写操作走审批卡。更多 server（GitHub/Playwright/SQLite/Notion）的接入测试方法见仓库根 `TODO.md`。
+
 ### 3. 启动 Agent Server（监听 :9999）
 
 ```bash
@@ -150,11 +176,15 @@ pnpm extension         # watch 模式，改代码自动重构建
 ### 5. 测试与质量保障
 
 ```bash
-pnpm test             # 108 个单测（node:test 零依赖），锁编排层行为不变量
+pnpm test             # 158 个单测（node:test 零依赖），锁编排层行为不变量
 pnpm eval             # 黄金评测集：10 个 case 端到端阅卷出成绩单（离线可复现）
 pnpm eval:memory      # 浏览记忆 A/B 对照：recall@3 / 记忆增益 Δ
+pnpm eval:hybrid      # 混合检索三路对照：BM25/向量/hybrid 的 recall@3（确定性判分，零 LLM 成本）
+pnpm embed:sync       # 存量记忆卡片向量回填（幂等，需 EMBED_* 配置）
 pnpm bench            # 压缩保真度基准：滚动摘要 vs 截断 vs 不压缩
 pnpm report           # Token 成本账本：按档位/模型汇总分级路由 ROI
+pnpm mcp:demo         # MCP 官方 filesystem server 注册演示（三道闸可见）
+pnpm mcp:e2e          # MCP 全真集成测试：真 LLM + 真 server + 真磁盘断言
 ```
 
 评测与基准的产物落盘在 `agent-server/eval/results` 与 `agent-server/bench/results`；仪表盘 `localhost:9999/dashboard` 只读这些产物展示（dashboard 不生产数字，只呈现数字）。
@@ -202,6 +232,8 @@ npm run review:sample
 | 可靠性增强 | dph-A/B/C/D（Turn-Step模型/事件溯源/上下文压缩/工具流水线） |
 | LLM | DeepSeek（OpenAI 兼容接口，Function Calling + SSE 流式） |
 | 通信 | WebSocket（ws）· requestId 异步请求-响应匹配 + 超时兜底 |
+| 记忆检索 | BM25（手写 CJK 双字组）+ embedding 余弦（方舟 2048 维）+ RRF 融合；追加式 JSONL 向量库 |
+| 工具生态 | MCP Client（stdio + JSON-RPC 2.0，自研零依赖）· 注册期注入扫描 · dangerLevel 自动定级 |
 | AI 代码审查 | 零依赖 Node ESM · 适配器模式 · Skills 可插拔 · GitHub API |
 | 测试 | node:test（零依赖原生 runner） |
 
@@ -218,10 +250,12 @@ npm run review:sample
 │   │                          #   event-log.js（dph-B 事件溯源）· history-store.js（派生视图/上下文压缩）
 │   │                          #   tool-pipeline.js（dph-D 工具流水线）· approval.js（写操作分级审批）
 │   ├── src/tools/             #   工具 schema + handler（web_search / fetch_url / lighthouse / 写操作原语）
+│   │                          #   mcp-registry.js（MCP 纳管三道闸：注入扫描/自动定级/审批复用）
+│   ├── src/mcp/               #   client.js（MCP Client：stdio + JSON-RPC 2.0，两代规范兼容）
 │   ├── src/communication/     #   WS 服务 + 消息路由 + dashboard（只读产物）
-│   ├── src/memory/            #   浏览记忆：卡片库（JSONL 追加）+ BM25 检索
+│   ├── src/memory/            #   浏览记忆：卡片库 + BM25 + 混合检索（embedder/vector-store/rrf/hybrid/embed-sync）
 │   ├── src/config/            #   prompts.js（模板提示词）· index.js
-│   ├── eval/                  #   黄金评测集 + 记忆 A/B + 成本报表（pnpm eval / eval:memory / report）
+│   ├── eval/                  #   黄金评测集 + 记忆 A/B + 混合检索三路对照 + 成本报表（pnpm eval / eval:memory / eval:hybrid / report）
 │   ├── bench/                 #   压缩保真度基准（pnpm bench）
 │   └── test/                  #   node:test 单测
 ├── ai-code-review/            # AI 代码审查独立 CLI（零依赖 Node ESM）
@@ -243,11 +277,14 @@ npm run review:sample
 - **度量体系**：黄金评测集（10 case 三层判分，10/10）· 压缩保真度基准（滚动摘要 100% vs 截断 23.3%）· Token 成本账本（分级路由 ROI 有账可查）· 浏览记忆 A/B（recall@3 100%，增益 +100pct）
 - **评测台 + 白盒飞行记录仪**：localhost:9999/dashboard 三视图（概览 / 逐 case 判卷 / 事件回放）
 - **浏览记忆 RAG 阶段 1**：本地卡片库 + BM25 检索 top-3 注入（阶段 2 预留 embedding 接口，< 1 万条暴力检索最优）
+- **记忆混合检索（阶段 2 落地）**：BM25 + embedding（方舟 2048 维）双路 RRF 融合 · 三路对照实测（关键词集 100% 不回退，语义对抗集 25%→75%）· 两级 Embedder 降级链 · auto 模式回归安全
+- **MCP Client 真接入**：stdio + JSON-RPC 2.0（兼容 2026-07-28 stateless 与存量握手）· 注册期注入扫描 + dangerLevel 自动定级 + 审批复用 · 官方 filesystem server 14 工具实测 · 全真 e2e（真 LLM/真 server/真磁盘/真 UI 审批点击）
 - **AI 代码审查**：零依赖 CLI · GitHub/GitLab 适配器 · GitHub Actions 自动触发 · PR 行级评论
 
 ### 🔜 进行中 / 未来
 - **M1 剩余**：会话管理补全（重命名/删除/搜索）
-- **M2**：MCP Client / WebMCP 接入第三方工具生态 · keep-evidence 压缩策略（压观点不压证据）· 记忆 embedding 升级（阶段 2）
+- **M2 剩余**：keep-evidence 压缩策略（压观点不压证据）· RRF 通道置信度门控（对抗集上 bm25 污染通道的改进方向）· MCP 工具分发门槛按来源分层
+- **M3 候选**：以文搜图（多模态 embedding，待方舟图片向量权限）· 跨主题并行（v2，需重构 HITL 语义）
 
 ## 📄 License
 
