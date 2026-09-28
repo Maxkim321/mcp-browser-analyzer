@@ -1,6 +1,6 @@
 {
   "set": "regression",
-  "ranAt": "2026-09-27T13:34:54.606Z",
+  "ranAt": "2026-09-28T03:52:58.189Z",
   "corpusSize": 12,
   "modes": {
     "bm25": {
@@ -15,7 +15,7 @@
             "bm25": 1,
             "vector": null
           },
-          "latencyMs": 1,
+          "latencyMs": 2,
           "topUrls": [
             "file://eval/cards/bm25-tuning.html",
             "file://eval/cards/db-pool.html",
@@ -151,7 +151,7 @@
             "bm25": 1,
             "vector": null
           },
-          "latencyMs": 1,
+          "latencyMs": 2,
           "topUrls": [
             "file://eval/cards/load-test.html",
             "file://eval/cards/rate-limit.html",
@@ -221,12 +221,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7954,
+          "score": 0.7957,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 151,
+          "latencyMs": 192,
           "topUrls": [
             "file://eval/cards/bm25-tuning.html",
             "file://eval/cards/mq-ops.html",
@@ -238,12 +238,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7906,
+          "score": 0.788,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 207,
+          "latencyMs": 141,
           "topUrls": [
             "file://eval/cards/release-process.html",
             "file://eval/cards/monitoring-alert.html",
@@ -255,12 +255,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7561,
+          "score": 0.7547,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 178,
+          "latencyMs": 165,
           "topUrls": [
             "file://eval/cards/db-pool.html",
             "file://eval/cards/mq-ops.html",
@@ -272,12 +272,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7879,
+          "score": 0.7911,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 149,
+          "latencyMs": 138,
           "topUrls": [
             "file://eval/cards/cache-tuning.html",
             "file://eval/cards/mq-ops.html",
@@ -289,12 +289,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7897,
+          "score": 0.793,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 294,
+          "latencyMs": 158,
           "topUrls": [
             "file://eval/cards/rate-limit.html",
             "file://eval/cards/load-test.html",
@@ -306,12 +306,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7715,
+          "score": 0.7737,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 164,
+          "latencyMs": 177,
           "topUrls": [
             "file://eval/cards/mq-ops.html",
             "file://eval/cards/log-retention.html",
@@ -323,12 +323,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.8043,
+          "score": 0.8031,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 187,
+          "latencyMs": 214,
           "topUrls": [
             "file://eval/cards/monitoring-alert.html",
             "file://eval/cards/db-pool.html",
@@ -340,12 +340,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7403,
+          "score": 0.7414,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 182,
+          "latencyMs": 179,
           "topUrls": [
             "file://eval/cards/auth-token.html",
             "file://eval/cards/log-retention.html",
@@ -357,12 +357,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7892,
+          "score": 0.7852,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 171,
+          "latencyMs": 115,
           "topUrls": [
             "file://eval/cards/load-test.html",
             "file://eval/cards/rate-limit.html",
@@ -374,12 +374,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7735,
+          "score": 0.7758,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 195,
+          "latencyMs": 165,
           "topUrls": [
             "file://eval/cards/log-retention.html",
             "file://eval/cards/backup-policy.html",
@@ -391,12 +391,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.8118,
+          "score": 0.8119,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 183,
+          "latencyMs": 518,
           "topUrls": [
             "file://eval/cards/payment-reconcile.html",
             "file://eval/cards/release-process.html",
@@ -408,12 +408,12 @@
           "kind": "keyword",
           "hit": true,
           "rank": 1,
-          "score": 0.7775,
+          "score": 0.7767,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 192,
+          "latencyMs": 120,
           "topUrls": [
             "file://eval/cards/backup-policy.html",
             "file://eval/cards/log-retention.html",
@@ -423,7 +423,7 @@
       ],
       "recallAt3": 1,
       "recallAt1": 1,
-      "avgLatencyMs": 188
+      "avgLatencyMs": 190
     },
     "hybrid": {
       "rows": [
@@ -437,11 +437,11 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 1,
+          "latencyMs": 6,
           "topUrls": [
             "file://eval/cards/bm25-tuning.html",
-            "file://eval/cards/db-pool.html",
-            "file://eval/cards/load-test.html"
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/cache-tuning.html"
           ]
         },
         {
@@ -454,11 +454,11 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 1,
+          "latencyMs": 4,
           "topUrls": [
             "file://eval/cards/release-process.html",
-            "file://eval/cards/load-test.html",
-            "file://eval/cards/monitoring-alert.html"
+            "file://eval/cards/monitoring-alert.html",
+            "file://eval/cards/load-test.html"
           ]
         },
         {
@@ -471,11 +471,11 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 1,
+          "latencyMs": 2,
           "topUrls": [
             "file://eval/cards/db-pool.html",
             "file://eval/cards/mq-ops.html",
-            "file://eval/cards/backup-policy.html"
+            "file://eval/cards/load-test.html"
           ]
         },
         {
@@ -488,11 +488,11 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 0,
+          "latencyMs": 2,
           "topUrls": [
             "file://eval/cards/cache-tuning.html",
-            "file://eval/cards/bm25-tuning.html",
-            "file://eval/cards/db-pool.html"
+            "file://eval/cards/mq-ops.html",
+            "file://eval/cards/load-test.html"
           ]
         },
         {
@@ -505,11 +505,11 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 1,
+          "latencyMs": 3,
           "topUrls": [
             "file://eval/cards/rate-limit.html",
             "file://eval/cards/load-test.html",
-            "file://eval/cards/release-process.html"
+            "file://eval/cards/monitoring-alert.html"
           ]
         },
         {
@@ -522,7 +522,7 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 0,
+          "latencyMs": 2,
           "topUrls": [
             "file://eval/cards/mq-ops.html",
             "file://eval/cards/log-retention.html",
@@ -543,7 +543,7 @@
           "topUrls": [
             "file://eval/cards/monitoring-alert.html",
             "file://eval/cards/db-pool.html",
-            "file://eval/cards/rate-limit.html"
+            "file://eval/cards/log-retention.html"
           ]
         },
         {
@@ -556,11 +556,11 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 0,
+          "latencyMs": 2,
           "topUrls": [
             "file://eval/cards/auth-token.html",
             "file://eval/cards/log-retention.html",
-            "file://eval/cards/backup-policy.html"
+            "file://eval/cards/cache-tuning.html"
           ]
         },
         {
@@ -590,11 +590,11 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 0,
+          "latencyMs": 2,
           "topUrls": [
             "file://eval/cards/log-retention.html",
-            "file://eval/cards/auth-token.html",
-            "file://eval/cards/backup-policy.html"
+            "file://eval/cards/backup-policy.html",
+            "file://eval/cards/auth-token.html"
           ]
         },
         {
@@ -624,17 +624,17 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 1,
+          "latencyMs": 2,
           "topUrls": [
             "file://eval/cards/backup-policy.html",
             "file://eval/cards/log-retention.html",
-            "file://eval/cards/mq-ops.html"
+            "file://eval/cards/db-pool.html"
           ]
         }
       ],
       "recallAt3": 1,
       "recallAt1": 1,
-      "avgLatencyMs": 1
+      "avgLatencyMs": 2
     }
   }
 }

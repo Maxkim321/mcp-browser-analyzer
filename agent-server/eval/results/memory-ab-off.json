@@ -1,6 +1,6 @@
 {
   "arm": "off",
-  "ranAt": "2026-09-27T13:37:08.894Z",
+  "ranAt": "2026-09-28T03:55:04.893Z",
   "results": [
     {
       "id": "memory-bm25-01",
@@ -10,25 +10,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 1868,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "505/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": false,
-          "detail": "缺失: 1.2、0.6"
-        }
-      ],
-      "contentPreview": "我无法回答这个问题。\n\n原因有两点：\n\n1. **我无法访问你们的团队内部文档。** 我只能读取当前浏览器页面内容（`get_page_content`）、抓取公开 URL（`fetch_url`）或用搜索引擎检索公开网页（`web_search`）。内部知识库、私有 Wiki、内网文档都不在我的可访问范围内。\n\n2. **当前页面也不相关。** 当前激活标签页是《2026 主流 AI 编程助手订"
+      "durationMs": 473,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: b92ffe25-529c-4d86-b4b2-72811697a05b)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-release-02",
@@ -38,25 +22,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2294,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "513/800"
-        },
-        {
-          "name": "regex",
-          "passed": false,
-          "detail": "未匹配: 周[三三]、3\\s*%"
-        }
-      ],
-      "contentPreview": "我查不到你要的信息，需要说明一下原因：\n\n**当前页面内容与你的问题无关。** 当前标签页是《2026 主流 AI 编程助手订阅方案对比》（`file://eval/pages/coding-assistant-compare.html`），正文只有一句占位内容：\n\n> (fixture 页面正文：与记忆问题无关)\n\n里面**没有**任何关于发布流程、滚动发布窗口、自动回滚错误率阈值的内容。你问的"
+      "durationMs": 454,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 0c2a1061-3ab9-434b-863c-74cc3c648881)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-dbpool-03",
@@ -66,25 +34,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 3293,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "678/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": false,
-          "detail": "缺失: 350、pgbouncer"
-        }
-      ],
-      "contentPreview": "当前页面里找不到这篇内容，我需要先说明一下情况。\n\n## 结论：当前页面没有这篇数据库运维记录\n\n我刚读取了当前激活标签页的正文，结果是：\n\n| 项目 | 内容 |\n|---|---|\n| 页面标题 | 2026 主流 AI 编程助手订阅方案对比 |\n| 页面地址 | file://eval/pages/coding-assistant-compare.html |\n| 正文内容 | （fixtu"
+      "durationMs": 422,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 146241d7-8f93-47d7-b3c1-2eccf0a7cf92)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-cache-04",
@@ -94,25 +46,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 1549,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "364/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": false,
-          "detail": "缺失: 45、allkeys-lfu"
-        }
-      ],
-      "contentPreview": "我无法回答这个问题——这个信息不在当前页面里，也不在我的对话记忆中。\n\n当前页面是《2026 主流 AI 编程助手订阅方案对比》，内容与缓存方案无关；而\"团队内部的缓存方案调优记录\"属于你本地/内部资料，我这边既没有这份文档，也没有你之前阅读它的记录（跨会话不保留记忆）。\n\n如果你希望我帮你查，可以这样做：\n\n1. **把那份文档的链接或内容发给我**（或告诉我它在哪个内部系统/页面上），我读取后"
+      "durationMs": 435,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 5893b0e8-c720-4c08-a05c-b139bf25cdb4)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-ratelimit-05",
@@ -122,25 +58,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2768,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "514/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": false,
-          "detail": "缺失: 800、12%"
-        }
-      ],
-      "contentPreview": "我查了一下，需要先说明一个情况：\n\n**当前页面并不是你的服务治理笔记。**\n\n- 当前激活标签页：`file://eval/pages/coding-assistant-compare.html`\n- 页面标题：**「2026 主流 AI 编程助手订阅方案对比」**\n- 正文内容：与「服务治理」无关（内容为空占位）\n\n所以这个页面上**没有**任何限流阈值、熔断失败率的信息，我无法从中提取到你问"
+      "durationMs": 387,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: c29a4833-2823-4542-9b7c-65e45049f6de)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-mq-06",
@@ -150,25 +70,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2472,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "484/800"
-        },
-        {
-          "name": "regex",
-          "passed": false,
-          "detail": "未匹配: 9\\s*次"
-        }
-      ],
-      "contentPreview": "我查了当前页面，但**页面上没有你要的信息**。\n\n**当前页面情况：**\n- 标题：2026 主流 AI 编程助手订阅方案对比\n- 正文内容：`(fixture 页面正文：与记忆问题无关)`\n- 字符数：仅 30 字符\n\n这是一个关于 AI 编程助手订阅方案对比的页面，正文里**完全没有提到消息队列、消费重试次数或死信消息保留时间**这类运维记录内容。\n\n**关于你的问题：**\n- 消费失败最多"
+      "durationMs": 461,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 1e33d6ab-72a9-4e5e-a63b-6b962b5ca62e)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-monitoring-07",
@@ -178,25 +82,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2293,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "357/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": false,
-          "detail": "缺失: 420、0.5%"
-        }
-      ],
-      "contentPreview": "抱歉，我无法回答这个问题。\n\n**原因说明：**\n\n1. **当前页面内容与问题无关**：当前激活标签页是《2026 主流 AI 编程助手订阅方案对比》，正文内容与「监控告警配置」没有任何关系，页面里不存在 P99 延迟阈值或错误率阈值的记录。\n\n2. **我没有相关记忆**：我没有你的监控告警配置记录，也无法访问历史会话中可能提到过的这类私有配置信息。\n\n**建议的下一步：**\n\n- 如果你确实"
+      "durationMs": 399,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 4877829f-2efe-4f20-8623-40230ae62ba4)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-auth-08",
@@ -206,25 +94,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2567,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "498/800"
-        },
-        {
-          "name": "regex",
-          "passed": false,
-          "detail": "未匹配: 15\\s*分钟、7\\s*天"
-        }
-      ],
-      "contentPreview": "我查了当前页面，但没能回答你的问题。\n\n**当前页面情况：**\n- 标题：2026 主流 AI 编程助手订阅方案对比\n- 正文内容：`(fixture 页面正文：与记忆问题无关)`，实际正文只有 30 个字符\n\n这个页面是**订阅方案对比**内容，里面**不包含任何鉴权模块、访问令牌（access token）或刷新令牌（refresh token）有效期**的信息。所以关于\"访问令牌有效期多久、"
+      "durationMs": 407,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 1aca3f10-317e-4959-8dd6-bcf8a6e6b573)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-loadtest-09",
@@ -234,25 +106,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2048,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "342/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": false,
-          "detail": "缺失: 2400、65%"
-        }
-      ],
-      "contentPreview": "当前页面是一份《2026 主流 AI 编程助手订阅方案对比》，正文里只有占位内容，**没有任何压测报告**，因此查不到你问的「接口目标 QPS」和「容量水位线」。\n\n我这边也没有你历史压测报告的记忆或缓存，无法凭记忆作答。\n\n补充说明几点：\n- 页面标题和地址（`coding-assistant-compare.html`）都指向订阅方案对比，与压测/容量规划无关，可能是标签页开错了。\n- 正文提"
+      "durationMs": 428,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 6e7c1e7a-39f2-4073-94ff-b7599451a9ee)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-log-10",
@@ -262,25 +118,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2500,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "374/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": false,
-          "detail": "缺失: 180"
-        }
-      ],
-      "contentPreview": "当前页面正文只返回了占位内容（`(fixture 页面正文：与记忆问题无关)`，共 30 字符），**没有包含任何日志管理或保留天数的信息**。\n\n因此我无法从当前页面回答\"访问日志保留多少天、错误日志保留多少天\"。\n\n补充说明几点：\n\n1. **页面内容采集正常**，但该页面标题为《2026 主流 AI 编程助手订阅方案对比》，本身与\"日志管理\"主题无关，正文也无相关数据。\n2. 你问的\"日志管"
+      "durationMs": 426,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 01e79d0b-48dc-4a52-bc2d-a5634bbdf0cf)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-payment-11",
@@ -290,25 +130,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 3289,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "601/800"
-        },
-        {
-          "name": "regex",
-          "passed": false,
-          "detail": "未匹配: 5\\s*元、3\\s*点"
-        }
-      ],
-      "contentPreview": "我查了一下当前页面，需要如实告诉你：**当前页面上没有支付对账的笔记内容**。\n\n当前激活标签页是 `file://eval/pages/coding-assistant-compare.html`，标题为「2026 主流 AI 编程助手订阅方案对比」，正文提取结果只有一行占位文本（\"(fixture 页面正文：与记忆问题无关)\"），完全不涉及支付对账、差异阈值或批次调度时间。\n\n另外说明一点：我"
+      "durationMs": 425,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 522c927a-0750-46b8-88da-4b0dd3eaf530)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-backup-12",
@@ -318,25 +142,9 @@
         "score": null,
         "matchedTerms": []
       },
-      "durationMs": 2177,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "339/800"
-        },
-        {
-          "name": "regex",
-          "passed": false,
-          "detail": "未匹配: 6\\s*小时、14\\s*份"
-        }
-      ],
-      "contentPreview": "我查了一下，但结论是：**当前页面里没有你说的「数据备份记录」这类内容。**\n\n当前页面是：\n- 标题：**2026 主流 AI 编程助手订阅方案对比**\n- 正文提取结果只有一句占位内容：「(fixture 页面正文：与记忆问题无关)」\n\n所以关于「增量备份多久做一次、备份保留几份」这些问题，页面上**没有任何相关信息**，我无法基于页面作答。\n\n需要我帮你做下面哪件事？\n1. 你切换到真正包含"
+      "durationMs": 408,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: b0a91897-ec44-46f9-ab3e-b9ff5a8a62e7)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     }
   ]
 }

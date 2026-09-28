@@ -1,10 +1,10 @@
 {
   "arm": "on",
-  "ranAt": "2026-09-27T13:36:39.572Z",
+  "ranAt": "2026-09-28T03:54:59.511Z",
   "results": [
     {
       "id": "memory-bm25-01",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -17,29 +17,13 @@
           "内部"
         ]
       },
-      "durationMs": 922,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "190/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据浏览记忆，你之前读过的《检索服务调参记录（内部）》里，BM25 参数最终线上配置是：\n\n- **k1 = 1.2**（默认 1.5，团队认为默认偏重词频）\n- **b = 0.6**（默认 0.75，团队认为默认对长文档惩罚过强）\n\n这是在你们自己的数据集上做网格搜索试出来的，调整后人工评估的相关性提升了约 12%。注意这不是教科书默认值。\n\n需要我打开这篇记录核对原文吗？"
+      "durationMs": 437,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 00a12772-baeb-47db-a992-849a8dfc4c25)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-release-02",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -52,29 +36,13 @@
           "动发"
         ]
       },
-      "durationMs": 1087,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "254/800"
-        },
-        {
-          "name": "regex",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据你之前读过并总结过的《发布流程 v3 笔记（内部）》：\n\n- **滚动发布窗口**：固定在**每周三凌晨 2 点到 4 点**（特意避开周二的大促复盘会）。\n- **自动回滚阈值**：**5 分钟内错误率超过 3%** 即触发回滚，由值守机器人执行。\n\n另外这份笔记里还提到灰度批次是 **5% → 25% → 100%**，每批观察 15 分钟，如果需要我可以一并帮你核对。\n\n需要说明的是，这"
+      "durationMs": 396,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: e9557bdc-088a-425e-9cd4-45e7f86457e0)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-dbpool-03",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -87,29 +55,13 @@
           "记录"
         ]
       },
-      "durationMs": 1010,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "216/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据本机记忆库中《数据库运维记录（内部）》的内容：\n\n- **连接数**：`max_connections` 从 **100 调到 350**\n- **配合组件**：引入 **pgbouncer** 做连接池复用，采用 **transaction 模式**\n\n补充几个相关细节（同一条记录里）：\n- 慢查询超时阈值设为 **800ms**，超过即记录并告警\n- 变更当晚连接等待队列清零\n\n需要我打开"
+      "durationMs": 406,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 57da38e0-d137-4a9b-b029-319393a40208)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-cache-04",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -122,29 +74,13 @@
           "案调"
         ]
       },
-      "durationMs": 764,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "180/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据你之前读过的《缓存方案调优记录（内部）》，要点如下：\n\n- **热点数据 TTL**：设为 **45 秒**（默认值是 3600 秒）\n- **淘汰策略**：从 `volatile-lru` 改为 **`allkeys-lfu`**\n- 另外还加了**布隆过滤器**来拦截缓存穿透\n\n需要我帮你把这份记录重新拉出来核对原文，或者结合当前页面做进一步对比吗？"
+      "durationMs": 438,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 34d6daa0-70bc-44a1-8935-bbe67bd05054)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-ratelimit-05",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -157,29 +93,13 @@
           "心接"
         ]
       },
-      "durationMs": 1517,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "363/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据你的浏览记忆：\n\n**《服务治理限流熔断配置（内部）》** 中的记录：\n\n| 配置项 | 阈值 |\n|---|---|\n| 核心接口限流阈值 | **800 QPS**（网关默认 5000） |\n| 熔断失败率阈值 | **12%** |\n| 半开探测窗口 | 30 秒 |\n| 触发后冷却 | 60 秒 |\n\n也就是说，核心接口的限流阈值是 **800 QPS**，熔断失败率阈值定在 **12"
+      "durationMs": 401,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: f37b490d-b459-48b2-8709-f5f5e57e8555)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-mq-06",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -192,29 +112,13 @@
           "记录"
         ]
       },
-      "durationMs": 1228,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "152/800"
-        },
-        {
-          "name": "regex",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据浏览记忆库中的《消息队列运维记录（内部）》：\n\n- **消费失败最多重试次数：9 次**（官方默认是 16 次，团队做了下调）\n- **死信消息保留时长：72 小时**，之后归档到冷存储\n\n补充一条相关要点：退避策略也从原来的固定 2 秒改为了指数退避。\n\n需要我打开这条记录的原文再核对一遍细节吗？"
+      "durationMs": 391,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: cecaa0a6-0628-4b33-9f1c-0ca68065177a)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-monitoring-07",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -227,29 +131,13 @@
           "接口"
         ]
       },
-      "durationMs": 753,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "124/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据浏览记忆中的《监控告警阈值配置（内部）》：\n\n- **接口 P99 延迟**：超过 **420 毫秒** 触发告警\n- **错误率告警阈值**：**0.5%**（需连续 3 个周期命中才会通知）\n\n需要我帮你在当前页面或其他资料里进一步核对吗？"
+      "durationMs": 390,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: c45cecec-3bda-47b9-ada0-403c9fea33ee)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-auth-08",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -262,29 +150,13 @@
           "有效"
         ]
       },
-      "durationMs": 829,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "127/800"
-        },
-        {
-          "name": "regex",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据浏览记忆中的《鉴权令牌策略记录（内部）》：\n\n- **访问令牌有效期：15 分钟**（默认是 60 分钟，被调短了）\n- **刷新令牌过期时间：7 天**\n\n并且该策略采用**双令牌轮换机制**。\n\n需要我打开这份记录页面，把完整上下文再核对一遍吗？"
+      "durationMs": 393,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: cbde1bcb-2efa-4b68-a58f-b311752cf8ea)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-loadtest-09",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -297,29 +169,13 @@
           "容量"
         ]
       },
-      "durationMs": 693,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "107/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据你的浏览记忆，这两个数字来自《压测目标与容量记录（内部）》：\n\n- **接口目标 QPS：2400**\n- **容量水位线：65%**（超过即触发自动扩容）\n\n需要我打开当前页面或相关内部文档再核对一遍原文吗？"
+      "durationMs": 428,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 15cfbc73-80e1-4c99-9903-1df0e0baa8a9)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-log-10",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -332,29 +188,13 @@
           "保留"
         ]
       },
-      "durationMs": 915,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "91/800"
-        },
-        {
-          "name": "must_mention",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "访问日志保留 **30 天**（默认 90 天），错误日志保留 **180 天**，两者均归档到冷存储。\n\n来源：《日志保留策略记录（内部）》——即你之前读过并总结过的浏览记忆页面。"
+      "durationMs": 429,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 0c7a94d8-e8f7-4aee-a6e9-da1498d60a4a)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-payment-11",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -367,29 +207,13 @@
           "异超"
         ]
       },
-      "durationMs": 961,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "139/800"
-        },
-        {
-          "name": "regex",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据你之前读过的《支付对账规则记录（内部）》笔记：\n\n- **触发人工介入的差异阈值：超过 5 元**\n- **对账批次运行时间：每天凌晨 3 点**\n- 另外还有一条相关参数：超时阈值为 45 分钟。\n\n需要我帮你把这份笔记的完整要点再整理一遍，或者和当前页面内容做个对照吗？"
+      "durationMs": 421,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 9bf20001-0e0f-4948-a0b4-ebc63dfb235e)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     },
     {
       "id": "memory-backup-12",
-      "passed": true,
+      "passed": false,
       "recall": {
         "hit": true,
         "score": 0.0164,
@@ -402,25 +226,9 @@
           "量备"
         ]
       },
-      "durationMs": 681,
-      "checks": [
-        {
-          "name": "success",
-          "passed": true,
-          "detail": "调用成功"
-        },
-        {
-          "name": "max_chars",
-          "passed": true,
-          "detail": "147/800"
-        },
-        {
-          "name": "regex",
-          "passed": true,
-          "detail": "全部命中"
-        }
-      ],
-      "contentPreview": "根据你的浏览记忆，来自《数据备份策略记录（内部）》：\n\n- **增量备份**：每 **6 小时** 一次\n- **备份保留**：保留 **14 份**（该记录中提到默认是 7 份，你们调整为了 14 份）\n\n另外补充该记录里的其他要点：全量备份为每天一次。\n\n需要我打开这份记录原文核对一下吗？"
+      "durationMs": 398,
+      "checks": [],
+      "error": "LLM API error: 402 - {\"error\":{\"message\":\"Insufficient Balance (request_id: 0df822c7-fc47-4aa8-85f8-17a46e3dad1f)\",\"type\":\"unknown_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
     }
   ]
 }

@@ -89,19 +89,51 @@ async function search(query, { k = 3, excludeUrl, mode, embedder } = {}) {
     return vecList.slice(0, k).map((h, i) => ({ ...h, channels: { bm25: null, vector: i + 1 } }))
   }
 
+  // P8.1 置信度门控：词法名次进入融合前需要语义背书。
+  // 失效模式（对抗评测实证）：词面陷阱卡"BM25 高名次 × 向量中游名次"的叠加分，
+  // 会把纯向量命中的正确卡挤出 top-3（semantic 集 hybrid 75% < vector 100%）。
+  // 规则：卡片余弦 ≥ β × 本查询最高余弦 才保留 BM25 名次，否则词法名次作废（向量通道照常）。
+  // β 取 0.9：污染卡实测比值 ≤0.898，双通道一致卡 =1.0，落在间隙内且不贴边。
+  // cosMax=0（语义通道整体无信号）时旁路门控——词法兜底不受影响。
+  // 已知取舍：语义通道强烈不认的"纯词法精确匹配"会被降权（用一点召回换精度），
+  // 真实场景出现再评估逃生通道。
+  const cosMax = vecList.length ? vecList[0].score : 0
+  const gateRatio = config.memory?.bm25GateRatio ?? 0.9
+  const gateOn = gateRatio > 0 && cosMax > 0
+  const vecCos = new Map(vecList.map((h) => [vectorStore.cardKey(h.card), h.score]))
+  let gatedCount = 0
+  const gatedBm25List = gateOn
+    ? bm25List.filter((h) => {
+        const ok = (vecCos.get(vectorStore.cardKey(h.card)) || 0) >= gateRatio * cosMax
+        if (!ok) gatedCount++
+        return ok
+      })
+    : bm25List
+  if (gateOn && gatedCount > 0) {
+    console.log(
+      `[Memory] 置信度门控：${gatedCount}/${bm25List.length} 张卡的词法名次因语义背书不足被作废`
+    )
+  }
+
   // hybrid：两路排名做 RRF 融合（只用名次不用分数，免疫量纲问题）
   const fused = rrfFuse(
-    [bm25List.map((h) => vectorStore.cardKey(h.card)), vecList.map((h) => vectorStore.cardKey(h.card))],
+    [
+      gatedBm25List.map((h) => vectorStore.cardKey(h.card)),
+      vecList.map((h) => vectorStore.cardKey(h.card)),
+    ],
     { k: config.memory?.rrfK || 60 }
   )
   const bm25Rank = new Map(
-    bm25List.map((h, i) => [vectorStore.cardKey(h.card), { rank: i + 1, matchedTerms: h.matchedTerms || [] }])
+    gatedBm25List.map((h, i) => [
+      vectorStore.cardKey(h.card),
+      { rank: i + 1, matchedTerms: h.matchedTerms || [] },
+    ])
   )
   const vecRank = new Map(vecList.map((h, i) => [vectorStore.cardKey(h.card), i + 1]))
   return [...fused.entries()]
     .map(([cardId, score]) => {
       const hit =
-        bm25List.find((h) => vectorStore.cardKey(h.card) === cardId) ||
+        gatedBm25List.find((h) => vectorStore.cardKey(h.card) === cardId) ||
         vecList.find((h) => vectorStore.cardKey(h.card) === cardId)
       const bm = bm25Rank.get(cardId)
       return {

@@ -1,16 +1,16 @@
 {
-  "ranAt": "2026-09-27T13:37:08.912Z",
+  "ranAt": "2026-09-28T03:55:04.914Z",
   "total": 12,
   "recallAt3": 1,
   "withMemory": {
-    "pass": 12,
-    "rate": 1
+    "pass": 0,
+    "rate": 0
   },
   "withoutMemory": {
     "pass": 0,
     "rate": 0
   },
-  "memoryGain": 1,
+  "memoryGain": 0,
   "cases": [
     {
       "id": "memory-bm25-01",
@@ -24,7 +24,7 @@
         "队内",
         "内部"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -39,7 +39,7 @@
         "滚动",
         "动发"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -54,7 +54,7 @@
         "维记",
         "记录"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -69,7 +69,7 @@
         "方案",
         "案调"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -84,7 +84,7 @@
         "核心",
         "心接"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -99,7 +99,7 @@
         "维记",
         "记录"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -114,7 +114,7 @@
         "配置",
         "接口"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -129,7 +129,7 @@
         "令牌",
         "有效"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -144,7 +144,7 @@
         "定在",
         "容量"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -159,7 +159,7 @@
         "志保",
         "保留"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -174,7 +174,7 @@
         "差异",
         "异超"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     },
     {
@@ -189,7 +189,7 @@
         "增量",
         "量备"
       ],
-      "withMemory": true,
+      "withMemory": false,
       "withoutMemory": false
     }
   ]

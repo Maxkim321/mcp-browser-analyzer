@@ -101,6 +101,11 @@ const config = {
     retrieval: process.env.MEMORY_RETRIEVAL || 'auto',
     rrfK: 60,
     vectorPool: 20,
+    // P8.1 置信度门控：BM25 名次进入 RRF 融合的语义背书阈值——
+    // 卡片余弦 ≥ β × 本查询最高余弦 才保留词法名次，否则名次作废（向量通道不受影响）。
+    // β=0.9 来自对抗评测的实测间隙：污染卡比值 ≤0.898，双通道一致卡 =1.0（推导见技术文档 P8.1）。
+    // 0 = 关闭门控（对照臂）；语义通道整体无信号（cosMax=0）时自动旁路，词法兜底不受影响。
+    bm25GateRatio: Number(process.env.MEMORY_BM25_GATE ?? 0.9),
     embed: {
       baseURL: process.env.EMBED_BASE_URL,
       apiKey: process.env.EMBED_API_KEY,

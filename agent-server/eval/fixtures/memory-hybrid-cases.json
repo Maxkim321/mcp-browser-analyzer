@@ -84,6 +84,18 @@
       "title": "前端监控指标体系搭建",
       "summary": "FP/FCP/LCP 采集口径，PerformanceObserver 采样上报，大盘聚合与同环比告警。",
       "lexical-trap": "命中 S5 的'前端/监控'词面但语义无关（指标向）"
+    },
+    {
+      "url": "https://eval.local/interview-trap",
+      "title": "前端面试八股背诵指南",
+      "summary": "面试高频考点清单：闭包原型链事件循环虚拟 DOM diff，按题型分类的背诵策略与自我介绍模板，冲刺大厂前端岗位。",
+      "lexical-trap": "holdout 陷阱：命中'前端/笔记'类通用词面（门控设计完成后加入，留出验证用）"
+    },
+    {
+      "url": "https://eval.local/ai-tools-trap",
+      "title": "AI 编码工具选购指南",
+      "summary": "ChatGPT Cursor Copilot 等智能编程助手的功能对比与订阅价格，帮助团队挑选合适的 AI 工具提升研发效率。",
+      "lexical-trap": "holdout 陷阱：命中'AI/智能/助手'类通用词面（门控设计完成后加入，留出验证用）"
     }
   ],
   "cases": [
@@ -98,6 +110,9 @@
     { "id": "S9-paraphrase", "kind": "paraphrase", "prompt": "长连接掉线后自动恢复的那篇", "expectedUrl": "https://eval.local/ws-heartbeat" },
     { "id": "S10-crosslang", "kind": "cross-lang", "prompt": "debounce throttle 适用场景对比", "expectedUrl": "https://eval.local/debounce" },
     { "id": "S11-intent", "kind": "intent", "prompt": "上次那篇讲换肤方案的文章在哪", "expectedUrl": "https://eval.local/tokens" },
-    { "id": "S12-paraphrase", "kind": "paraphrase", "prompt": "用户删不掉的页面角标是怎么实现的", "expectedUrl": "https://eval.local/watermark" }
+    { "id": "S12-paraphrase", "kind": "paraphrase", "prompt": "用户删不掉的页面角标是怎么实现的", "expectedUrl": "https://eval.local/watermark" },
+    { "id": "H1-holdout", "kind": "holdout-paraphrase", "prompt": "那种讲前端页面又卡又掉帧怎么调优的笔记", "expectedUrl": "https://eval.local/perf-first-paint" },
+    { "id": "H2-holdout", "kind": "holdout-intent", "prompt": "之前存过一篇讲存储空间超限处理的", "expectedUrl": "https://eval.local/idb-quota" },
+    { "id": "H3-holdout", "kind": "holdout-intent", "prompt": "那篇讲消息推送断线自动恢复的", "expectedUrl": "https://eval.local/ws-heartbeat" }
   ]
 }

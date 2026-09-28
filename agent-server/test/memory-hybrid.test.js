@@ -196,6 +196,36 @@ test('回归：无 id 语料（直写 JSONL 绕过 store.append）全链路可�
   assert.strictEqual(hyb[0].channels.vector, 1)
 })
 
+test('P8.1 置信度门控：词面命中但语义背书不足的卡片，BM25 名次被作废', async () => {
+  const config = require('../src/config/index.js')
+  // 现状（mock-emb 空间）：TARGET cos 0.95（max），DISTRACTOR cos 0.3 → 比值 0.316 < 0.9
+  // DISTRACTOR 对 QUERY 有 BM25 名次（词面命中"服务/多个"），但语义通道不认 → 名次作废
+  const before = await hybrid.search(QUERY, { k: 3, mode: 'hybrid', embedder: MOCK })
+  const distract = before.find((h) => h.card.url === 'https://t/distract')
+  assert.ok(distract, 'DISTRACTOR 应在融合结果中（向量通道仍在）')
+  assert.strictEqual(distract.channels.bm25, null, '词法名次应被门控作废')
+  assert.ok(distract.channels.vector > 0, '向量通道不受门控影响')
+
+  // 对照：关掉门控（β=0）后词法名次恢复，DISTRACTOR 靠叠加分反超 TARGET
+  config.memory.bm25GateRatio = 0
+  try {
+    const off = await hybrid.search(QUERY, { k: 3, mode: 'hybrid', embedder: MOCK })
+    const distractOff = off.find((h) => h.card.url === 'https://t/distract')
+    assert.strictEqual(distractOff.channels.bm25, 1, '关闭门控后词法名次恢复')
+    assert.strictEqual(off[0].card.url, 'https://t/distract', '叠加分让噪声卡登顶（复现失效模式）')
+  } finally {
+    config.memory.bm25GateRatio = 0.9
+  }
+})
+
+test('P8.1 门控旁路：语义通道整体无信号（cosMax=0）时词法兜底不受影响', async () => {
+  // empty-emb 没有任何存储向量 → vecList 空 → cosMax=0 → 门控旁路，BM25 全量兜底
+  const emptyEmb = { model: 'empty-emb', async embed(texts) { return texts.map(() => [1, 0]) } }
+  const hits = await hybrid.search(QUERY, { k: 3, mode: 'hybrid', embedder: emptyEmb })
+  assert.ok(hits.length > 0, '词法兜底仍有结果')
+  assert.ok(hits.every((h) => h.channels.bm25 != null), 'BM25 名次全量保留')
+})
+
 test('wire.recallForPrompt：异步签名 + refs 携带 channels（auto→bm25 环境下行为不变）', async () => {
   const recalled = await wire.recallForPrompt('分布式锁怎么实现', { url: 'https://current.page' })
   assert.ok(recalled.block.includes('浏览记忆'))

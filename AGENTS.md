@@ -49,13 +49,13 @@ mcp-browser-analyzer/
 | P5 | 白盒 Dashboard（评测台+飞行记录仪） | src/dashboard/, trace-log.js | 只读产物文件，不生产数字 |
 | P6 | 深度研究子 agent + 事件 seq 主键 + auto 路由 | core/workflow.js, topic-agent.js, event-log.js | 浅题 legacy 优（×4.1/×8）、深题 worker 结构性胜出；auto 两场景路由全对 |
 | P7 | Prompt injection 五层纵深 | core/injection-guard.js | 8 中英模式；检测不阻断（人审是决策点） |
-| **P8** | **记忆混合检索（BM25+embedding RRF）** | memory/{embedder,vector-store,rrf,hybrid,embed-sync}.js | regression 三路 recall@3 全 100%；semantic 对抗集 bm25 25%→**hybrid 75%**（6/12 语义救援）；端到端 A/B Δ=100pct；2048 维（方舟 doubao-embedding-vision） |
+| **P8** | **记忆混合检索（BM25+embedding RRF）** | memory/{embedder,vector-store,rrf,hybrid,embed-sync}.js | regression 三路 recall@3 全 100%；semantic 对抗集 bm25 40%→**hybrid 100%**（P8.1 置信度门控修复词面陷阱污染，含留出验证）；端到端 A/B Δ=100pct；2048 维（方舟 doubao-embedding-vision） |
 | **P9** | **MCP 真接入（自研 Client+注册期治理）** | src/mcp/client.js, tools/mcp-registry.js, tools/index.js, handler.js | 官方 filesystem server 14 工具实测纳管；三道闸：注册期注入扫描（tool poisoning 防线）→ dangerLevel 自动定级（默认最危险）→ 走审批/溯源管线；三级验证（单测/集成/UI 层） |
 
 ## 4. 常用命令（都在 agent-server/ 下，除非注明）
 
 ```bash
-pnpm test              # 全量单测 158/158（零网络，必须保持全绿）
+pnpm test              # 全量单测 160/160（零网络，必须保持全绿）
 pnpm eval              # 黄金评测（需 LLM key）
 pnpm eval:memory       # 记忆 A/B（LLM；auto 模式下走 hybrid 检索）
 pnpm eval:hybrid       # 混合检索三路对照（确定性判分，零 LLM 成本，需 EMBED_*）
@@ -90,6 +90,6 @@ pnpm report            # 成本报表（eval/cost-report.js）
 
 - **已完成**：P0-P9 全部（见 §3）；测试 158/158；eslint 0。
 - **blocked**：P2 轻路线「以文搜图」——doubao-embedding-vision 图片向量：coding 端点只收纯文本、标准 api/v3 端点无权限（需方舟控制台开通后复测，检索管线已就绪）。
-- **排队待办**：memory 卡片 keywords 字段 + 写卡去重；评测集加研究类 golden case（轨迹判卷扩展到子 agent 链路）；会话管理补全（重命名/删除/搜索）；MCP 工具分发门槛按来源分层（MCP 工具其实不依赖扩展连接）；RRF 通道置信度门控（对抗集上 bm25 被陷阱卡污染的改进方向）；跨主题并行（v2，会动 HITL 语义）。
+- **排队待办**：memory 卡片 keywords 字段 + 写卡去重；评测集加研究类 golden case（轨迹判卷扩展到子 agent 链路）；会话管理补全（重命名/删除/搜索）；MCP 工具分发门槛按来源分层（MCP 工具其实不依赖扩展连接）；跨主题并行（v2，会动 HITL 语义）。
 - **不要做**：浏览器-as-MCP-Server（市场饱和，Playwright/Chrome DevTools MCP 已覆盖）。
 - **下一步行动指南**：见仓库根 `TODO.md`——第二层 MCP server 接入测试方法（GitHub/Playwright/SQLite/Notion 逐个配置+测试用例）、第三层开发项（按优先级）、维护护栏（红线，违反=做错）。
