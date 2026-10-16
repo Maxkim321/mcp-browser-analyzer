@@ -552,7 +552,8 @@ async function handleWebSearch(args, traceId, context = {}) {
  */
 async function handleWriteAction(action, args, traceId, context = {}) {
   const connectionId = resolveConnectionId(args.connectionId, context)
-  const { selector, value } = args
+  // P12a：selector → ref（元素引用身份），执行前由内容脚本校验（WeakRef+指纹）
+  const { ref, value } = args
   const requestId = uuidv4()
 
   return new Promise((resolve, reject) => {
@@ -564,12 +565,12 @@ async function handleWriteAction(action, args, traceId, context = {}) {
 
     pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
 
-    traceManager.addEvent(traceId, 'write_action', { connectionId, action, selector, value })
+    traceManager.addEvent(traceId, 'write_action', { connectionId, action, ref, value })
     const sendSuccess = ws.send(connectionId, {
       type: 'write_action',
       requestId,
       action,
-      selector,
+      ref,
       value,
     })
 
@@ -751,10 +752,19 @@ function handlePluginResponse(connectionId, msg) {
       // 根据消息类型添加不同的追踪事件
       let eventType = 'receive_response'
       let responseText = 'Operation completed successfully'
-      
+
       if (msg.type === 'performance_data') {
         eventType = 'receive_data'
         responseText = JSON.stringify(msg.payload, null, 2)
+      } else if (msg.type === 'interactive_elements' && msg.payload?.snapshot) {
+        // P12a：伪 HTML 快照直接给 LLM（Skyvern A/B：HTML 表示优于 JSON——
+        // 成功率 +3.9%、token -11%），结构化 elements 留在 payload 供评测/审计
+        responseText = `页面可交互元素快照（ref 来自最近一次枚举，失效会被拒绝并要求重新枚举）：\n${msg.payload.snapshot}`
+      } else if (msg.type === 'write_action_result' && msg.payload?.info) {
+        // 写动作结果用人类可读 info（含"页面有响应/无变化"自诊字段），不灌 JSON
+        responseText = msg.payload.value
+          ? `${msg.payload.info}（当前值: ${msg.payload.value}）`
+          : msg.payload.info
       } else if (msg.payload) {
         responseText = JSON.stringify(msg.payload, null, 2)
       } else if (msg.message) {

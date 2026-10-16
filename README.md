@@ -36,6 +36,10 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 
 ![知识点面板](assets/demo-knowledge-panel.png)
 
+**AI 操作可视化 + ref 精准寻址**——写操作执行时科幻光标缓动移动、点击出涟漪、"AI 正在操作"实时指示；元素用引用身份寻址（WeakRef+指纹，执行前校验），shadow DOM 穿透枚举，失效即报错绝不误点：
+
+![AI 操作可视化](assets/demo-action-overlay.png)
+
 **实用任务闭环**——"总结当前页面，把要点存成笔记"：真实读取页面 → LLM 结构化总结 → MCP 审批落盘 → 记忆引用标签全程可见：
 
 ![MCP 实用任务：总结页面并落盘笔记](assets/demo-mcp-notes.png)
@@ -51,7 +55,7 @@ Chrome Extension（Vue3 + MV3） · Node.js Agent Server（DeepSeek + 自研 Age
 | | 💬 多轮上下文对话 | 会话持久化（`chrome.storage.local` 分桶存储），历史会话可切换 |
 | | ⚡ 流式输出 | SSE 增量解析 + WebSocket 分片推送，打字机效果；工具调用与文本输出同通道区分 |
 | **深度研究** | 🔍 Deep Research | 自动规划子问题 → 后台静默多页读取 → 信息充分性评估 → 交叉对比 → 流式生成带来源报告；checkpoint 断点恢复；**分级 HITL**——正常路径全程连跑零打断，只在死胡同/预算告警时请求人工拍板（`hitlMode: on-deadend / every-topic / off`），可选计划确认（planReview）把方向调整前置到研究开始前 |
-| **页面操作** | 🖱️ 写操作 + 分级权限审批 | Agent 可点击/填表/选下拉（`click_element`/`fill_input`/`select_option`）：读操作零打断，**每次写操作前推送审批卡片**（展示目标选择器与填入值），超时/断连默认拒绝；写动作预算封顶（默认 8 个/轮）+ dry-run 模式 + 审批/执行全链路审计落痕；执行前强制 `get_interactive_elements` 定位，禁止凭空构造选择器 |
+| **页面操作** | 🖱️ 写操作 + 分级权限审批 | Agent 可点击/填表/选下拉（`click_element`/`fill_input`/`select_option`）：读操作零打断，**每次写操作前推送审批卡片**（展示目标描述与 ref 徽章），超时/断连默认拒绝；写动作预算封顶（默认 8 个/轮）+ dry-run 模式 + 审批/执行全链路审计落痕（含 ref 归因）；**P12a ref 引用身份寻址**——元素枚举发 ref（WeakRef+指纹），执行前校验身份、失效即报错（页面变了绝不静默点错），actionability 矩阵（可见/两帧稳定/遮挡命中/enabled）+ 动作后校验（页面有响应/无变化回喂自诊）；shadow DOM 穿透枚举 + 伪 HTML 快照 + 操作可视化动画（科幻光标/涟漪/执行指示） |
 | **模型路由** | 🎚️ 分级路由 + 多模型抽象 | Provider 适配层（当前 OpenAI 兼容协议，可扩展 Claude/Gemini）与模型选择解耦；调用点按任务标注 tier——grade 打分/检索词改写/上下文压缩走 light 便宜模型，plan/报告走 reasoning 档，未配置档位自动回落主模型；瞬时错误（限流/5xx/网络）自动指数退避重试 |
 | **可靠性** | 🛑 可取消回答 | AbortController 支持随时停止生成，不浪费 token |
 | | 📊 Step 级可观测 | 推理/工具执行进度实时下发前端，用户可看到 Agent 当前在做什么；工具调用有**终态**（完成/被拒/预演/出错 + 耗时），轨迹不再停在"调用中" |
@@ -291,6 +295,7 @@ npm run review:sample
 - **MCP Client 真接入**：stdio + JSON-RPC 2.0（兼容 2026-07-28 stateless 与存量握手）· 注册期注入扫描 + dangerLevel 自动定级 + 审批复用 · 官方 filesystem server 14 工具实测 · 全真 e2e（真 LLM/真 server/真磁盘/真 UI 审批点击）
 - **能力可见性**：侧边栏工具箱面板（内置/MCP 分组 + 读写定级徽章）· 运行时注册表快照驱动（拉取 + 注册广播双通道）· 空态推荐词按工具特征匹配 · 工具调用终态上轨迹（165/165 测试、真机 e2e 截图）
 - **知识点面板重构**：列表/详情两态 + 搜索/状态筛选 · 显式 AI 补全（专用提示词 + `tools:[]` 硬闸，省 ≈1317 tokens/次）· 骨架屏/失败重试/90s 超时兜底 · 撤销删除（169/169 测试、真机 e2e 含真实补全）
+- **写操作 ref 寻址 + 操作可视化（P12a）**：元素引用身份（WeakRef+指纹，执行前校验失效即拒绝）· shadow DOM 穿透枚举（e2e 实测 0→全召回）· 伪 HTML 快照 · actionability 矩阵 + 动作后校验 · 科幻光标/涟漪/「AI 正在操作」可视化（177/177 测试、真机 e2e 四链路）
 - **AI 代码审查**：零依赖 CLI · GitHub/GitLab 适配器 · GitHub Actions 自动触发 · PR 行级评论
 
 ### 🔜 进行中 / 未来

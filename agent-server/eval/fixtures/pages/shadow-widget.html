@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Shadow DOM 组件页（P12a e2e fixture）</title>
+</head>
+<body>
+  <h1>Shadow DOM 组件召回测试页</h1>
+
+  <!-- 顶层普通元素：新旧枚举都应该看得见（基线） -->
+  <button id="plain-btn">普通按钮</button>
+  <input id="plain-input" placeholder="普通输入框" />
+
+  <!-- Shadow DOM 组件：旧枚举（querySelectorAll）看不见，新枚举必须召回 -->
+  <div id="widget-host"></div>
+  <script>
+    const host = document.getElementById('widget-host')
+    const root = host.attachShadow({ mode: 'open' })
+    root.innerHTML = `
+      <style>button { padding: 6px 14px; } input { padding: 6px; }</style>
+      <h3>这是 shadow 内部</h3>
+      <button id="shadow-btn">shadow 内的按钮</button>
+      <input id="shadow-input" placeholder="shadow 内的输入框" />
+    `
+    // 点击计数器：e2e 断言"真的点到了 shadow 内的按钮"
+    const shadowBtn = root.getElementById('shadow-btn')
+    shadowBtn.addEventListener('click', () => {
+      window.__shadowClicks = (window.__shadowClicks || 0) + 1
+    })
+    const plainBtn = document.getElementById('plain-btn')
+    plainBtn.addEventListener('click', () => {
+      window.__plainClicks = (window.__plainClicks || 0) + 1
+    })
+  </script>
+</body>
+</html>

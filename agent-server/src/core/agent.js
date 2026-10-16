@@ -356,6 +356,8 @@ class Agent {
           type: 'write_action_executed',
           sessionId: context.sessionId || null,
           tool: toolName,
+          // P12a：审计带 ref——此前连 selector 都没有，事后无法归因"动了哪个元素"
+          ref: toolArgs?.ref || null,
           ok: true,
           dryRun: false,
           durationMs: Date.now() - t0,
@@ -414,6 +416,7 @@ class Agent {
           type: 'write_action_executed',
           sessionId: context.sessionId || null,
           tool: toolName,
+          ref: toolArgs?.ref || null,
           ok: false,
           dryRun: false,
           error: error.message,

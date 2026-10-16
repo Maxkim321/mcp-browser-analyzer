@@ -7,7 +7,10 @@
       "prompt": "总结当前页面核心内容",
       "fixture": "pages/dsh-architecture.html",
       "rubric": {
-        "must_mention": ["Cordis", "插件"],
+        "must_mention": [
+          "Cordis",
+          "插件"
+        ],
         "llm_judge": {
           "criteria": "总结是否同时涵盖：1)一切皆插件的架构理念 2)三类事件域分工 3)seam/Provider 替换机制。三点齐备得 4-5 分，缺一扣一分",
           "min_score": 3
@@ -21,7 +24,11 @@
       "fixture": "pages/dsh-architecture.html",
       "prompt": "这篇文章说的三类事件域分别是什么？每个用一句话概括它的职责。",
       "rubric": {
-        "must_mention": ["会话事件", "Agent 事件", "能力事件"],
+        "must_mention": [
+          "会话事件",
+          "Agent 事件",
+          "能力事件"
+        ],
         "llm_judge": {
           "criteria": "三个事件域的职责概括是否准确（会话=持久保留事实、Agent=实时活跃状态、能力=附加策略避免导入循环）",
           "min_score": 3
@@ -35,7 +42,9 @@
       "fixture": "pages/dsh-architecture.html",
       "prompt": "dsh 的版本号是多少？现在处于什么阶段，适合上生产吗？",
       "rubric": {
-        "must_mention": ["0.1.0"],
+        "must_mention": [
+          "0.1.0"
+        ],
         "llm_judge": {
           "criteria": "是否指出 Developer Preview 阶段且给出'不适合生产依赖'类结论",
           "min_score": 3
@@ -49,7 +58,10 @@
       "fixture": "pages/dsh-architecture.html",
       "prompt": "dsh 的 subagent 支持哪几种 Provider？能拉起哪些外部产品？",
       "rubric": {
-        "must_mention": ["claude", "codex"],
+        "must_mention": [
+          "claude",
+          "codex"
+        ],
         "llm_judge": {
           "criteria": "是否答出 6 种 Provider 中至少 4 种，且明确指出可拉起 Claude Code 与 Codex",
           "min_score": 3
@@ -64,8 +76,14 @@
       "prompt": "提取当前页面的结构化数据",
       "fixture": "pages/coding-assistant-compare.html",
       "rubric": {
-        "must_mention": ["CodeMate", "CloudCode", "AgentKit"],
-        "regex": ["99"],
+        "must_mention": [
+          "CodeMate",
+          "CloudCode",
+          "AgentKit"
+        ],
+        "regex": [
+          "99"
+        ],
         "max_chars": 2500
       }
     },
@@ -75,7 +93,10 @@
       "fixture": "pages/coding-assistant-compare.html",
       "prompt": "哪款产品的专业版月费最低？多少钱？它便宜的原因是什么？",
       "rubric": {
-        "must_mention": ["CodeMate", "99"],
+        "must_mention": [
+          "CodeMate",
+          "99"
+        ],
         "llm_judge": {
           "criteria": "是否指出 CodeMate ¥99 最低，且原因正确（专业版无限快慢混用，不限旗舰模型次数）",
           "min_score": 3
@@ -99,23 +120,33 @@
     {
       "id": "action-subscribe-01",
       "type": "action",
-      "fixture": "pages/subscribe-form.html",
+      "fixture": "pages/subscribe-form-checked.html",
       "prompt": "帮我订阅这份周报：姓名填\"田伟亮\"，邮箱用 fan@example.com，推送频率选每周合集，然后点击确认订阅。",
       "rubric": {
         "nonempty": true,
         "trajectory": [
-          { "tool": "fill_input", "selectorIncludes": "#name", "valueIncludes": "田伟亮" },
           {
             "tool": "fill_input",
-            "selectorIncludes": "#email",
-            "valueIncludes": "fan@example.com"
+            "valueIncludes": "田伟亮",
+            "ref": "e1"
+          },
+          {
+            "tool": "fill_input",
+            "valueIncludes": "fan@example.com",
+            "ref": "e2"
           },
           {
             "tool": "select_option",
-            "selectorIncludes": "#frequency",
-            "valueIncludes": ["weekly", "每周"]
+            "valueIncludes": [
+              "weekly",
+              "每周"
+            ],
+            "ref": "e3"
           },
-          { "tool": "click_element", "selectorIncludes": "#submit-btn" }
+          {
+            "tool": "click_element",
+            "ref": "e5"
+          }
         ]
       }
     },
@@ -129,10 +160,13 @@
         "trajectory": [
           {
             "tool": "fill_input",
-            "selectorIncludes": "#email",
-            "valueIncludes": "fan@example.com"
+            "valueIncludes": "fan@example.com",
+            "ref": "e2"
           },
-          { "tool": "click_element", "selectorIncludes": "#submit-btn" }
+          {
+            "tool": "click_element",
+            "ref": "e5"
+          }
         ]
       }
     },
@@ -146,11 +180,20 @@
         "trajectory": [
           {
             "tool": "select_option",
-            "selectorIncludes": "#frequency",
-            "valueIncludes": ["monthly", "每月"]
+            "valueIncludes": [
+              "monthly",
+              "每月"
+            ],
+            "ref": "e3"
           },
-          { "tool": "click_element", "selectorIncludes": "#agree" },
-          { "tool": "click_element", "selectorIncludes": "#submit-btn" }
+          {
+            "tool": "click_element",
+            "ref": "e4"
+          },
+          {
+            "tool": "click_element",
+            "ref": "e5"
+          }
         ]
       }
     }

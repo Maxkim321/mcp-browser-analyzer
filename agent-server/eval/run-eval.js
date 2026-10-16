@@ -148,7 +148,7 @@ function loadElements(fixtureRel) {
  */
 function makeActionOverrides(recorder, caseDef) {
   const record = (tool) => async (args) => {
-    recorder.push({ tool, args: { selector: args.selector, value: args.value } })
+    recorder.push({ tool, args: { ref: args.ref, value: args.value } })
     return {
       content: [
         {
@@ -168,10 +168,11 @@ function makeActionOverrides(recorder, caseDef) {
     select_option: record('select_option'),
     get_interactive_elements: async () => {
       const data = loadElements(caseDef.fixture)
+      // 与真实链路同形：给 LLM 的是伪 HTML 快照文本（handler 对 interactive_elements 特化文本）
+      const text = `页面可交互元素快照（ref 来自最近一次枚举，失效会被拒绝并要求重新枚举）：
+${data.snapshot}`
       return {
-        content: [
-          { type: 'text', text: JSON.stringify({ url: data.url, elements: data.elements }) },
-        ],
+        content: [{ type: 'text', text }],
       }
     },
   }
@@ -189,8 +190,7 @@ function judgeTrajectory(expected, recorded) {
     for (let j = ptr; j < recorded.length; j++) {
       const rec = recorded[j]
       if (exp.tool && rec.tool !== exp.tool) continue
-      if (exp.selectorIncludes && !String(rec.args?.selector || '').includes(exp.selectorIncludes))
-        continue
+      if (exp.ref && rec.args?.ref !== exp.ref) continue
       const wantValues = Array.isArray(exp.valueIncludes)
         ? exp.valueIncludes
         : exp.valueIncludes
@@ -205,7 +205,7 @@ function judgeTrajectory(expected, recorded) {
       name: `traj[${i}] ${exp.tool}`,
       passed: matched >= 0,
       detail:
-        matched >= 0 ? `轨迹第 ${matched + 1} 步命中` : '未命中（工具/选择器/值或相对顺序不符）',
+        matched >= 0 ? `轨迹第 ${matched + 1} 步命中` : '未命中（工具/ref/值或相对顺序不符）',
     }
   })
 }

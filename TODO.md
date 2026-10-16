@@ -49,7 +49,8 @@
 5. **评测集加研究类 golden case**：轨迹判卷扩展到子 agent 链路
 6. **P2 以文搜图**（blocked）：需方舟控制台给 doubao-embedding-vision 开图片输入权限或标准端点访问——开通后检索管线现成（截图→向量→同一记忆索引）
 7. **跨主题并行 v2**（谨慎）：会动 HITL 语义（currentTopic 游标挂载审批语义）
-8. **MCP 设置页（P10 的续集，候选）**：预设模板卡 + 运行时热注册（registerMcpServer 本就是运行时函数，差一个 WS/HTTP 入口）+ mcp-servers.local.json 持久化（启动时与 .env 合并，注意 config require 时固化 env 的坑）——把"第二层接入测试"装进这个 UI 做，接入过程即评测产物；届时一并修本清单第 1 项（分发门槛按来源分层）
+8. **页面操作 P12b/c（候选）**：fill_form 批量填表 / wait_for / 审批卡动作列表+diff 预览（P12b）；chrome.debugger CDP 增强通道（closed shadow root/跨域 iframe/paint order，开关式）+ JS 监听器探测 + Boss直聘 fixture 半自动验收（P12c）
+9. **MCP 设置页（P10 的续集，候选）**：预设模板卡 + 运行时热注册（registerMcpServer 本就是运行时函数，差一个 WS/HTTP 入口）+ mcp-servers.local.json 持久化（启动时与 .env 合并，注意 config require 时固化 env 的坑）——把"第二层接入测试"装进这个 UI 做，接入过程即评测产物；届时一并修本清单第 1 项（分发门槛按来源分层）
 
 ---
 
@@ -71,3 +72,4 @@
 - ✅ 实用任务真跑：总结 GitHub 仓库页 → 笔记.md 落盘 3601 字（含一次"拒绝编造"的正确行为演示）
 - ✅ P10 能力可见性（2026-10-12）：侧边栏工具箱面板（内置/MCP 分组 + 读写定级徽章，注册表快照驱动：WS 拉取 + 注册广播双通道）+ 空态 chip 按工具特征匹配 + 工具调用终态上轨迹（完成/被拒/预演/出错）；165/165 测试（+5）、pnpm eval 10/10 不回退、真机 e2e 截图 eval/results/ui-e2e-capabilities-*.png；详见技术文档 P10、面试总集 4.13
 - ✅ P11 知识点面板重构 + 补全链路修复（2026-10-12）：列表/详情两态 + 搜索/状态筛选 + 显式 AI 补全（knowledge_complete 注册专用提示词 + `tools:[]` 硬闸——修复"未注册白跑全量 ReAct"存量 bug，省 ≈1317 tokens/次）+ 骨架屏/失败重试/90s 超时兜底 + 撤销删除 toast + clearAllKnowledge 收口 prefs 层；169/169 测试（+4）、pnpm eval 10/10 不回退、真机 e2e 含真实补全（截图 eval/results/ui-e2e-knowledge-*.png）；详见技术文档 P11、面试总集 4.14
+- ✅ P12a 写操作 ref 寻址 + 操作可视化（2026-10-16）：元素引用身份（WeakRef+指纹，执行前校验失效即拒绝——移除"审批假安全感"）· shadow DOM 穿透枚举 + 伪 HTML 快照（带 checked/id/placeholder 语义锚点）· actionability 矩阵 + 动作后校验 · 操作可视化动画（closed shadow 隔离、reduced-motion 适配）· 审计补 ref 归因；chrome-extension 首次引入 node:test；177/177 测试（agent-server 169 + extension 8）、pnpm eval 10/10、真机 e2e 四链路（shadow 召回 0→全召回/ref 真点击/动画层/失效拒绝）；两个真机发现（elementFromPoint shadow retarget→composed 祖先链；rAF 后台不触发→80ms 竞速）；调研见 `../调研-浏览器Agent元素定位方案-2026-10.md`；详见技术文档 P12、面试总集 4.15

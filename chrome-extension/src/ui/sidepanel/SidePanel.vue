@@ -506,7 +506,12 @@
               🔐 AI 请求执行写操作：{{ writeToolLabel(msg.tool) }}
             </p>
             <div class="ask-evidence">
-              <div class="ask-evidence-item">目标：{{ msg.args?.selector }}</div>
+              <!-- P12a：寻址 selector → ref——目标展示 ref + LLM 给的人类可读说明；
+                   ref 执行前还会经内容脚本身份校验（审批到执行之间页面变了会被拒绝） -->
+              <div class="ask-evidence-item">
+                目标：{{ msg.args?.description || '未说明' }}
+                <span class="ask-evidence-ref">{{ msg.args?.ref }}</span>
+              </div>
               <div v-if="msg.args?.value" class="ask-evidence-item">内容：{{ msg.args.value }}</div>
               <div v-if="msg.args?.description" class="ask-evidence-item">
                 说明：{{ msg.args.description }}
@@ -2317,7 +2322,7 @@ const forwardWriteChain = (data) => {
       type: data.type,
       requestId: data.requestId,
       action: data.action,
-      selector: data.selector,
+      ref: data.ref, // P12a：元素引用身份（白名单漏加会被静默丢弃，回包只剩笼统 error）
       value: data.value,
       maxElements: data.maxElements,
     })
@@ -3933,6 +3938,19 @@ onUnmounted(() => {
   line-height: 1.6;
   color: var(--text-2);
   word-break: break-all;
+}
+
+/* P12a：审批卡上的 ref 徽章（元素引用身份，执行前经内容脚本身份校验） */
+.ask-evidence-ref {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--info-border);
+  border-radius: 8px;
+  background: var(--info-soft);
+  color: var(--info-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
 }
 
 .workflow-ask-actions {

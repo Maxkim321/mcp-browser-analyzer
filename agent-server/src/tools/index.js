@@ -219,13 +219,15 @@ const tools = [
     },
   },
   // ===== 写操作工具（dangerLevel:'write'）：每次执行前必须经用户审批（分级权限 HITL）=====
+  // P12a 寻址升级：selector 回显 → ref 引用身份。ref 由内容脚本枚举时发放并持元素
+  // 引用（WeakRef+指纹），执行前校验——选择器"重新解释"导致的静默点错被结构性移除
   {
     name: 'get_interactive_elements',
     dangerLevel: 'read',
     description:
-      '枚举当前页面的可交互元素（按钮/链接/输入框/下拉框）及其 CSS 选择器。' +
-      '执行任何写操作（click_element/fill_input/select_option）之前必须先用它定位目标元素，' +
-      '不要凭猜测构造选择器。返回 {url, elements:[{selector, tag, type, text, value}]}',
+      '枚举当前页面的可交互元素（按钮/链接/输入框/下拉框），返回伪 HTML 快照，每个元素带稳定 ref。' +
+      '执行任何写操作（click_element/fill_input/select_option）之前必须先用它获取元素 ref，' +
+      '不要凭猜测构造 ref。返回 {url, count, snapshot: 伪 HTML 快照文本（- <button ref=e3>文字</button> 形式）}',
     inputSchema: {
       type: 'object',
       properties: {
@@ -245,20 +247,20 @@ const tools = [
     dangerLevel: 'write',
     description:
       '点击页面上的元素（按钮/链接等）。写操作：执行前会请求用户审批。' +
-      'selector 必须来自 get_interactive_elements 返回的选择器，不要凭记忆构造。',
+      'ref 必须来自 get_interactive_elements 最近一次快照，禁止凭记忆构造；ref 失效会收到错误，重新枚举即可。',
     inputSchema: {
       type: 'object',
       properties: {
-        selector: {
+        ref: {
           type: 'string',
-          description: '目标元素的 CSS 选择器，例如 #submit-btn',
+          description: '目标元素的引用 ID，来自 get_interactive_elements 快照（如 e3）',
         },
         description: {
           type: 'string',
           description: '这个点击要做什么的一句话说明，会展示在审批卡片上，例如「提交订阅表单」',
         },
       },
-      required: ['selector'],
+      required: ['ref'],
     },
   },
   {
@@ -266,13 +268,13 @@ const tools = [
     dangerLevel: 'write',
     description:
       '向页面的输入框/文本域填入文字。写操作：执行前会请求用户审批，填入的值会展示在审批卡片上。' +
-      'selector 必须来自 get_interactive_elements 返回的选择器。',
+      'ref 必须来自 get_interactive_elements 最近一次快照。',
     inputSchema: {
       type: 'object',
       properties: {
-        selector: {
+        ref: {
           type: 'string',
-          description: '目标输入框的 CSS 选择器，例如 #email',
+          description: '目标输入框的引用 ID，来自 get_interactive_elements 快照（如 e2）',
         },
         value: {
           type: 'string',
@@ -283,7 +285,7 @@ const tools = [
           description: '这个填写要做什么的一句话说明，例如「填写邮箱地址」',
         },
       },
-      required: ['selector', 'value'],
+      required: ['ref', 'value'],
     },
   },
   {
@@ -291,13 +293,13 @@ const tools = [
     dangerLevel: 'write',
     description:
       '选中下拉框（select 元素）的某个选项。写操作：执行前会请求用户审批。' +
-      'selector 必须来自 get_interactive_elements 返回的选择器；value 匹配 option 的 value 或文本。',
+      'ref 必须来自 get_interactive_elements 最近一次快照；value 匹配 option 的 value 或文本。',
     inputSchema: {
       type: 'object',
       properties: {
-        selector: {
+        ref: {
           type: 'string',
-          description: '目标下拉框的 CSS 选择器，例如 #frequency',
+          description: '目标下拉框的引用 ID，来自 get_interactive_elements 快照（如 e4）',
         },
         value: {
           type: 'string',
@@ -308,7 +310,7 @@ const tools = [
           description: '这个选择要做什么的一句话说明，例如「选择每周推送」',
         },
       },
-      required: ['selector', 'value'],
+      required: ['ref', 'value'],
     },
   },
 ]

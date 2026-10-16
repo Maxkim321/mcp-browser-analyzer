@@ -5,9 +5,14 @@
  */
 
 import { Readability } from '@mozilla/readability'
+import { createRefStore } from './ref-store.js'
+import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
 
 (function() {
   let latestLcp = 0
+
+  // P12a：写操作 ref 存储——元素身份发放与执行前校验（页面导航随脚本重置）
+  const refStore = createRefStore()
 
   // 使用 buffered observer 读取已经发生过的 LCP，避免在 document_idle 注入时错过关键事件
   if (typeof PerformanceObserver !== 'undefined') {
@@ -365,18 +370,45 @@ import { Readability } from '@mozilla/readability'
 
   function isVisible(el) {
     const rect = el.getBoundingClientRect()
-    return rect.width > 0 && rect.height > 0
+    if (rect.width <= 0 || rect.height <= 0) return false
+    const style = getComputedStyle(el)
+    return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0.05
   }
 
   /**
-   * ===== P4 写操作：DOM 原语 =====
+   * ===== P4/P12a 写操作：DOM 原语 =====
    * 职责边界：这里只做确定性 DOM 操作（枚举/点击/填写/选择），
-   * "该不该做"由服务端分级权限审批把关；LLM 只产出目标选择器和值。
+   * "该不该做"由服务端分级权限审批把关；LLM 只产出目标 ref 和值。
+   * P12a 寻址升级：ref 绑定元素身份（WeakRef+指纹），执行前校验——
+   * 选择器"重新解释"导致的静默点错被结构性移除。
    */
 
   /**
+   * 可交互判定级联（browser-use 实战清单的 content-script 子集）：
+   * 标签 allowlist → 可聚焦（tabIndex≥0）→ ARIA 角色 → onclick 类属性 → cursor:pointer。
+   * JS 框架监听器探测（getEventListeners）需要 CDP，留给 P12c 增强通道。
+   */
+  const INTERACTIVE_ROLES = new Set([
+    'button', 'link', 'checkbox', 'radio', 'menuitem', 'menuitemcheckbox', 'menuitemradio',
+    'tab', 'option', 'switch', 'slider', 'textbox', 'combobox', 'searchbox', 'treeitem',
+  ])
+
+  function isInteractiveCandidate(el) {
+    const tag = el.tagName.toLowerCase()
+    if (['a', 'button', 'input', 'select', 'textarea', 'label', 'summary'].includes(tag)) {
+      return tag !== 'a' || el.hasAttribute('href')
+    }
+    if (el.tabIndex >= 0) return true
+    const role = el.getAttribute('role')
+    if (role && INTERACTIVE_ROLES.has(role)) return true
+    if (el.hasAttribute('onclick') || el.hasAttribute('ng-click') || el.hasAttribute('@click') || el.hasAttribute('v-on:click')) return true
+    return getComputedStyle(el).cursor === 'pointer'
+  }
+
+  /**
    * 枚举页面可交互元素（写操作前的定位步骤，只读）
-   * 只回传 LLM 定位所需的最小字段，避免整页 DOM 涌入上下文
+   * P12a：递归穿透 open shadow DOM；每个元素发稳定 ref（同元素跨枚举复用）；
+   * 输出伪 HTML 快照行（Skyvern 实证：HTML 表示比 JSON 成功率高、token 省）
    */
   function handleGetInteractiveElements(request, sender, sendResponse) {
     try {
@@ -385,7 +417,7 @@ import { Readability } from '@mozilla/readability'
         success: true,
         type: 'interactive_elements',
         requestId: request.requestId,
-        payload: { url: window.location.href, elements },
+        payload: { url: window.location.href, count: elements.length, snapshot: renderSnapshot(elements), elements },
       })
     } catch (error) {
       sendResponse({
@@ -398,67 +430,85 @@ import { Readability } from '@mozilla/readability'
   }
 
   function collectInteractiveElements(maxElements) {
-    const nodes = document.querySelectorAll(
-      'a[href], button, input, select, textarea, [role="button"], [onclick]'
-    )
-    const elements = []
-    for (const el of nodes) {
-      if (elements.length >= maxElements) break
-      if (!isVisible(el)) continue
-      const tag = el.tagName.toLowerCase()
-      const element = {
-        selector: buildSelector(el),
-        tag,
-        text: String(el.innerText || el.getAttribute('aria-label') || '')
-          .trim()
-          .slice(0, 60),
+    const out = []
+    const visit = (root, inShadow) => {
+      for (const el of root.querySelectorAll('*')) {
+        if (out.length >= maxElements) return
+        // open shadow root 递归：querySelectorAll 天然不进 shadow，这是旧版"看不见组件"的根因
+        if (el.shadowRoot) visit(el.shadowRoot, true)
+        if (!isInteractiveCandidate(el) || !isVisible(el)) continue
+        out.push(buildElementEntry(el, inShadow))
       }
-      const type = el.getAttribute('type')
-      if (type) element.type = type
-      if (['input', 'textarea', 'select'].includes(tag)) {
-        element.value = String(el.value ?? '').slice(0, 60)
-      }
-      elements.push(element)
     }
+    visit(document, false)
+    return out
+  }
+
+  /** 元素的可指纹描述（ref-store 指纹的原料，执行时现场重算比对） */
+  function buildDescriptor(el) {
+    return {
+      tag: el.tagName.toLowerCase(),
+      id: el.id || '',
+      name: el.getAttribute('name') || '',
+      type: el.getAttribute('type') || '',
+      text: String(el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').trim(),
+    }
+  }
+
+  /** 人类可读描述（审批卡/动画 pill/工具结果共用） */
+  function buildLabel(el, descriptor, inShadow) {
+    const text = descriptor.text.slice(0, 20)
+    const type = descriptor.type ? `[${descriptor.type}]` : ''
+    const inner = text || descriptor.id || descriptor.name || descriptor.tag
+    return `${descriptor.tag}${type}「${inner}」${inShadow ? '（shadow DOM 内）' : ''}`
+  }
+
+  function buildElementEntry(el, inShadow) {
+    const descriptor = buildDescriptor(el)
+    const ref = refStore.register(el, descriptor)
+    const entry = { ref, tag: descriptor.tag, text: descriptor.text.slice(0, 60), label: buildLabel(el, descriptor, inShadow) }
+    if (descriptor.type) entry.type = descriptor.type
+    // 语义锚点：光给 ref LLM 无法把"姓名"映射到具体输入框——id/name/placeholder 进快照行
+    if (descriptor.id) entry.id = descriptor.id
+    if (descriptor.name) entry.name = descriptor.name
+    const placeholder = el.getAttribute('placeholder')
+    if (placeholder) entry.placeholder = placeholder.slice(0, 30)
+    if (['input', 'textarea', 'select'].includes(descriptor.tag)) {
+      entry.value = String(el.value ?? '').slice(0, 60)
+      // checkbox/radio 必须带状态进快照：模型看不到勾选状态就只能猜——
+      // eval 实测它会猜"未勾选"并停下来向用户确认（eval 抓到的真协议缺口）
+      if (descriptor.tag === 'input' && (descriptor.type === 'checkbox' || descriptor.type === 'radio')) {
+        entry.checked = el.checked
+      }
+    }
+    return entry
+  }
+
+  /** 伪 HTML 快照行（LLM 读这个做决策；结构化 elements 仅进 payload 供评测/审计） */
+  function renderSnapshot(elements) {
     return elements
+      .map((e) => {
+        const attrs = [
+          e.type ? ` type="${e.type}"` : '',
+          e.id ? ` id="${e.id}"` : '',
+          e.name ? ` name="${e.name}"` : '',
+          e.placeholder ? ` placeholder="${e.placeholder}"` : '',
+          e.value !== undefined ? ` value="${String(e.value).replace(/"/g, "'")}"` : '',
+          e.checked !== undefined ? ` ${e.checked ? 'checked' : 'unchecked'}` : '',
+        ].join('')
+        return `- <${e.tag} ref=${e.ref}${attrs}>${e.text || ''}</${e.tag}>`
+      })
+      .join('\n')
   }
 
   /**
-   * 生成可回查的 CSS 选择器：id > 唯一 name > 从最近 id/主体向上拼路径（≤4 级）
-   * 选择器确定性是写操作安全的前提——模型不许凭想象编选择器
+   * 执行写动作：click / fill / select（P12a 全异步化）
+   * 链路：ref 身份校验 → actionability 矩阵 → 动画"先看见" → 执行 → 动作后校验
+   * 任何失败都以 error 文本回传，保持"可自纠"契约让 LLM 能重试
    */
-  function buildSelector(el) {
-    if (el.id) return `#${el.id}`
-    if (el.name) {
-      const byName = document.getElementsByName(el.name)
-      if (byName.length === 1) return `${el.tagName.toLowerCase()}[name="${el.name}"]`
-    }
-    const path = []
-    let node = el
-    while (node && node !== document.body && path.length < 4) {
-      if (node.id) {
-        path.unshift(`#${node.id}`)
-        break
-      }
-      let part = node.tagName.toLowerCase()
-      const parent = node.parentElement
-      if (parent) {
-        const siblings = Array.from(parent.children).filter((c) => c.tagName === node.tagName)
-        if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`
-      }
-      path.unshift(part)
-      node = node.parentElement
-    }
-    return path.join(' > ')
-  }
-
-  /**
-   * 执行写动作：click / fill / select
-   * 任何失败都以 error 文本回传（元素不存在/不可见/类型不符），让 LLM 能自纠重试
-   */
-  function handleWriteAction(request, sender, sendResponse) {
+  async function handleWriteAction(request, sender, sendResponse) {
     try {
-      const result = executeWriteAction(request)
+      const result = await executeWriteAction(request)
       sendResponse({
         success: true,
         type: 'write_action_result',
@@ -466,6 +516,7 @@ import { Readability } from '@mozilla/readability'
         payload: result,
       })
     } catch (error) {
+      settleActionOverlay()
       sendResponse({
         success: false,
         type: 'write_action_result',
@@ -475,37 +526,115 @@ import { Readability } from '@mozilla/readability'
     }
   }
 
-  function executeWriteAction({ action, selector, value }) {
-    const el = selector ? document.querySelector(selector) : null
-    if (!el) throw new Error(`元素不存在: ${selector}`)
-    if (!isVisible(el)) throw new Error(`元素不可见: ${selector}`)
+  // rAF 在非活动/被遮挡 tab 里不触发——与 80ms setTimeout 竞速：
+  // 前台 tab rAF 先到（精确两帧校验），后台 tab 退化为近似校验，动作永不挂起
+  const nextFrame = () =>
+    new Promise((r) => {
+      requestAnimationFrame(() => r())
+      setTimeout(r, 80)
+    })
 
+  /** actionability 矩阵：可见 / 稳定（两帧 bbox 不变）/ 可接收点击（遮挡判定）/ enabled */
+  async function assertActionable(el) {
+    el.scrollIntoView({ block: 'center' })
+    await nextFrame()
+    if (!isVisible(el)) throw new Error('元素不可见（display:none/visibility:hidden 或零尺寸）')
+    if (el.disabled) throw new Error(`元素处于 disabled 状态，当前不可交互（<${el.tagName.toLowerCase()}>）`)
+    const r1 = el.getBoundingClientRect()
+    await nextFrame()
+    await nextFrame()
+    const r2 = el.getBoundingClientRect()
+    if (Math.abs(r1.left - r2.left) > 1 || Math.abs(r1.top - r2.top) > 1 || Math.abs(r1.width - r2.width) > 1 || Math.abs(r1.height - r2.height) > 1) {
+      throw new Error('元素位置尚未稳定（可能正在动画或过渡），请稍后重试')
+    }
+    const hit = document.elementFromPoint(r2.left + r2.width / 2, r2.top + r2.height / 2)
+    if (!composedAncestryContains(el, hit)) {
+      throw new Error('元素被其他内容遮挡（该位置点击不会命中目标，可能被弹层/遮罩覆盖）')
+    }
+  }
+
+  /**
+   * 遮挡判定（composed 祖先链）：elementFromPoint 对 shadow 内容会 retarget 到
+   * shadow host（实测 Chrome 154：shadow 内按钮的命中结果是 host 元素）——
+   * 所以"命中 = hit 在 el 的 composed 祖先链上"：el 自身/后代直接判，
+   * 跨 shadow 边界沿 getRootNode().host 向上收集宿主链逐段判。
+   */
+  function composedAncestryContains(el, hit) {
+    if (!hit) return false
+    let node = el
+    while (node) {
+      if (node === hit || node.contains(hit)) return true
+      const root = node.getRootNode()
+      if (root === document) return false
+      node = root.host
+    }
+    return false
+  }
+
+  /** 动作后校验：400ms 窗口内 body 有无 mutation / URL 有无变化（喂 LLM 自诊"点了没反应"） */
+  function observePageChange(windowMs = 400) {
+    return new Promise((resolve) => {
+      const urlBefore = window.location.href
+      let changed = false
+      const observer = new MutationObserver(() => {
+        changed = true
+      })
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true })
+      setTimeout(() => {
+        observer.disconnect()
+        resolve(changed || window.location.href !== urlBefore)
+      }, windowMs)
+    })
+  }
+
+  async function executeWriteAction({ action, ref, value }) {
+    if (!ref) {
+      throw new Error('缺少 ref 参数——写操作只能引用 get_interactive_elements 快照里返回的 ref，禁止凭空构造')
+    }
+    const resolved = refStore.resolve(ref, (el) => buildDescriptor(el))
+    if (!resolved.ok) throw new Error(resolved.reason)
+    const el = resolved.el
+    const label = buildLabel(el, buildDescriptor(el), el.getRootNode() !== document)
+
+    await assertActionable(el)
+    // 先看见，再发生：动画播完才动 DOM
+    await playActionOverlay(el, action, label)
+
+    let result
     switch (action) {
       case 'click': {
-        el.scrollIntoView({ block: 'center' })
         el.focus?.()
         el.click()
-        return { ok: true, info: `已点击 ${selector}` }
+        result = { ok: true, info: `已点击 ${label}` }
+        break
       }
       case 'fill': {
         if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) {
-          throw new Error(`目标不是输入框: ${selector}（<${el.tagName.toLowerCase()}>）`)
+          throw new Error(`目标不是输入框: ${label}（<${el.tagName.toLowerCase()}>）`)
         }
         setNativeValue(el, String(value ?? ''))
-        return { ok: true, info: `已填写 ${selector}`, value: String(el.value).slice(0, 120) }
+        result = { ok: true, info: `已填写 ${label}`, value: String(el.value).slice(0, 120) }
+        break
       }
       case 'select': {
         if (!(el instanceof HTMLSelectElement)) {
-          throw new Error(`目标不是下拉框: ${selector}（<${el.tagName.toLowerCase()}>）`)
+          throw new Error(`目标不是下拉框: ${label}（<${el.tagName.toLowerCase()}>）`)
         }
         const option = findSelectOption(el, String(value ?? ''))
         if (!option) throw new Error(`下拉框中没有匹配选项: ${value}`)
         setNativeValue(el, option.value)
-        return { ok: true, info: `已选择 ${selector}`, value: option.text.slice(0, 120) }
+        result = { ok: true, info: `已选择 ${label}`, value: option.text.slice(0, 120) }
+        break
       }
       default:
         throw new Error(`未知写动作: ${action}`)
     }
+
+    // 动作后校验：页面有响应/无变化是信息字段，供 LLM 自诊"点了没反应"
+    result.pageChanged = await observePageChange()
+    result.info += result.pageChanged ? '（页面有响应）' : '（页面无变化，若与预期不符请重新枚举确认）'
+    settleActionOverlay()
+    return result
   }
 
   /**

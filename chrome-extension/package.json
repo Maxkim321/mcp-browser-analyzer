@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build"
+    "build": "vite build",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

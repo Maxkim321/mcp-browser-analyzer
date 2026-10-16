@@ -8,7 +8,7 @@
     "agent-server": "pnpm -F agent-server start",
     "extension": "pnpm -F chrome-extension dev",
     "extension:build": "pnpm -F chrome-extension build",
-    "test": "pnpm -F agent-server test",
+    "test": "pnpm -F agent-server test && pnpm -F chrome-extension test",
     "eval": "pnpm -F agent-server eval",
     "eval:memory": "pnpm -F agent-server eval:memory",
     "bench": "pnpm -F agent-server bench",
@@ -37,7 +37,9 @@
     ]
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

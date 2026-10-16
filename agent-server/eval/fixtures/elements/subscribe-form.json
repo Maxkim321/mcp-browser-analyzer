@@ -2,10 +2,48 @@
   "url": "file://eval/pages/subscribe-form.html",
   "title": "田野观察 · 订阅周报",
   "elements": [
-    { "selector": "#name", "tag": "input", "type": "text", "text": "", "value": "" },
-    { "selector": "#email", "tag": "input", "type": "email", "text": "", "value": "" },
-    { "selector": "#frequency", "tag": "select", "text": "", "value": "" },
-    { "selector": "#agree", "tag": "input", "type": "checkbox", "text": "", "value": "" },
-    { "selector": "#submit-btn", "tag": "button", "text": "确认订阅" }
-  ]
+    {
+      "selector": "#name",
+      "tag": "input",
+      "type": "text",
+      "text": "",
+      "value": "",
+      "ref": "e1",
+      "label": "input[type=text]「姓名」"
+    },
+    {
+      "selector": "#email",
+      "tag": "input",
+      "type": "email",
+      "text": "",
+      "value": "",
+      "ref": "e2",
+      "label": "input[type=email]「邮箱」"
+    },
+    {
+      "selector": "#frequency",
+      "tag": "select",
+      "text": "",
+      "value": "",
+      "ref": "e3",
+      "label": "select「订阅频率」"
+    },
+    {
+      "selector": "#agree",
+      "tag": "input",
+      "type": "checkbox",
+      "text": "",
+      "value": "",
+      "ref": "e4",
+      "label": "input[type=checkbox]「同意条款」"
+    },
+    {
+      "selector": "#submit-btn",
+      "tag": "button",
+      "text": "确认订阅",
+      "ref": "e5",
+      "label": "button「确认订阅」"
+    }
+  ],
+  "snapshot": "- <input ref=e1 type=\"text\" id=\"name\" name=\"name\" placeholder=\"请输入姓名\">\n- <input ref=e2 type=\"email\" id=\"email\" name=\"email\" placeholder=\"请输入邮箱\">\n- <select ref=e3 id=\"frequency\" name=\"frequency\">订阅频率</select>\n- <input ref=e4 type=\"checkbox\" id=\"agree\" name=\"agree\">我已阅读并同意订阅条款\n- <button ref=e5 id=\"submit-btn\">确认订阅</button>"
 }
