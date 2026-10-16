@@ -103,10 +103,12 @@ class Agent {
     // 工具白名单（子 agent 能力收窄）：传入时 LLM 只看到这些工具，且执行层硬闸
     // allowedTools 同步生效（不依赖"提示词里没给"的自觉，硬约束写死在代码）
     const toolDefs = Array.isArray(options.tools) && options.tools.length > 0 ? options.tools : tools
-    const allowedTools =
-      Array.isArray(options.tools) && options.tools.length > 0
-        ? new Set(options.tools.map((t) => t.name))
-        : null
+    // P11：显式传数组（含空数组）都视为白名单——空数组 = 空 Set = 全部工具硬闸
+    // （知识点补全等纯对话 action 不需要工具）；不传 = null = 不限制（主 agent 行为不变）。
+    // 旧逻辑空数组会被误判成"不限制"，语义是个坑
+    const allowedTools = Array.isArray(options.tools)
+      ? new Set(options.tools.map((t) => t.name))
+      : null
     let iteration = 0
     // 工具上下文在整个 process 生命周期内共享，避免每轮迭代被重置
     const toolContext = {
@@ -134,6 +136,10 @@ class Agent {
         options.onStep({ step, iteration, ...payload })
       }
     }
+    // P10 能力可见性：工具执行此前只发 running（"开始了"），永远看不到结局——
+    // executeSingleTool 在管线返回/异常时经本回调补发 done 终态（放这里才能
+    // 闭包到 emitStep；子 agent 未注入 onStep 时回调自动空转）
+    toolContext.onToolDone = (info) => emitStep({ phase: 'tool', status: 'done', ...info })
     const isAborted = () => options.signal?.aborted === true
     const abortError = () => Object.assign(new Error('Agent cancelled'), { code: 'ABORTED' })
 
@@ -333,8 +339,8 @@ class Agent {
     }
 
     // dph-D 工具执行流水线：权限校验（读放行/写审批）→ 超时控制 → 执行，统一收口
+    const t0 = Date.now()
     try {
-      const t0 = Date.now()
       const result = await runToolPipeline({
         toolName,
         args: toolArgs,
@@ -355,6 +361,15 @@ class Agent {
           durationMs: Date.now() - t0,
         })
       }
+      // P10 能力可见性：完成态事件——被拒/dry-run/真实执行都是"结局"，
+      // 前端轨迹据此从"调用中"收敛到终态（写操作另有审批卡兜底）
+      context.onToolDone?.({
+        tool: toolName,
+        ok: true,
+        outcome: result.permissionDenied ? 'denied' : result.dryRun ? 'dry-run' : 'executed',
+        dangerLevel: tools.find((t) => t.name === toolName)?.dangerLevel || 'read',
+        durationMs: Date.now() - t0,
+      })
 
       // P7 注入防御：不可信网页内容 → 分隔包装（layer 1）+ 注入模式扫描染色（layer 2）。
       // 检测不阻断（启发式有误报）：写操作反正逐次人审，检测的价值是把"上下文可疑"
@@ -404,6 +419,14 @@ class Agent {
           error: error.message,
         })
       }
+      // P10 能力可见性：异常（超时/工具抛错）也要给轨迹一个终态，不能永远"调用中"
+      context.onToolDone?.({
+        tool: toolName,
+        ok: false,
+        outcome: 'error',
+        dangerLevel: tools.find((t) => t.name === toolName)?.dangerLevel || 'read',
+        durationMs: Date.now() - t0,
+      })
       this.conversationHistory.push({
         role: 'tool',
         tool_call_id: toolCall.id,

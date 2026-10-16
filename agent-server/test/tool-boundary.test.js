@@ -108,3 +108,83 @@ test('handleToolCall: 同步 handler（todo_write）在可取消路径不再 Typ
   assert.ok(result && Array.isArray(result.content))
   controller.abort()
 })
+
+test('P11: allowedTools 显式空数组 = 全部工具硬闸（纯对话 action 不带工具）', async () => {
+  // mock LLM：第一轮试图调 get_page_content，第二轮直接作答
+  mockFetchSSE([
+    {
+      choices: [{
+        delta: {
+          tool_calls: [{
+            index: 0,
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'get_page_content', arguments: '{}' },
+          }],
+        },
+      }],
+    },
+    { choices: [{ delta: { content: '直接回答：Event Loop 先清空 microtask 队列。' } }] },
+  ])
+  const agent = new Agent()
+  const result = await agent.process('补全这个问题', { tools: [] })
+  assert.strictEqual(result.success, true)
+  assert.match(result.content, /Event Loop/)
+  // 工具没被执行：历史里只有"Skipped"回喂，没有真实 tool 结果
+  const toolMsg = agent.conversationHistory.find((m) => m.role === 'tool')
+  assert.ok(toolMsg, '被拒工具应有回喂消息让 LLM 自纠')
+  assert.match(toolMsg.content, /Skipped: tool get_page_content/)
+})
+
+test('P11: 不传 tools = 不限制（主 agent 行为保持不变）', async () => {
+  handler.init({
+    manager: { getIds: () => [], getCount: () => 0 },
+    send: () => true,
+    broadcast: () => {},
+  })
+  handler.setToolOverrides({
+    get_page_content: async () => ({ content: [{ type: 'text', text: '页面正文' }] }),
+  })
+  try {
+    mockFetchSSE([
+      {
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'get_page_content', arguments: '{}' },
+            }],
+          },
+        }],
+      },
+      { choices: [{ delta: { content: '已读取。' } }] },
+    ])
+    const agent = new Agent()
+    const result = await agent.process('读页面', {})
+    assert.strictEqual(result.success, true)
+    // get_page_content 在 READ_WEB_TOOLS 里，结果会经 P7 不可信内容分隔包装——断包含不断全等
+    const toolMsg = agent.conversationHistory.find((m) => m.role === 'tool')
+    assert.ok(toolMsg && toolMsg.content.includes('页面正文'), '不传 tools 时工具应正常执行')
+  } finally {
+    handler.setToolOverrides({})
+  }
+})
+
+// 与 agent-step.test.js 同款：SSE 流 mock（本文件此前不涉 LLM，就地内联一份）
+function mockFetchSSE(payloads) {
+  global.fetch = async () => {
+    const encoder = new TextEncoder()
+    const body = new ReadableStream({
+      start(controller) {
+        for (const p of payloads) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(p)}\n\n`))
+        }
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+        controller.close()
+      },
+    })
+    return { ok: true, status: 200, body, text: async () => '' }
+  }
+}

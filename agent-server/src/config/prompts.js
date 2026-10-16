@@ -368,6 +368,22 @@ const CONTEXT_SUMMARY_PROMPT = `你负责压缩一段较长的对话历史。请
 - 只输出摘要本身，不要任何前缀或解释`
 
 /**
+ * P11 知识点补全：用户在知识点卡片里收藏的问题（多为面试考点），
+ * 答案会存进卡片随复习回看——要的是"能背的干货"而不是对话体。
+ * 该 action 由 ws-server 传 tools: []（工具硬闸），提示词与之一致地声明直接作答。
+ */
+const KNOWLEDGE_COMPLETE_PROMPT = `你是一个面试知识点解答助手。用户会给出一个要弄懂的问题（多与编程/前端/求职相关），请直接给出可以收藏进笔记的高质量答案。
+
+要求：
+- 结论先行：第一句话直接给出核心答案，再展开
+- 要点分层：用短列表组织，每条一个可独立记忆的点
+- 涉及代码时给最小可读示例，不加无关样板
+- 主动补一句"面试追问"：这个考点最常被追问什么、怎么接
+- 不调用任何工具，问题本身是自包含的，直接凭知识作答
+- 总长控制在 500 字以内，宁可精炼不可注水
+- 用中文回答`
+
+/**
  * 动作 → 专用提示词映射
  * sidepanel 可通过 user_prompt 携带 action 字段触发固定动作（总结/翻译/解释/改写等）
  */
@@ -379,6 +395,7 @@ const ACTION_PROMPTS = {
   rewrite: REWRITE_PROMPT,
   ask: ASK_PROMPT,
   extract: EXTRACT_PROMPT,
+  knowledge_complete: KNOWLEDGE_COMPLETE_PROMPT,
 }
 
 module.exports = {
@@ -390,6 +407,7 @@ module.exports = {
   SELECTION_SUMMARY_PROMPT,
   ASK_PROMPT,
   EXTRACT_PROMPT,
+  KNOWLEDGE_COMPLETE_PROMPT,
   CONTEXT_SUMMARY_PROMPT,
   RESEARCH_PLAN_PROMPT,
   RESEARCH_QUERY_PROMPT,

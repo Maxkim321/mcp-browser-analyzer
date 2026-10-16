@@ -109,6 +109,28 @@
             <path d="M12 7v5l3 2" />
           </svg>
         </button>
+        <!-- P10 能力可见性：AI 背后有什么工具/MCP 能力，点开即见（运行时注册表驱动） -->
+        <button
+          class="icon-btn"
+          title="能力工具箱"
+          :class="{ active: showCapabilitiesPanel }"
+          @click="toggleCapabilitiesPanel"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
+            />
+          </svg>
+        </button>
         <button class="icon-btn" title="新会话" @click="startNewSession">
           <svg
             viewBox="0 0 24 24"
@@ -167,43 +189,60 @@
       </template>
     </div>
 
-    <!-- 知识点面板（秋招随手记 / flashcard：收藏问题 + 异步补全答案 + 回顾） -->
+    <!-- 知识点面板（秋招随手记 / flashcard）：P11 列表/详情两态 -->
     <div v-if="showKnowledgePanel" class="knowledge-panel">
-      <!-- 手动添加 -->
-      <div class="knowledge-add">
-        <input
-          v-model="newKnowledgeQuestion"
-          class="knowledge-add-input"
-          placeholder="记下你不懂的问题，回车保存..."
-          @keydown.stop
-          @keydown.enter="addKnowledgeManual"
-        />
-        <button
-          class="knowledge-add-btn"
-          :disabled="!newKnowledgeQuestion.trim()"
-          @click="addKnowledgeManual"
-        >
-          存
-        </button>
-      </div>
+      <!-- ===== 列表态：添加 + 搜索筛选 + 单行卡 ===== -->
+      <template v-if="knowledgeView === 'list'">
+        <div class="knowledge-add">
+          <input
+            v-model="newKnowledgeQuestion"
+            class="knowledge-add-input"
+            placeholder="记下你不懂的问题，回车保存..."
+            @keydown.stop
+            @keydown.enter="addKnowledgeManual"
+          />
+          <button
+            class="knowledge-add-btn"
+            :disabled="!newKnowledgeQuestion.trim()"
+            @click="addKnowledgeManual"
+          >
+            存
+          </button>
+        </div>
 
-      <!-- 列表：时间倒序，单张卡片点开可补全/回顾 -->
-      <div v-if="!knowledgeList.length" class="knowledge-empty">
-        还没有知识点。划词点「记笔记」、把 AI 回答收藏，或在上方手输问题。
-      </div>
-      <template v-else>
-        <div
-          v-for="kp in knowledgeList"
-          :key="kp.id"
-          class="knowledge-item"
-          :class="[
-            { 'knowledge-pending': kp.status === 'pending' },
-            { expanded: expandedKnowledgeId === kp.id },
-          ]"
-          @click="openKnowledge(kp)"
-        >
-          <div class="knowledge-item-top">
+        <!-- P11 搜索 + 状态筛选 -->
+        <input
+          v-model="knowledgeKeyword"
+          class="knowledge-search"
+          placeholder="搜索问题或答案..."
+          @keydown.stop
+        />
+        <div class="knowledge-filters">
+          <button
+            v-for="f in KNOWLEDGE_FILTERS"
+            :key="f.value"
+            class="knowledge-filter-chip"
+            :class="{ active: knowledgeFilter === f.value }"
+            @click="knowledgeFilter = f.value"
+          >
+            {{ f.label }}
+          </button>
+        </div>
+
+        <div v-if="!knowledgeList.length" class="knowledge-empty">
+          还没有知识点。去网页划词点「记笔记」、把 AI 回答点「收藏」，或在上方手输问题。
+        </div>
+        <div v-else-if="!knowledgeFiltered.length" class="knowledge-empty">没有匹配的知识点</div>
+        <template v-else>
+          <div
+            v-for="kp in knowledgeFiltered"
+            :key="kp.id"
+            class="knowledge-row"
+            @click="openKnowledgeDetail(kp)"
+          >
+            <span class="knowledge-dot" :class="kp.status" :title="kp.status === 'pending' ? '待补全' : '已整理'"></span>
             <span class="knowledge-question">{{ kp.question }}</span>
+            <span v-if="completingId === kp.id" class="spinner"></span>
             <button
               class="knowledge-delete"
               title="删除该知识点"
@@ -212,30 +251,74 @@
               ×
             </button>
           </div>
-          <div class="knowledge-meta">
-            <span class="knowledge-status" :class="kp.status">
-              {{ kp.status === 'pending' ? '待补全' : '已整理' }}
-            </span>
-            <span class="knowledge-time">{{ formatShortTime(kp.createdAt) }}</span>
-            <span v-if="kp.source" class="knowledge-source">{{ kp.source }}</span>
-          </div>
-          <!-- done：markdown 渲染答案；折叠显示摘要，点开全文 -->
-          <div
-            v-if="kp.status === 'done'"
-            class="knowledge-answer markdown-content"
-            :class="{ collapsed: expandedKnowledgeId !== kp.id }"
-            @click.stop
-          >
-            <div class="knowledge-answer-body" v-html="renderMarkdown(kp.answer)"></div>
-          </div>
-          <div v-else class="knowledge-hint">
-            {{ completingId === kp.id ? '正在补全答案...' : '点击自动补全答案' }}
-          </div>
-          <!-- 复习闭环 TODO：后续在此追加「今日复习 / 遗忘曲线 / 间隔重复」能力 -->
-        </div>
-        <div class="knowledge-clear" @click="clearAllKnowledge">清空全部知识点</div>
+          <div class="knowledge-clear" @click="clearAllKnowledge">清空全部知识点</div>
+        </template>
       </template>
+
+      <!-- ===== 详情态：问题全文 + meta + 答案 + 操作区 ===== -->
+      <template v-else-if="detailKp">
+        <button class="knowledge-back" @click="backToKnowledgeList">‹ 返回列表</button>
+        <div class="knowledge-detail-question">{{ detailKp.question }}</div>
+        <div class="knowledge-meta">
+          <span class="knowledge-status" :class="detailKp.status">
+            {{ detailKp.status === 'pending' ? '待补全' : '已整理' }}
+          </span>
+          <span class="knowledge-time">{{ formatShortTime(detailKp.createdAt) }}</span>
+          <a
+            v-if="detailKpUrl"
+            class="knowledge-source-link"
+            :title="`打开来源页面：${detailKpUrl}`"
+            @click.prevent="openSourceUrl(detailKpUrl)"
+            >{{ detailKp.source }}</a
+          >
+          <span v-else class="knowledge-source">{{ detailKp.source }}</span>
+        </div>
+
+        <!-- pending：显式「AI 补全」按钮——与"进入详情"解耦，避免误触烧 LLM 调用 -->
+        <div v-if="detailKp.status === 'pending'" class="knowledge-detail-actions">
+          <button
+            v-if="completingId !== detailKp.id"
+            class="knowledge-complete-btn"
+            @click="completeKnowledge(detailKp)"
+          >
+            AI 补全答案
+          </button>
+          <button v-else class="knowledge-complete-btn" disabled>
+            <span class="spinner"></span>
+            <span>补全中...</span>
+          </button>
+          <div v-if="failedKpId === detailKp.id" class="knowledge-hint is-failed">
+            上次补全未完成 · 可重试
+          </div>
+        </div>
+
+        <!-- 补全中骨架屏：3 条 shimmer 占位 -->
+        <div v-if="completingId === detailKp.id" class="knowledge-skeleton">
+          <div class="skeleton-line w60"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line w80"></div>
+        </div>
+        <!-- done：答案全文（markdown） -->
+        <div
+          v-else-if="detailKp.status === 'done'"
+          class="knowledge-answer markdown-content"
+        >
+          <div class="knowledge-answer-body" v-html="renderMarkdown(detailKp.answer)"></div>
+        </div>
+
+        <div class="knowledge-detail-footer">
+          <button class="knowledge-delete-detail" @click="deleteKnowledge(detailKp.id)">
+            删除
+          </button>
+        </div>
+      </template>
+      <!-- 产品决策（2026-10-12）：不做个人向 SRS 复习闭环——知识点定位为通用内容，不绑定个人学习场景。
+           遗留小项：来源 URL 建卡时截断 80 字符，下次动 schema 时加全量 URL 字段 -->
     </div>
+
+    <!-- P10 能力面板：内置工具 + MCP server 清单（服务端注册表快照，拉取 + 广播双通道） -->
+    <CapabilitiesPanel v-if="showCapabilitiesPanel" :capabilities="capabilities" />
 
     <!-- 消息列表 -->
     <main
@@ -254,6 +337,20 @@
           <div class="tip-item">🔍 输入问题做多页深度研究</div>
           <div class="tip-item">📊 一键提取页面表格 / 列表数据</div>
         </div>
+      </div>
+      <!-- P10 空态引导：chip 由真实注册的 MCP server 驱动——接了什么才推荐什么，
+           没接入就整组不渲染（不硬编码承诺不存在的能力）。放在欢迎卡片外：
+           连接成功会推一条 greeting 消息把 welcome 区顶掉，chip 不该跟着消失 -->
+      <div v-if="capabilityChips.length && !hasConversation" class="capability-chips">
+        <button
+          v-for="chip in capabilityChips"
+          :key="chip.label"
+          class="capability-chip"
+          :title="chip.prompt"
+          @click="sendCapabilityChip(chip)"
+        >
+          {{ chip.label }}
+        </button>
       </div>
 
       <!-- 消息列表 -->
@@ -585,6 +682,14 @@
         </button>
       </div>
     </footer>
+
+    <!-- P11 撤销删除轻提示：5 秒内可撤销，超时自动消失 -->
+    <Transition name="toast-fade">
+      <div v-if="undoToast" class="undo-toast">
+        <span class="undo-toast-text">{{ undoToast.message }}</span>
+        <button class="undo-toast-btn" @click="undoLastAction">撤销</button>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -600,9 +705,11 @@ import {
   addKnowledgePoint,
   updateKnowledgePoint,
   removeKnowledgePoint,
+  clearKnowledgePoints,
 } from '@/utils/prefs'
 import AgentTrace from '@/components/AgentTrace.vue'
 import UsageBar from '@/components/UsageBar.vue'
+import CapabilitiesPanel from '@/components/CapabilitiesPanel.vue'
 import { useAgentTrace, TRACE_STATUS } from '@/composables/useAgentTrace'
 
 defineOptions({
@@ -641,8 +748,102 @@ let saveTimer = null
 const showKnowledgePanel = ref(false)
 const knowledgeList = ref([])
 const newKnowledgeQuestion = ref('')
-const expandedKnowledgeId = ref('') // 展开到哪张（done 卡片看全文 / pending 卡片补全中）
+// ===== P11 列表/详情两态 + 搜索筛选 + 撤销删除 =====
+const knowledgeView = ref('list') // 'list' | 'detail'
+const detailKnowledgeId = ref('')
+const knowledgeKeyword = ref('')
+const knowledgeFilter = ref('all') // 'all' | 'pending' | 'done'
+const KNOWLEDGE_FILTERS = [
+  { value: 'all', label: '全部' },
+  { value: 'pending', label: '待补全' },
+  { value: 'done', label: '已整理' },
+]
 const completingId = ref('') // 正在补全的卡片 id
+let completingTimer = null // 补全 90s 超时兜底：agent_response 丢失时锁会永久卡死
+const failedKpId = ref('') // 上次补全失败的卡片（详情态提示可重试）
+const undoToast = ref(null) // { items: [kp...], message } 撤销删除轻提示
+let undoTimer = null
+
+// ===== P10 能力可见性：工具箱面板 + 运行时注册表快照 =====
+// capabilities 由服务端 listCapabilities() 快照驱动（连接时拉取 + MCP 注册完成广播），
+// 面板与空态 chip 都吃这份数据——接了什么显示什么，前端不硬编码能力清单
+const showCapabilitiesPanel = ref(false)
+const capabilities = ref(null)
+
+// 空态引导 chip：按"工具能力特征"匹配而非 server 实例名——server 被用户配成
+// fs / filesystem / my-notes 都无所谓，只要它真的提供了那类工具，对应 chip 才出现
+const CAPABILITY_CHIPS = [
+  {
+    match: (tools) => tools.some((t) => /write_file|edit_file|create_directory/.test(t)),
+    label: '📝 把本页总结存成桌面笔记',
+    prompt: '把当前页面的核心内容总结成一篇结构化笔记，保存到我的桌面',
+  },
+  {
+    match: (tools) => tools.some((t) => /browser_navigate|browser_click|navigate/.test(t)),
+    label: '🌐 让 AI 操作浏览器',
+    prompt: '用浏览器工具打开 https://example.com 并告诉我页面标题',
+  },
+  {
+    match: (tools) => tools.some((t) => /issue|pull_request|repository/.test(t)),
+    label: '🐙 查我的 GitHub 仓库',
+    prompt: '查看我 GitHub 上 mcp-browser-analyzer 仓库的 open issue 列表',
+  },
+  {
+    match: (tools) => tools.some((t) => /sql|query|database/.test(t)),
+    label: '🗄️ 查询本地数据库',
+    prompt: '列出本地 SQLite 数据库里有哪些表和字段',
+  },
+]
+const capabilityChips = computed(() => {
+  const caps = capabilities.value
+  if (!caps) return []
+  // 把 MCP 工具剥成短名（mcp_fs_write_file → write_file）再做特征匹配
+  const toolShortNames = caps.mcpServers.flatMap((s) =>
+    s.tools.map((t) => t.name.replace(/^mcp_[a-z0-9]+?_/, ''))
+  )
+  return CAPABILITY_CHIPS.filter((c) => c.match(toolShortNames))
+})
+
+// 空态判定：greeting（连接成功提示）不算对话开始——chip 在 greeting 下方继续可见，
+// 用户真正发起对话后才收起
+const hasConversation = computed(() => messages.value.some((m) => !m.isGreeting))
+
+const sendCapabilityChip = async (chip) => {
+  // 与快捷按钮同一套入场演出：先落一条用户消息再走 sendPrompt 通道
+  messages.value.push({
+    type: 'text',
+    sender: 'user',
+    content: chip.label,
+    timestamp: Date.now(),
+  })
+  persistSession()
+  thinking.value = true
+  const ok = await sendPrompt(chip.prompt, undefined)
+  if (!ok) {
+    thinking.value = false
+    messages.value.push({
+      type: 'text',
+      sender: 'ai',
+      content: '连接已断开，请检查服务器是否正在运行。',
+      timestamp: Date.now(),
+    })
+    persistSession()
+  }
+}
+
+const requestCapabilities = () => {
+  if (websocket && websocket.readyState === WebSocket.OPEN) {
+    websocket.send(JSON.stringify({ type: 'list_capabilities' }))
+  }
+}
+
+const toggleCapabilitiesPanel = () => {
+  showHistoryList.value = false
+  showKnowledgePanel.value = false
+  showCapabilitiesPanel.value = !showCapabilitiesPanel.value
+  // 每次打开都拉最新注册表：MCP server 可能刚被接入/下线
+  if (showCapabilitiesPanel.value) requestCapabilities()
+}
 
 // ===== 主题（默认跟随系统、深色兜底，手动切换后持久化） =====
 const theme = ref('dark')
@@ -708,9 +909,42 @@ const loadKnowledge = async () => {
 
 const toggleKnowledgePanel = () => {
   showHistoryList.value = false
+  showCapabilitiesPanel.value = false
   showKnowledgePanel.value = !showKnowledgePanel.value
   if (showKnowledgePanel.value) {
+    // 每次打开回列表态（详情态是一次性的阅读动作，不跨开关保持）
+    knowledgeView.value = 'list'
+    detailKnowledgeId.value = ''
     loadKnowledge()
+  }
+}
+
+// P11 搜索 + 状态筛选（复用会话历史面板的 keyword 过滤模式）
+const knowledgeFiltered = computed(() => {
+  const kw = knowledgeKeyword.value.trim().toLowerCase()
+  return knowledgeList.value.filter((kp) => {
+    if (knowledgeFilter.value !== 'all' && kp.status !== knowledgeFilter.value) return false
+    if (kw && !`${kp.question}\n${kp.answer}`.toLowerCase().includes(kw)) return false
+    return true
+  })
+})
+
+// 详情态当前卡片：列表里被删时 computed 自动变 null，模板兜底显示列表
+const detailKp = computed(
+  () => knowledgeList.value.find((kp) => kp.id === detailKnowledgeId.value) || null
+)
+
+// 详情态来源里的 URL（source 形如「划词 · https://...」；URL 建卡时截到 80 字符，已知局限）
+const detailKpUrl = computed(() => {
+  const m = /https?:\/\/\S+/.exec(detailKp.value?.source || '')
+  return m ? m[0] : ''
+})
+
+const openSourceUrl = (url) => {
+  try {
+    chrome.tabs.create({ url })
+  } catch {
+    /* 打不开就当纯文本，静默降级 */
   }
 }
 
@@ -734,34 +968,64 @@ const createKnowledgeCard = async (question, source) => {
   return kp
 }
 
-// 手动添加
+// 手动添加：存完直接进详情态（原"自动展开新卡"行为平移）
 const addKnowledgeManual = async () => {
   const kp = await createKnowledgeCard(newKnowledgeQuestion.value, '手输')
   if (kp) {
     newKnowledgeQuestion.value = ''
-    expandedKnowledgeId.value = kp.id
+    knowledgeView.value = 'detail'
+    detailKnowledgeId.value = kp.id
   }
 }
 
-// 点开卡片：done 展开看全文；pending 触发自动补全
-const openKnowledge = async (kp) => {
-  if (kp.status === 'pending') {
-    await completeKnowledge(kp)
-  } else {
-    expandedKnowledgeId.value = expandedKnowledgeId.value === kp.id ? '' : kp.id
-  }
+// P11：点行进详情——补全改为详情里的显式按钮，不再"点卡即烧 LLM 调用"
+const openKnowledgeDetail = (kp) => {
+  knowledgeView.value = 'detail'
+  detailKnowledgeId.value = kp.id
 }
 
-// 删除一张卡片
+const backToKnowledgeList = () => {
+  knowledgeView.value = 'list'
+  detailKnowledgeId.value = ''
+}
+
+// P11 删除带 5s 撤销：卡片暂存 toast，撤销 = 原样回插
+// （loadKnowledge 按 createdAt 降序，位置自然还原，无需记录原下标）
 const deleteKnowledge = async (id) => {
-  knowledgeList.value = knowledgeList.value.filter((kp) => kp.id !== id)
+  const kp = knowledgeList.value.find((k) => k.id === id)
+  if (!kp) return
   await removeKnowledgePoint(id)
+  await loadKnowledge()
+  if (detailKnowledgeId.value === id) backToKnowledgeList()
+  showUndoToast([kp], '已删除 1 条知识点')
 }
 
+// 清空全部：从裸写 storage 收口到 prefs 工具层（P11），同样给 5s 撤销
 const clearAllKnowledge = async () => {
-  if (!confirm('确认清空全部知识点？')) return
+  if (!knowledgeList.value.length) return
+  if (!confirm(`确认清空全部 ${knowledgeList.value.length} 条知识点？5 秒内可撤销`)) return
+  const stash = knowledgeList.value
+  await clearKnowledgePoints()
   knowledgeList.value = []
-  await chrome.storage.local.set({ ba_knowledge_points: [] })
+  backToKnowledgeList()
+  showUndoToast(stash, `已清空 ${stash.length} 条知识点`)
+}
+
+const showUndoToast = (items, message) => {
+  undoToast.value = { items, message }
+  clearTimeout(undoTimer)
+  undoTimer = setTimeout(() => {
+    undoToast.value = null
+  }, 5000)
+}
+
+const undoLastAction = async () => {
+  const t = undoToast.value
+  if (!t) return
+  clearTimeout(undoTimer)
+  undoToast.value = null
+  for (const kp of t.items) await addKnowledgePoint(kp)
+  await loadKnowledge()
 }
 
 // 收藏 AI 回答为知识点：答案已经生成，直接 status='done'，问题取最近一条用户消息
@@ -798,7 +1062,9 @@ const saveAiAnswerAsKnowledge = async (msg, ev) => {
   }
 }
 
-// 补全 pending 卡片：走现有普通对话链路让 LLM 生成答案，写回卡片并标记 done
+// 补全 pending 卡片：P11 专用链路——服务端注册 knowledge_complete 提示词 + tools:[] 硬闸
+// （此前未注册，补全白跑完整 ReAct Agent 还不带页面上下文）；显式按钮触发 + 90s 超时兜底
+const KNOWLEDGE_COMPLETE_TIMEOUT = 90000
 const completeKnowledge = async (kp) => {
   if (!kp || kp.status !== 'pending' || completingId.value) return
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
@@ -806,7 +1072,7 @@ const completeKnowledge = async (kp) => {
     return
   }
   completingId.value = kp.id
-  expandedKnowledgeId.value = kp.id
+  failedKpId.value = ''
   // 复用 sendPrompt 普通对话链路；用 lastSentAction 区分完成来源，避免污染文章索引等后置逻辑
   // 让用户在对话区也能看到这条问题的回答（复习时上下文连续）
   messages.value.push({
@@ -817,10 +1083,21 @@ const completeKnowledge = async (kp) => {
   })
   persistSession()
   thinking.value = true
+  // 超时兜底：服务端既不回 agent_response 也不断连时，锁会永久卡死（后续补全全部进不去）
+  clearTimeout(completingTimer)
+  completingTimer = setTimeout(() => {
+    if (completingId.value === kp.id) {
+      completingId.value = ''
+      failedKpId.value = kp.id
+      thinking.value = false
+    }
+  }, KNOWLEDGE_COMPLETE_TIMEOUT)
   const ok = await sendPrompt(kp.question, 'knowledge_complete')
   if (!ok) {
     thinking.value = false
     completingId.value = ''
+    failedKpId.value = kp.id
+    clearTimeout(completingTimer)
     alert('连接已断开，请检查服务器是否正在运行。')
   }
 }
@@ -1227,6 +1504,7 @@ const clearAllSessions = async () => {
 
 const toggleHistoryList = () => {
   showKnowledgePanel.value = false
+  showCapabilitiesPanel.value = false
   showHistoryList.value = !showHistoryList.value
 }
 
@@ -1453,12 +1731,16 @@ const connectWebSocket = () => {
       updateConnectionStatus('connected')
       // F4：每次重连服务端都是全新 Agent（内存历史为空），重放持久化历史重建上下文
       replayHistoryToServer()
+      // P10 能力可见性：连接建立即拉能力清单；若 MCP 注册尚未完成，
+      // 服务端注册结束时会广播 capabilities 补推，两条通道互为兜底
+      requestCapabilities()
       if (messages.value.length === 0) {
         messages.value.push({
           type: 'text',
           sender: 'ai',
           content: '连接成功！选中网页文字或点击"总结本页"即可开始，也可以直接问我问题。',
           timestamp: Date.now(),
+          isGreeting: true, // P10 空态引导：greeting 不算对话开始，能力 chip 继续展示
         })
       }
     }
@@ -1541,12 +1823,16 @@ const connectWebSocket = () => {
             if (completingId.value) {
               const doneId = completingId.value
               completingId.value = ''
-              expandedKnowledgeId.value = ''
+              clearTimeout(completingTimer)
               if (data.success && finalContent) {
+                failedKpId.value = ''
                 await updateKnowledgePoint(doneId, {
                   answer: finalContent.slice(0, 2000),
                   status: 'done',
                 })
+              } else {
+                // P11：失败不再静默——卡片留 pending，详情态提示"可重试"
+                failedKpId.value = doneId
               }
               await loadKnowledge()
             }
@@ -1649,6 +1935,12 @@ const connectWebSocket = () => {
           // 会话用量汇总：每次回答/研究结束后推送，驱动输入区上方的用量条
           case 'usage_summary':
             usageSummary.value = { session: data.session, total: data.total }
+            break
+
+          // P10 能力可见性：能力清单快照（onopen 拉取 + MCP 注册完成广播共用此类型），
+          // 工具箱面板与空态 chip 都吃这份数据
+          case 'capabilities':
+            capabilities.value = data.capabilities || null
             break
 
           // M1-F8 深度研究：读取指定 URL（经 background 后台开 tab，不打扰当前页面）
@@ -2771,6 +3063,45 @@ onUnmounted(() => {
   background: var(--info-strong);
 }
 
+/* P11 搜索 + 状态筛选 */
+.knowledge-search {
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.knowledge-search:focus {
+  border-color: var(--info);
+}
+
+.knowledge-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.knowledge-filter-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.knowledge-filter-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
+}
+
 .knowledge-empty {
   padding: 24px 16px;
   text-align: center;
@@ -2779,43 +3110,42 @@ onUnmounted(() => {
   line-height: 1.7;
 }
 
-.knowledge-item {
-  padding: 10px 12px;
-  border-radius: 10px;
+/* P11 列表态：单行卡 = 状态点 + 问题 + 悬浮删除（信息密度优先，详情进二级） */
+.knowledge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background-color 0.15s;
-  border: 1px solid transparent;
 }
 
-.knowledge-item:hover {
+.knowledge-row:hover {
   background: var(--bg);
 }
 
-.knowledge-item.knowledge-pending {
-  border-color: var(--warn-border);
-  background: var(--warn-soft);
+.knowledge-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
 }
 
-.knowledge-item.expanded {
-  background: var(--bg);
-  border-color: var(--border);
-}
-
-.knowledge-item-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+.knowledge-dot.pending {
+  background: var(--warn-strong);
 }
 
 .knowledge-question {
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  font-weight: 500;
   color: var(--text-1);
   line-height: 1.4;
-  white-space: normal;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .knowledge-delete {
@@ -2833,7 +3163,7 @@ onUnmounted(() => {
   transition: all 0.15s;
 }
 
-.knowledge-item:hover .knowledge-delete {
+.knowledge-row:hover .knowledge-delete {
   opacity: 1;
 }
 
@@ -2882,6 +3212,23 @@ onUnmounted(() => {
   text-align: right;
 }
 
+/* P11 详情态：来源含 URL 时可点击跳回原页 */
+.knowledge-source-link {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--info);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  cursor: pointer;
+}
+
+.knowledge-source-link:hover {
+  text-decoration: underline;
+}
+
 .knowledge-answer {
   margin-top: 8px;
   font-size: 12.5px;
@@ -2892,18 +3239,133 @@ onUnmounted(() => {
   word-break: break-word;
 }
 
-/* 折叠：只显示前几行摘要，点开看全文 */
-.knowledge-answer.collapsed .knowledge-answer-body {
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+/* P11 详情态：返回 / 操作区 / 骨架屏 / 底部删除 */
+.knowledge-back {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.knowledge-back:hover {
+  background: var(--surface);
+  color: var(--text-1);
+}
+
+.knowledge-detail-question {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.knowledge-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.knowledge-complete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--info-strong);
+  color: var(--on-accent);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.knowledge-complete-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.knowledge-complete-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.knowledge-detail-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--surface);
+}
+
+.knowledge-delete-detail {
+  padding: 4px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.knowledge-delete-detail:hover {
+  background: var(--danger-soft);
+}
+
+/* 骨架屏：补全中 shimmer 占位（替代"正在补全..."纯文案） */
+.knowledge-skeleton {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface) 25%,
+    var(--surface-raised) 50%,
+    var(--surface) 75%
+  );
+  background-size: 400% 100%;
+  animation: skeletonShimmer 1.4s ease infinite;
+}
+
+.skeleton-line.w60 {
+  width: 60%;
+}
+
+.skeleton-line.w80 {
+  width: 80%;
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
 }
 
 .knowledge-hint {
   margin-top: 8px;
   font-size: 11px;
   color: var(--warn-strong);
+}
+
+.knowledge-hint.is-failed {
+  color: var(--danger);
 }
 
 .knowledge-clear {
@@ -2920,6 +3382,60 @@ onUnmounted(() => {
 
 .knowledge-clear:hover {
   background: var(--danger-soft);
+}
+
+/* ===== P11 撤销删除轻提示（输入区上方，5 秒自动消失） ===== */
+.undo-toast {
+  position: absolute;
+  bottom: 84px;
+  left: 12px;
+  right: 12px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(var(--ink-rgb), 0.16);
+  font-size: 12.5px;
+  color: var(--text-1);
+  animation: panelFade 0.15s ease;
+}
+
+.undo-toast-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.undo-toast-btn {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.undo-toast-btn:hover {
+  background: var(--accent-border);
+}
+
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
 }
 
 /* ===== 消息区域 ===== */
@@ -2981,6 +3497,33 @@ onUnmounted(() => {
   border: 1px solid var(--border);
   border-radius: 8px;
   line-height: 1.5;
+}
+
+/* ===== P10 空态引导 chip：由真实注册的 MCP server 驱动 ===== */
+.capability-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.capability-chip {
+  padding: 6px 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-radius: 16px;
+  font-size: 12px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.capability-chip:hover {
+  background: var(--accent-border);
+  border-color: var(--accent-strong);
 }
 
 /* ===== 消息项 ===== */

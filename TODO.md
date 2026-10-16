@@ -49,6 +49,7 @@
 5. **评测集加研究类 golden case**：轨迹判卷扩展到子 agent 链路
 6. **P2 以文搜图**（blocked）：需方舟控制台给 doubao-embedding-vision 开图片输入权限或标准端点访问——开通后检索管线现成（截图→向量→同一记忆索引）
 7. **跨主题并行 v2**（谨慎）：会动 HITL 语义（currentTopic 游标挂载审批语义）
+8. **MCP 设置页（P10 的续集，候选）**：预设模板卡 + 运行时热注册（registerMcpServer 本就是运行时函数，差一个 WS/HTTP 入口）+ mcp-servers.local.json 持久化（启动时与 .env 合并，注意 config require 时固化 env 的坑）——把"第二层接入测试"装进这个 UI 做，接入过程即评测产物；届时一并修本清单第 1 项（分发门槛按来源分层）
 
 ---
 
@@ -57,7 +58,7 @@
 1. **数字纪律**：文档/话术里每个数字必须来自 `agent-server/eval/results/` 真实产物；跑不出来留 ⚠️，**禁止编造、手填、美化**
 2. **交付仪式**：改完 → `pnpm test` 全绿 → eslint 0 → `pnpm eval` 不回退 → 回填技术文档 P 章节 → 同步面试总集
 3. **零依赖原则**：不引入向量库、LangChain 系、LLM SDK、日志库——现有手写实现（BM25/RRF/SSE/MCP client）各 ~100-200 行是有意为之
-4. **不要做**：browser-as-MCP-Server（市场饱和）；隐式学习偏好；深度研究以外的隐式自动路由；删除或绕过审批管线（包括"为了测试方便"）
+4. **不要做**：browser-as-MCP-Server（市场饱和）；隐式学习偏好；深度研究以外的隐式自动路由；删除或绕过审批管线（包括"为了测试方便"）；个人向 SRS 复习闭环（2026-10-12 决策：知识点定位通用内容，不绑定个人学习场景——遗留小项：卡片来源 URL 截断 80 字符，下次动 schema 加全量 URL 字段）
 5. **已知坑**（动手前必读 AGENTS.md §6）：store.append 40 字下限 / config require 时固化 env / 评测语料必须带 id（cardKey）/ 品牌 Chrome 137+ 无 --load-extension（用 Chrome for Testing）/ WS 由侧边栏页面持有
 6. **诚实边界**：agent 拒绝编造是特性不是 bug（2026-09-27 实测：GitHub 不可达时 agent 拒绝写假笔记并给出镜像方案）——不要"修复"这个行为
 
@@ -68,3 +69,5 @@
 - ✅ P8 混合检索：三路对照（regression 全 100%；semantic 25%→75%）+ 端到端 Δ=100pct + 13 单测
 - ✅ P9 MCP：Client + 三道闸 + 14 工具真实纳管 + 集成 e2e + 真 UI 审批点击（截图 eval/results/ui-e2e-*.png）
 - ✅ 实用任务真跑：总结 GitHub 仓库页 → 笔记.md 落盘 3601 字（含一次"拒绝编造"的正确行为演示）
+- ✅ P10 能力可见性（2026-10-12）：侧边栏工具箱面板（内置/MCP 分组 + 读写定级徽章，注册表快照驱动：WS 拉取 + 注册广播双通道）+ 空态 chip 按工具特征匹配 + 工具调用终态上轨迹（完成/被拒/预演/出错）；165/165 测试（+5）、pnpm eval 10/10 不回退、真机 e2e 截图 eval/results/ui-e2e-capabilities-*.png；详见技术文档 P10、面试总集 4.13
+- ✅ P11 知识点面板重构 + 补全链路修复（2026-10-12）：列表/详情两态 + 搜索/状态筛选 + 显式 AI 补全（knowledge_complete 注册专用提示词 + `tools:[]` 硬闸——修复"未注册白跑全量 ReAct"存量 bug，省 ≈1317 tokens/次）+ 骨架屏/失败重试/90s 超时兜底 + 撤销删除 toast + clearAllKnowledge 收口 prefs 层；169/169 测试（+4）、pnpm eval 10/10 不回退、真机 e2e 含真实补全（截图 eval/results/ui-e2e-knowledge-*.png）；详见技术文档 P11、面试总集 4.14

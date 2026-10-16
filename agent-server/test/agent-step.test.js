@@ -70,6 +70,84 @@ test('dph-A: 工具轮触发 tool step 事件', async () => {
   assert.strictEqual(toolStep.tool, 'todo_write')
 })
 
+test('P10: 工具执行补发 done 终态事件（executed 路径，带 dangerLevel 与耗时）', async () => {
+  // get_page_content 需要插件在线，评测覆盖口给个罐头结果，走完整编排链路
+  const handler = require('../src/tools/handler.js')
+  handler.init({ manager: { getIds: () => [], getCount: () => 0 }, send: () => true })
+  handler.setToolOverrides({
+    get_page_content: async () => ({ content: [{ type: 'text', text: '页面正文内容' }] }),
+  })
+  try {
+    mockFetchWithSSE([
+      {
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'get_page_content', arguments: '{}' },
+            }],
+          },
+        }],
+      },
+      delta('已读取页面。'),
+    ])
+    const agent = new Agent()
+    const steps = []
+    const result = await agent.process('读一下页面', { onStep: (s) => steps.push(s) })
+    assert.strictEqual(result.success, true)
+    const running = steps.find((s) => s.phase === 'tool' && s.status === 'running')
+    const done = steps.find((s) => s.phase === 'tool' && s.status === 'done')
+    assert.ok(running, '应先有 running 事件')
+    assert.ok(done, '应有 done 终态事件（此前轨迹会永远停在调用中）')
+    assert.strictEqual(done.tool, 'get_page_content')
+    assert.strictEqual(done.outcome, 'executed')
+    assert.strictEqual(done.ok, true)
+    assert.strictEqual(done.dangerLevel, 'read')
+    assert.ok(typeof done.durationMs === 'number')
+  } finally {
+    handler.setToolOverrides({})
+  }
+})
+
+test('P10: 权限拒绝也是终态——done 事件如实落 denied，不再被动等下一轮收敛', async () => {
+  const handler = require('../src/tools/handler.js')
+  handler.init({ manager: { getIds: () => [], getCount: () => 0 }, send: () => true })
+  handler.setToolOverrides({
+    get_page_content: async () => ({ content: [{ type: 'text', text: '不应被执行' }] }),
+  })
+  try {
+    mockFetchWithSSE([
+      {
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'get_page_content', arguments: '{}' },
+            }],
+          },
+        }],
+      },
+      delta('好的，我不读了。'),
+    ])
+    const agent = new Agent()
+    const steps = []
+    await agent.process('读一下页面', {
+      onStep: (s) => steps.push(s),
+      permissionCheck: async () => ({ allowed: false, reason: '测试拒绝' }),
+    })
+    const done = steps.find((s) => s.phase === 'tool' && s.status === 'done')
+    assert.ok(done, '被拒也应有 done 事件')
+    assert.strictEqual(done.outcome, 'denied')
+    assert.strictEqual(done.ok, true, '被拒不是异常，调用本身闭环了')
+  } finally {
+    handler.setToolOverrides({})
+  }
+})
+
 test('dph-A: 取消时抛 ABORTED，不返回系统错误', async () => {
   // 永不结束的 SSE（模拟慢响应），监听 signal.abort 后立即 error 流 → reader.read() 抛 AbortError
   global.fetch = async (_url, init) => {

@@ -29,6 +29,7 @@ setTraceSink((event) => traceLog.record(event))
 // P9：MCP server 接入（配置了 MCP_SERVERS 才启动）。异步注册不阻塞 WS 监听——
 // 注册完成的日志出现前 LLM 工具表里还没有 mcp_* 工具，属预期行为。
 const mcpRegistry = require('./tools/mcp-registry.js')
+const { listCapabilities } = require('./tools/capabilities.js')
 if (config.mcp.servers.length > 0) {
   Promise.allSettled(config.mcp.servers.map((s) => mcpRegistry.registerMcpServer(s))).then(
     (results) => {
@@ -41,6 +42,13 @@ if (config.mcp.servers.length > 0) {
         } else {
           console.warn(`❌ [MCP] server「${serverName}」接入失败: ${r.reason?.message}`)
         }
+      })
+      // P10 能力可见性：注册是异步的，扩展可能先连上来——注册完把能力快照
+      // 广播给已连接的面板（懒加载 ws-server：模块体此时已初始化完毕）。
+      // 面板侧重连/打开时也会主动拉 list_capabilities，两条通道互为兜底
+      require('./communication/ws-server.js').broadcast({
+        type: 'capabilities',
+        capabilities: listCapabilities(),
       })
     }
   )

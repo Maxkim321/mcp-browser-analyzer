@@ -57,7 +57,13 @@ const FAILURE_PATTERN = /失败|错误|不足|跳过|超时|未响应|无可用|
 /** 子步骤缩进：服务端用前导空格表达层级（如 `  搜索：xxx`） */
 const isSubStep = (message) => /^\s{2,}/.test(message || '')
 
-const toolLabel = (name) => TOOL_LABELS[name] || name || '工具'
+const toolLabel = (name) => {
+  if (TOOL_LABELS[name]) return TOOL_LABELS[name]
+  // MCP 工具回退：mcp_<server>_<tool> → "MCP <server> · <tool>"，别满屏原始长名
+  const m = /^mcp_([a-z0-9]+?)_(.+)$/.exec(name || '')
+  if (m) return `MCP ${m[1]} · ${m[2].replace(/_/g, ' ')}`
+  return name || '工具'
+}
 
 let seed = 0
 const nextId = () => `t${Date.now().toString(36)}${(seed++).toString(36)}`
@@ -124,11 +130,12 @@ export function useAgentTrace() {
   /**
    * 归约 ReAct 事件（agent_step）
    *
-   * 归并规则：
-   * - reasoning：同一 iteration 只保留一个推理节点，重复事件视为该节点仍在进行
-   * - tool：按 iteration + 工具名归并；下一次 reasoning 到来说明本轮工具已执行完毕
-   * - compress：上下文压缩是瞬时动作，直接落成功态
-   * - done：Turn 结束，收敛所有未完成节点
+ * 归并规则：
+ * - reasoning：同一 iteration 只保留一个推理节点，重复事件视为该节点仍在进行
+ * - tool：按 iteration + 工具名归并；running 建节点，done 事件收敛到终态
+ *   （被拒/预演/出错/完成各有着落），下一次 reasoning 到来兜底收敛残余
+ * - compress：上下文压缩是瞬时动作，直接落成功态
+ * - done：Turn 结束，收敛所有未完成节点
    */
   const applyStep = (event) => {
     if (!event) return
@@ -152,6 +159,32 @@ export function useAgentTrace() {
 
     if (phase === 'tool') {
       const key = `tool:${iteration}:${tool}`
+      // P10 能力可见性：done 终态事件——更新既有节点而非早退（此前重复 key 直接
+      // return，工具行会一直停在"调用中"，直到下一轮推理才被被动收敛成成功）
+      if (event.status === 'done') {
+        const node = index.get(key)
+        if (!node) return
+        const outcome = event.outcome || 'executed'
+        node.detail =
+          outcome === 'denied'
+            ? '写操作被拒绝'
+            : outcome === 'dry-run'
+              ? '预演（未真实执行）'
+              : outcome === 'error'
+                ? '执行出错'
+                : event.dangerLevel === 'write'
+                  ? '写操作 · 已执行'
+                  : '已完成'
+        finalize(
+          node,
+          outcome === 'error'
+            ? TRACE_STATUS.FAILED
+            : outcome === 'denied'
+              ? TRACE_STATUS.CANCELLED
+              : TRACE_STATUS.SUCCESS
+        )
+        return
+      }
       if (index.has(key)) return
       // 推理节点在发起工具调用后即完成使命
       const reasoning = index.get(`reasoning:${iteration}`)

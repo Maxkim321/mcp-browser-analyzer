@@ -2,6 +2,7 @@ const http = require('node:http')
 const WebSocket = require('ws')
 const { v4: uuidv4 } = require('uuid')
 const toolHandler = require('../tools/handler.js')
+const { listCapabilities } = require('../tools/capabilities.js')
 const { Agent } = require('../core/agent.js')
 const { LLMClient } = require('../core/llm.js')
 const { ResearchWorkflow } = require('../core/workflow.js')
@@ -420,6 +421,9 @@ async function handleMessage(id, msg, agent) {
             systemPrompt,
             signal: controller.signal,
             permissionCheck,
+            // P11：知识点补全是纯对话 action——空数组白名单 = 工具硬闸，
+            // LLM 侧不再携带 15 个工具定义（省 token，也杜绝补全误触发浏览器操作）
+            tools: msg.action === 'knowledge_complete' ? [] : undefined,
             onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
             onStep: (stepInfo) => manager.send(id, { type: 'agent_step', ...stepInfo }),
           })
@@ -501,6 +505,11 @@ async function handleMessage(id, msg, agent) {
         const count = agent.restoreHistory(msg.history)
         manager.send(id, { type: 'history_restored', count })
       }
+      break
+    case 'list_capabilities':
+      // P10 能力可见性：面板按需拉取真实注册表快照（内置 + MCP）。
+      // 注意本消息不能带 requestId——会被上方 requestId 分支拦去 handlePluginResponse
+      manager.send(id, { type: 'capabilities', capabilities: listCapabilities() })
       break
     default:
       console.warn(`[Message] Unknown message type from ${id}:`, msg.type)

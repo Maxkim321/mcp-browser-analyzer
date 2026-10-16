@@ -169,3 +169,8 @@ export const removeKnowledgePoint = async (id) => {
   const next = list.filter((kp) => kp.id !== id)
   return saveKnowledgePoints(next)
 }
+
+// 清空全部（P11 收口：此前 SidePanel 绕过工具层裸写 storage）
+export const clearKnowledgePoints = async () => {
+  return saveKnowledgePoints([])
+}
