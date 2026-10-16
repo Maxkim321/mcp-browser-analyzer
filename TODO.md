@@ -49,7 +49,7 @@
 5. **评测集加研究类 golden case**：轨迹判卷扩展到子 agent 链路
 6. **P2 以文搜图**（blocked）：需方舟控制台给 doubao-embedding-vision 开图片输入权限或标准端点访问——开通后检索管线现成（截图→向量→同一记忆索引）
 7. **跨主题并行 v2**（谨慎）：会动 HITL 语义（currentTopic 游标挂载审批语义）
-8. **页面操作 P12b/c（候选）**：fill_form 批量填表 / wait_for / 审批卡动作列表+diff 预览（P12b）；chrome.debugger CDP 增强通道（closed shadow root/跨域 iframe/paint order，开关式）+ JS 监听器探测 + Boss直聘 fixture 半自动验收（P12c）
+8. **页面操作 P12c（候选）**：~~fill_form/wait_for/审批卡字段列表~~ **✅ P12b 已交付**（2026-10-16：fill_form 两阶段批量填表 + wait_for + 审批卡字段列表 + 真实站点 e2e httpbin/bing，见技术文档 P12b）；剩 chrome.debugger CDP 增强通道（closed shadow root/跨域 iframe/paint order，开关式）+ JS 监听器探测 + 导航竞态的 wait_for 重试兜底 + Boss直聘 fixture 半自动验收
 9. **MCP 设置页（P10 的续集，候选）**：预设模板卡 + 运行时热注册（registerMcpServer 本就是运行时函数，差一个 WS/HTTP 入口）+ mcp-servers.local.json 持久化（启动时与 .env 合并，注意 config require 时固化 env 的坑）——把"第二层接入测试"装进这个 UI 做，接入过程即评测产物；届时一并修本清单第 1 项（分发门槛按来源分层）
 
 ---

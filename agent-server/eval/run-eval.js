@@ -166,6 +166,24 @@ function makeActionOverrides(recorder, caseDef) {
     click_element: record('click_element'),
     fill_input: record('fill_input'),
     select_option: record('select_option'),
+    // P12b：fill_form 展开录制为逐字段单动作——期望序列判卷零改动（模型用不用批量路径都能判）
+    fill_form: async (args) => {
+      for (const f of args.fields || []) {
+        const tool = f.type === 'select' ? 'select_option' : f.type === 'checkbox' ? 'click_element' : 'fill_input'
+        recorder.push({ tool, args: { ref: f.ref, value: f.value } })
+      }
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok: true,
+              info: `fill_form 已执行（eval 模拟，${(args.fields || []).length} 字段）`,
+            }),
+          },
+        ],
+      }
+    },
     get_interactive_elements: async () => {
       const data = loadElements(caseDef.fixture)
       // 与真实链路同形：给 LLM 的是伪 HTML 快照文本（handler 对 interactive_elements 特化文本）

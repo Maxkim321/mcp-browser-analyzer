@@ -74,8 +74,13 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
         return true
 
       case 'write_action':
-        // P4 写操作执行：服务端审批通过后，在页面 DOM 上执行 click/fill/select
+        // P4 写操作执行：服务端审批通过后，在页面 DOM 上执行 click/fill/select/fill_form
         handleWriteAction(request, sender, sendResponse)
+        return true
+
+      case 'wait_for':
+        // P12b 等待页面文本出现（异步结果等待，只读）
+        handleWaitFor(request, sender, sendResponse)
         return true
 
       default:
@@ -395,7 +400,7 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
 
   function isInteractiveCandidate(el) {
     const tag = el.tagName.toLowerCase()
-    if (['a', 'button', 'input', 'select', 'textarea', 'label', 'summary'].includes(tag)) {
+    if (['a', 'button', 'input', 'select', 'textarea', 'summary'].includes(tag)) {
       return tag !== 'a' || el.hasAttribute('href')
     }
     if (el.tabIndex >= 0) return true
@@ -445,13 +450,34 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
   }
 
   /** 元素的可指纹描述（ref-store 指纹的原料，执行时现场重算比对） */
+  /** 控件关联的 label 文本（for= 关联或包裹式），作为输入框语义兜底 */
+  function labelTextFor(el) {
+    try {
+      if (el.id) {
+        const linked = document.querySelector(`label[for="${CSS.escape(el.id)}"]`)
+        if (linked) return String(linked.innerText || '').trim()
+      }
+      const wrapped = el.closest('label')
+      if (wrapped) return String(wrapped.innerText || '').trim()
+    } catch {
+      /* CSS.escape 不可用等场景静默降级 */
+    }
+    return ''
+  }
+
   function buildDescriptor(el) {
     return {
       tag: el.tagName.toLowerCase(),
       id: el.id || '',
       name: el.getAttribute('name') || '',
       type: el.getAttribute('type') || '',
-      text: String(el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').trim(),
+      text: String(
+        el.innerText ||
+          el.getAttribute('aria-label') ||
+          labelTextFor(el) || // label 文本是字段名（姓名），优先于 placeholder 提示语（你的称呼）
+          el.getAttribute('placeholder') ||
+          ''
+      ).trim(),
     }
   }
 
@@ -534,8 +560,12 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
       setTimeout(r, 80)
     })
 
-  /** actionability 矩阵：可见 / 稳定（两帧 bbox 不变）/ 可接收点击（遮挡判定）/ enabled */
-  async function assertActionable(el) {
+  /**
+   * actionability 矩阵：可见 / 稳定（两帧 bbox 不变）/ enabled；遮挡命中判定仅对
+   * click（指针动作的语义）——fill/select 对齐 Playwright 口径：只要可见+enabled，
+   * 程序化赋值不受视觉遮挡影响（bing 首页搜索框被装饰层盖住但照常可填，e2e 实测）
+   */
+  async function assertActionable(el, action = 'click') {
     el.scrollIntoView({ block: 'center' })
     await nextFrame()
     if (!isVisible(el)) throw new Error('元素不可见（display:none/visibility:hidden 或零尺寸）')
@@ -547,6 +577,7 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
     if (Math.abs(r1.left - r2.left) > 1 || Math.abs(r1.top - r2.top) > 1 || Math.abs(r1.width - r2.width) > 1 || Math.abs(r1.height - r2.height) > 1) {
       throw new Error('元素位置尚未稳定（可能正在动画或过渡），请稍后重试')
     }
+    if (action !== 'click') return
     const hit = document.elementFromPoint(r2.left + r2.width / 2, r2.top + r2.height / 2)
     if (!composedAncestryContains(el, hit)) {
       throw new Error('元素被其他内容遮挡（该位置点击不会命中目标，可能被弹层/遮罩覆盖）')
@@ -587,16 +618,80 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
     })
   }
 
-  async function executeWriteAction({ action, ref, value }) {
+  async function executeWriteAction({ action, ref, value, fields }) {
+    if (!ref && action !== 'fill_form') {
+      throw new Error('缺少 ref 参数——写操作只能引用 get_interactive_elements 快照里返回的 ref，禁止凭空构造')
+    }
+    let label = ''
+    let el = null
+    if (action === 'fill_form') {
+      // P12b 批量填表：两阶段执行——先全量预检（任何 ref/类型问题都不落一笔），
+      // 再逐字段执行（动画逐字段移动，"手"的连续感）；部分失败只在执行期出现并如实回报
+      if (!Array.isArray(fields) || fields.length === 0) throw new Error('fill_form 需要非空的 fields 数组')
+      if (fields.length > 20) throw new Error('fill_form 单次最多 20 个字段，更多请分批调用')
+      const prepared = fields.map((field) => {
+        if (!field?.ref) throw new Error('fill_form 的每个字段都必须带 ref')
+        const resolved = refStore.resolve(field.ref, (e) => buildDescriptor(e))
+        if (!resolved.ok) throw new Error(`字段 ${field.ref}: ${resolved.reason}`)
+        const fEl = resolved.el
+        const fLabel = buildLabel(fEl, buildDescriptor(fEl), fEl.getRootNode() !== document)
+        const fType =
+          field.type ||
+          (fEl instanceof HTMLSelectElement
+            ? 'select'
+            : fEl instanceof HTMLInputElement && fEl.type === 'checkbox'
+              ? 'checkbox'
+              : 'textbox')
+        const before =
+          fType === 'checkbox' ? fEl.checked : String(fEl.value ?? '').slice(0, 40)
+        return { field, el: fEl, label: fLabel, type: fType, before }
+      })
+      for (const p of prepared) {
+        if (p.type === 'select' && !(p.el instanceof HTMLSelectElement)) {
+          throw new Error(`字段 ${p.field.ref} 不是下拉框: ${p.label}（<${p.el.tagName.toLowerCase()}>）`)
+        }
+        if (p.type === 'textbox' && !(p.el instanceof HTMLInputElement) && !(p.el instanceof HTMLTextAreaElement)) {
+          throw new Error(`字段 ${p.field.ref} 不是输入框: ${p.label}（<${p.el.tagName.toLowerCase()}>）`)
+        }
+      }
+      const results = []
+      for (const p of prepared) {
+        await assertActionable(p.el, 'fill')
+        await playActionOverlay(p.el, p.type === 'select' ? 'select' : 'fill', p.label)
+        if (p.type === 'checkbox') {
+          const want = String(p.field.value).toLowerCase() === 'true'
+          if (p.el.checked !== want) p.el.click()
+          results.push({ ref: p.field.ref, label: p.label, before: p.before, after: p.el.checked })
+        } else if (p.type === 'select') {
+          const option = findSelectOption(p.el, String(p.field.value ?? ''))
+          if (!option) throw new Error(`下拉框中没有匹配选项: ${p.field.value}（${p.label}）`)
+          setNativeValue(p.el, option.value)
+          results.push({ ref: p.field.ref, label: p.label, before: p.before, after: option.text.slice(0, 40) })
+        } else {
+          setNativeValue(p.el, String(p.field.value ?? ''))
+          results.push({ ref: p.field.ref, label: p.label, before: p.before, after: String(p.el.value).slice(0, 40) })
+        }
+      }
+      const pageChanged = await observePageChange()
+      settleActionOverlay()
+      return {
+        ok: true,
+        info: `批量填写 ${results.length} 个字段：${results
+          .map((r) => `${r.label} ${r.before}→${r.after}`)
+          .join('、')}${pageChanged ? '（页面有响应）' : '（页面无变化，若与预期不符请重新枚举确认）'}`,
+        fields: results,
+        pageChanged,
+      }
+    }
     if (!ref) {
       throw new Error('缺少 ref 参数——写操作只能引用 get_interactive_elements 快照里返回的 ref，禁止凭空构造')
     }
-    const resolved = refStore.resolve(ref, (el) => buildDescriptor(el))
+    const resolved = refStore.resolve(ref, (e) => buildDescriptor(e))
     if (!resolved.ok) throw new Error(resolved.reason)
-    const el = resolved.el
-    const label = buildLabel(el, buildDescriptor(el), el.getRootNode() !== document)
+    el = resolved.el
+    label = buildLabel(el, buildDescriptor(el), el.getRootNode() !== document)
 
-    await assertActionable(el)
+    await assertActionable(el, action)
     // 先看见，再发生：动画播完才动 DOM
     await playActionOverlay(el, action, label)
 
@@ -661,6 +756,48 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
       if (option.value === value || option.text.trim() === value) return option
     }
     return null
+  }
+
+  /**
+   * P12b 等待页面文本出现（任一命中即返回）：点击/提交后的异步结果等待，
+   * 避免模型盲目重复操作。轮询 body.innerText（250ms 间隔），超时如实报未出现
+   */
+  async function handleWaitFor(request, sender, sendResponse) {
+    try {
+      const result = await waitForTexts(request.texts || [], request.timeoutMs)
+      sendResponse({
+        success: true,
+        type: 'wait_for_result',
+        requestId: request.requestId,
+        payload: result,
+      })
+    } catch (error) {
+      sendResponse({
+        success: false,
+        type: 'wait_for_result',
+        requestId: request.requestId,
+        error: error.message,
+      })
+    }
+  }
+
+  function waitForTexts(texts, timeoutMs) {
+    const wanted = texts.map((t) => String(t)).filter(Boolean)
+    if (!wanted.length) return Promise.resolve({ found: false, info: '没有候选文本' })
+    const budget = Math.min(Math.max(Number(timeoutMs) || 8000, 1000), 20000)
+    const deadline = Date.now() + budget
+    return new Promise((resolve) => {
+      const check = () => {
+        const bodyText = document.body ? document.body.innerText : ''
+        const matched = wanted.find((t) => bodyText.includes(t))
+        if (matched) return resolve({ found: true, matched, waitedMs: budget - (deadline - Date.now()) })
+        if (Date.now() >= deadline) {
+          return resolve({ found: false, waitedMs: budget, info: '候选文本均未出现' })
+        }
+        setTimeout(check, 250)
+      }
+      check()
+    })
   }
 
   function waitForPageReady(timeoutMs = 5000) {

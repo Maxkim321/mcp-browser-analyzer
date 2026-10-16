@@ -553,7 +553,8 @@ async function handleWebSearch(args, traceId, context = {}) {
 async function handleWriteAction(action, args, traceId, context = {}) {
   const connectionId = resolveConnectionId(args.connectionId, context)
   // P12a：selector → ref（元素引用身份），执行前由内容脚本校验（WeakRef+指纹）
-  const { ref, value } = args
+  // P12b：fill_form 批量字段（审批卡一次展示全部，旧值→新值）
+  const { ref, value, fields } = args
   const requestId = uuidv4()
 
   return new Promise((resolve, reject) => {
@@ -565,13 +566,20 @@ async function handleWriteAction(action, args, traceId, context = {}) {
 
     pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
 
-    traceManager.addEvent(traceId, 'write_action', { connectionId, action, ref, value })
+    traceManager.addEvent(traceId, 'write_action', {
+      connectionId,
+      action,
+      ref: ref || (Array.isArray(fields) ? fields.map((f) => f.ref).join(',') : null),
+      value: value || undefined,
+      fields: Array.isArray(fields) ? fields.length : undefined,
+    })
     const sendSuccess = ws.send(connectionId, {
       type: 'write_action',
       requestId,
       action,
       ref,
       value,
+      fields,
     })
 
     if (!sendSuccess) {
@@ -636,6 +644,45 @@ const toolHandlers = {
   click_element: (args, traceId, context) => handleWriteAction('click', args, traceId, context),
   fill_input: (args, traceId, context) => handleWriteAction('fill', args, traceId, context),
   select_option: (args, traceId, context) => handleWriteAction('select', args, traceId, context),
+  fill_form: (args, traceId, context) => handleWriteAction('fill_form', args, traceId, context),
+  wait_for: handleWaitFor,
+}
+
+/**
+ * P12b 等待页面文本出现（点击/提交后的异步结果等待，只读）
+ * RPC 超时随请求的 timeoutMs 缩放（+10s 余量），避免固定 30s 截断 20s 等待
+ */
+async function handleWaitFor(args, traceId, context = {}) {
+  const connectionId = resolveConnectionId(args.connectionId, context)
+  const texts = Array.isArray(args.texts) ? args.texts.map(String) : []
+  const timeoutMs = Math.min(Math.max(Number(args.timeoutMs) || 8000, 1000), 20000)
+  if (texts.length === 0) throw new Error('wait_for 需要至少一个候选文本')
+  const requestId = uuidv4()
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error('wait_for timeout'))
+    }, timeoutMs + 10000)
+
+    pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
+
+    traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'wait_for', texts, timeoutMs })
+    const sendSuccess = ws.send(connectionId, {
+      type: 'wait_for',
+      requestId,
+      texts,
+      timeoutMs,
+    })
+
+    if (!sendSuccess) {
+      clearTimeout(timeout)
+      pendingRequests.delete(requestId)
+      traceManager.complete(traceId, 'error')
+      reject(new Error(`Connection ${connectionId} not available`))
+    }
+  })
 }
 
 /**
@@ -762,9 +809,16 @@ function handlePluginResponse(connectionId, msg) {
         responseText = `页面可交互元素快照（ref 来自最近一次枚举，失效会被拒绝并要求重新枚举）：\n${msg.payload.snapshot}`
       } else if (msg.type === 'write_action_result' && msg.payload?.info) {
         // 写动作结果用人类可读 info（含"页面有响应/无变化"自诊字段），不灌 JSON
-        responseText = msg.payload.value
-          ? `${msg.payload.info}（当前值: ${msg.payload.value}）`
-          : msg.payload.info
+        const fieldsLine = Array.isArray(msg.payload.fields)
+          ? '；' + msg.payload.fields.map((f) => `${f.label}: ${f.before}→${f.after}`).join('，')
+          : ''
+        responseText =
+          (msg.payload.value ? `${msg.payload.info}（当前值: ${msg.payload.value}）` : msg.payload.info) + fieldsLine
+      } else if (msg.type === 'wait_for_result') {
+        // P12b：等待结果人类可读化
+        responseText = msg.payload?.found
+          ? `等待完成：页面已出现「${msg.payload.matched}」（${msg.payload.waitedMs ?? '?'}ms）`
+          : `等待超时：候选文本均未在页面出现${msg.payload?.info ? '（' + msg.payload.info + '）' : ''}`
       } else if (msg.payload) {
         responseText = JSON.stringify(msg.payload, null, 2)
       } else if (msg.message) {

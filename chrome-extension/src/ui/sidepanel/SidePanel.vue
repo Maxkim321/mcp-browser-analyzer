@@ -512,6 +512,17 @@
                 目标：{{ msg.args?.description || '未说明' }}
                 <span class="ask-evidence-ref">{{ msg.args?.ref }}</span>
               </div>
+              <!-- P12b：fill_form 批量字段——一次审批看全部 -->
+              <div v-if="msg.args?.fields" class="ask-evidence-fields">
+                <div
+                  v-for="(f, fi) in msg.args.fields"
+                  :key="fi"
+                  class="ask-evidence-item"
+                >
+                  {{ fi + 1 }}. <span class="ask-evidence-ref">{{ f.ref }}</span>
+                  {{ f.type ? `[${f.type}] ` : '' }}将填入：{{ f.value }}
+                </div>
+              </div>
               <div v-if="msg.args?.value" class="ask-evidence-item">内容：{{ msg.args.value }}</div>
               <div v-if="msg.args?.description" class="ask-evidence-item">
                 说明：{{ msg.args.description }}
@@ -1934,6 +1945,8 @@ const connectWebSocket = () => {
           // P4 写操作链路：审批通过后真实执行 / 只读枚举可交互元素，经 background 到 content script
           case 'write_action':
           case 'get_interactive_elements':
+          // P12b：fill_form 走 write_action 同通道；wait_for 只读等待
+          case 'wait_for':
             forwardWriteChain(data)
             break
 
@@ -2324,34 +2337,40 @@ const forwardWriteChain = (data) => {
       action: data.action,
       ref: data.ref, // P12a：元素引用身份（白名单漏加会被静默丢弃，回包只剩笼统 error）
       value: data.value,
+      fields: data.fields, // P12b：fill_form 批量字段
+      texts: data.texts, // P12b：wait_for 候选文本
+      timeoutMs: data.timeoutMs,
       maxElements: data.maxElements,
     })
     .then((response) => {
       if (response?.success && response.payload) {
-        sendToolResponse(
-          data.type === 'write_action' ? 'write_action_result' : 'interactive_elements',
-          data.requestId,
-          response.payload,
-          'Write chain completed'
-        )
+        const resType =
+          data.type === 'write_action'
+            ? 'write_action_result'
+            : data.type === 'wait_for'
+              ? 'wait_for_result'
+              : 'interactive_elements'
+        sendToolResponse(resType, data.requestId, response.payload, 'Write chain completed')
       } else {
         const err = response?.error || `${data.type} failed`
-        sendToolResponse(
-          data.type === 'write_action' ? 'write_action_result' : 'interactive_elements',
-          data.requestId,
-          { error: err },
-          err
-        )
+        const resType =
+          data.type === 'write_action'
+            ? 'write_action_result'
+            : data.type === 'wait_for'
+              ? 'wait_for_result'
+              : 'interactive_elements'
+        sendToolResponse(resType, data.requestId, { error: err }, err)
       }
     })
     .catch((error) => {
       console.error('Write chain forward failed:', error)
-      sendToolResponse(
-        data.type === 'write_action' ? 'write_action_result' : 'interactive_elements',
-        data.requestId,
-        { error: error.message },
-        error.message
-      )
+      const resType =
+        data.type === 'write_action'
+          ? 'write_action_result'
+          : data.type === 'wait_for'
+            ? 'wait_for_result'
+            : 'interactive_elements'
+      sendToolResponse(resType, data.requestId, { error: error.message }, error.message)
     })
 }
 
@@ -3951,6 +3970,15 @@ onUnmounted(() => {
   color: var(--info-strong);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 10px;
+}
+
+/* P12b：fill_form 批量字段列表 */
+.ask-evidence-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+  border-top: 1px dashed var(--border);
 }
 
 .workflow-ask-actions {

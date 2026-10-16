@@ -313,6 +313,73 @@ const tools = [
       required: ['ref', 'value'],
     },
   },
+  {
+    name: 'fill_form',
+    dangerLevel: 'write',
+    description:
+      '批量填写表单：一次调用填多个字段（输入框/文本域/下拉框/复选框/单选），比逐个调用 fill_input/select_option 更高效，' +
+      '审批卡片会一次性展示全部字段（旧值→新值）。写操作：执行前会请求用户审批。' +
+      '每个字段的 ref 必须来自 get_interactive_elements 最近一次快照；' +
+      '字段类型 type 按元素填写：textbox（输入框/文本域）/ checkbox（value 传 true/false）/ select（value 匹配 option）。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fields: {
+          type: 'array',
+          description: '要填写的字段列表',
+          items: {
+            type: 'object',
+            properties: {
+              ref: {
+                type: 'string',
+                description: '字段元素的引用 ID，来自 get_interactive_elements 快照',
+              },
+              type: {
+                type: 'string',
+                description: '字段类型：textbox | checkbox | select',
+              },
+              value: {
+                type: 'string',
+                description: '要填入的值；checkbox 传 "true" 或 "false"',
+              },
+            },
+            required: ['ref', 'value'],
+          },
+        },
+        description: {
+          type: 'string',
+          description: '这次批量填写要做什么的一句话说明，例如「填写订阅表单的姓名和邮箱」',
+        },
+      },
+      required: ['fields'],
+    },
+  },
+  {
+    name: 'wait_for',
+    dangerLevel: 'read',
+    description:
+      '等待页面上出现指定文本（任一命中即返回），用于点击/提交后等待异步结果（如"提交成功"提示、加载完成标志），' +
+      '避免盲目重复操作。超时返回未出现。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        texts: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '要等待的候选文本列表（任一出现在页面即视为成功），例如 ["提交成功","订阅完成"]',
+        },
+        timeoutMs: {
+          type: 'number',
+          description: '最长等待毫秒数，默认 8000，上限 20000',
+        },
+        connectionId: {
+          type: 'number',
+          description: '浏览器插件连接ID，可选；缺省时默认使用当前会话连接',
+        },
+      },
+      required: ['texts'],
+    },
+  },
 ]
 
 /** 写工具元数据判定的唯一出口：pipeline 审批、审计留痕、eval 轨迹判卷共用同一口径 */
