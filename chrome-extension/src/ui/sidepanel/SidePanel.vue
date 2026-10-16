@@ -726,6 +726,7 @@ import {
 import AgentTrace from '@/components/AgentTrace.vue'
 import UsageBar from '@/components/UsageBar.vue'
 import CapabilitiesPanel from '@/components/CapabilitiesPanel.vue'
+import { trustedClick } from '@/background/trusted-input.js'
 import { useAgentTrace, TRACE_STATUS } from '@/composables/useAgentTrace'
 
 defineOptions({
@@ -2523,11 +2524,27 @@ const handleTextAction = async (payload) => {
 }
 
 // 页面加载完成后连接
-const onRuntimeMessage = (request) => {
+const onRuntimeMessage = (request, sender, sendResponse) => {
   if (request.type === 'text_action_relay') {
     handleTextAction(request)
     // 广播已成功到达，清掉 storage 里同一条，避免下次打开侧边栏重复触发
     chrome.storage.session.remove('pendingTextAction').catch(() => void 0)
+  }
+  // P12c 可信输入：SidePanel 常驻不睡且持 chrome.debugger（SW 消息路由竞态的绕行方案），
+  // content script 解析 ref 后把视口坐标 + 自身 tabId 发来，这里发真实受信点击
+  if (request.type === 'trusted_click') {
+    ;(async () => {
+      try {
+        // SidePanel 的 currentWindow 就是它所在的 Boss 窗口，active tab 即目标页
+        const [active] = await chrome.tabs.query({ active: true, currentWindow: true })
+        if (!active?.id) throw new Error('无法定位当前标签页')
+        const response = await trustedClick(active.id, request.x, request.y)
+        sendResponse(response)
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message })
+      }
+    })()
+    return true // 异步响应：保持消息通道开放
   }
 }
 

@@ -264,6 +264,28 @@ const tools = [
     },
   },
   {
+    name: 'trusted_click',
+    dangerLevel: 'write',
+    description:
+      '通过浏览器调试协议发送真实受信点击（isTrusted:true）。用于普通 click_element 无效的场景：' +
+      'hover 展开型菜单（如筛选下拉）、强风控站点的控件。ref 必须来自 get_interactive_elements 最近一次快照。' +
+      '注意：执行期间页面顶部会短暂出现"正在调试"横幅，属正常现象；先试 click_element，无效再用本工具。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: {
+          type: 'string',
+          description: '目标元素的引用 ID，来自 get_interactive_elements 快照（如 e3）',
+        },
+        description: {
+          type: 'string',
+          description: '这个点击要做什么的一句话说明，会展示在审批卡片上',
+        },
+      },
+      required: ['ref'],
+    },
+  },
+  {
     name: 'fill_input',
     dangerLevel: 'write',
     description:

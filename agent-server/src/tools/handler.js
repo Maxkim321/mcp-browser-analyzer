@@ -645,6 +645,7 @@ const toolHandlers = {
   fill_input: (args, traceId, context) => handleWriteAction('fill', args, traceId, context),
   select_option: (args, traceId, context) => handleWriteAction('select', args, traceId, context),
   fill_form: (args, traceId, context) => handleWriteAction('fill_form', args, traceId, context),
+  trusted_click: (args, traceId, context) => handleWriteAction('trusted_click', args, traceId, context),
   wait_for: handleWaitFor,
 }
 

@@ -25,7 +25,8 @@
     "sidePanel",
     "activeTab",
     "tabs",
-    "scripting"
+    "scripting",
+    "debugger"
   ],
   "host_permissions": [
     "ws://localhost:9999/*",

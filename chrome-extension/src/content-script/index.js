@@ -403,6 +403,9 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
     if (['a', 'button', 'input', 'select', 'textarea', 'summary'].includes(tag)) {
       return tag !== 'a' || el.hasAttribute('href')
     }
+    // li 文本候选（Boss 筛选下拉选项/岗位列表条目都是 li）：LLM 要"读"列表页，
+    // 文本非空即可见即可枚举——maxElements 上限兜底噪声
+    if (tag === 'li' && String(el.innerText || '').trim()) return true
     if (el.tabIndex >= 0) return true
     const role = el.getAttribute('role')
     if (role && INTERACTIVE_ROLES.has(role)) return true
@@ -561,6 +564,45 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
     })
 
   /**
+   * P12c：完整鼠标事件序列点击。el.click() 只派发一个 click——Boss 筛选这类
+   * hover 展开型 UI（mouseover/mouseenter 开启下拉）与 mousedown 监听的控件
+   * 全体失灵（真机实测：Boss 工作经验下拉点不开）。对齐 Playwright 行为：
+   * pointer/mouse over→enter→move→down→up→click 全序列，坐标取元素中心。
+   */
+  function fireFullClick(el) {
+    const rect = el.getBoundingClientRect()
+    const base = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    }
+    const fire = (Ctor, type, extra = {}) => {
+      try {
+        el.dispatchEvent(new Ctor(type, { ...base, ...extra }))
+      } catch {
+        /* PointerEvent 不可用的环境降级为 mouse 序列 */
+      }
+    }
+    fire(PointerEvent, 'pointerover', { pointerType: 'mouse', isPrimary: true })
+    fire(MouseEvent, 'mouseover', {})
+    try {
+      el.dispatchEvent(new MouseEvent('mouseenter', { ...base, bubbles: false }))
+    } catch {
+      /* 忽略 */
+    }
+    fire(PointerEvent, 'pointermove', { pointerType: 'mouse', isPrimary: true })
+    fire(MouseEvent, 'mousemove', {})
+    fire(PointerEvent, 'pointerdown', { pointerType: 'mouse', isPrimary: true })
+    fire(MouseEvent, 'mousedown', {})
+    el.focus?.()
+    fire(PointerEvent, 'pointerup', { pointerType: 'mouse', isPrimary: true })
+    fire(MouseEvent, 'mouseup', {})
+    el.click()
+  }
+
+  /**
    * actionability 矩阵：可见 / 稳定（两帧 bbox 不变）/ enabled；遮挡命中判定仅对
    * click（指针动作的语义）——fill/select 对齐 Playwright 口径：只要可见+enabled，
    * 程序化赋值不受视觉遮挡影响（bing 首页搜索框被装饰层盖住但照常可填，e2e 实测）
@@ -699,8 +741,29 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
     switch (action) {
       case 'click': {
         el.focus?.()
-        el.click()
+        fireFullClick(el)
         result = { ok: true, info: `已点击 ${label}` }
+        break
+      }
+      case 'trusted_click': {
+        // P12c：可信输入点击——合成事件被 isTrusted 门控的站点（hover 展开菜单/强风控）。
+        // 不做 scrollIntoView：滚动会触发站点关闭 hover 下拉（Boss 实测），且 CDP 坐标
+        // 点击要求元素在当前视口内——视口外直接报错让 LLM 先滚动
+        if (!ref) throw new Error('trusted_click 需要 ref 参数')
+        if (!isVisible(el)) throw new Error('元素不可见（display:none/visibility:hidden 或零尺寸）')
+        const rectNow = el.getBoundingClientRect()
+        if (rectNow.top < 0 || rectNow.bottom > innerHeight || rectNow.left < 0 || rectNow.right > innerWidth) {
+          throw new Error('元素不在当前视口内，无法可信点击（请先滚动页面到可见位置，再重新枚举）')
+        }
+        const rect = rectNow
+        const cx = Math.round(rect.left + rect.width / 2)
+        const cy = Math.round(rect.top + rect.height / 2)
+        await playActionOverlay(el, 'click', label)
+        // P12c 路由：可信点击经 SidePanel 通道处理（SidePanel 常驻不睡、持 chrome.debugger）；
+        // content script 没有 chrome.tabs——tabId 由 SidePanel 端查当前窗口 active tab
+        const resp = await chrome.runtime.sendMessage({ type: 'trusted_click', x: cx, y: cy })
+        if (!resp?.ok) throw new Error(`可信点击失败: ${resp?.error || '未知错误'}`)
+        result = { ok: true, info: `已可信点击 ${label}（CDP 真实输入，isTrusted:true，坐标 ${cx},${cy}）` }
         break
       }
       case 'fill': {

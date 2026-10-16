@@ -25,7 +25,10 @@ export const getManifest = () => {
     },
     side_panel: { default_path: 'dist/src/ui/sidepanel/index.html' },
     options_page: 'dist/src/ui/options/index.html',
-    permissions: ['storage', 'sidePanel', 'activeTab', 'tabs', 'scripting'],
+    // P12c：debugger 权限——chrome.debugger 可信输入通道（CDP Input.dispatchMouseEvent
+    // 走浏览器真实输入管线，isTrusted:true）。用途：hover 展开型菜单/强风控站点
+    // （Boss 筛选下拉实测拒绝一切合成事件）。代价：attach 期间显示"正在调试"横幅
+    permissions: ['storage', 'sidePanel', 'activeTab', 'tabs', 'scripting', 'debugger'],
     host_permissions: isDev 
       ? [`http://localhost:${port}/*`, 'ws://localhost:9999/*', '<all_urls>'] 
       : ['ws://localhost:9999/*', '<all_urls>'],

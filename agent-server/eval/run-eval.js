@@ -167,6 +167,18 @@ function makeActionOverrides(recorder, caseDef) {
     fill_input: record('fill_input'),
     select_option: record('select_option'),
     // P12b：fill_form 展开录制为逐字段单动作——期望序列判卷零改动（模型用不用批量路径都能判）
+    // P12c：trusted_click 与 click 等价录制——期望序列判卷零改动
+    trusted_click: async (args) => {
+      recorder.push({ tool: 'click_element', args: { ref: args.ref, value: args.value } })
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ ok: true, info: 'trusted_click 已执行（eval 模拟）' }),
+          },
+        ],
+      }
+    },
     fill_form: async (args) => {
       for (const f of args.fields || []) {
         const tool = f.type === 'select' ? 'select_option' : f.type === 'checkbox' ? 'click_element' : 'fill_input'

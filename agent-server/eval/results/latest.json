@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-16T10:34:16.121Z",
+  "ranAt": "2026-10-16T12:12:19.222Z",
   "total": 10,
   "passed": 10,
   "passRate": 1,
@@ -9,8 +9,8 @@
       "id": "summary-dsh-01",
       "type": "summary",
       "passed": true,
-      "durationMs": 4589,
-      "contentChars": 1259,
+      "durationMs": 6129,
+      "contentChars": 2182,
       "checks": [
         {
           "name": "success",
@@ -20,7 +20,7 @@
         {
           "name": "max_chars",
           "passed": true,
-          "detail": "1259/2400"
+          "detail": "2182/2400"
         },
         {
           "name": "must_mention",
@@ -30,16 +30,16 @@
         {
           "name": "llm_judge",
           "passed": true,
-          "detail": "score=5 (min=3) 总结同时明确涵盖了一切皆插件的架构理念、session/agent/能力三类事件域分工，以及Service Definition/Provider/Consumer的seam替换机制，三点齐备且表述准确。"
+          "detail": "score=5 (min=3) 总结完整涵盖一切皆插件的架构理念、session/agent/能力三类事件域分工，以及Service Definition/Provider/Consumer的seam替换机制，三点齐备且表述准确。"
         }
       ],
-      "contentPreview": "# 页面核心内容总结\n\n**《DeepSeek Harness 源码深度解读》** — 对 DeepSeek 官方开源 Agent 框架（dsh）的架构级拆解。\n\n## 基本信息\n- 2026 年 8 月 13 日开源，口号 **\"Everything is a Plugin\"**，两天 Star 破 4.1 万\n- 规模：54 个包、1247 个 TS 源文件、约 20 万行代码、版本 0.1.0-rc.5（Developer Preview）、MIT 协议\n- 工程纪律：单测要求每个源文件 100% 行覆盖率（CI 门禁），每个包必须自带 invariant 断言模块\n\n## 架构要点（八"
+      "contentPreview": "# 《DeepSeek Harness 源码深度解读》核心内容总结\n\n这是一篇对 DeepSeek 官方开源 Agent 框架 **DeepSeek Harness（dsh）** 的架构级源码拆解文章（基于 commit 47f9438）。核心口号：**Everything is a Plugin（一切皆插件）**。\n\n## 一、仓库全景\n- 发布两天 Star 破 4.1 万、Fork 3283；版本 **0.1.0-rc.5**，官方标注 Developer Preview，协议 MIT\n- 规模：54 个包、1247 个 TS 源文件、约 20 万行代码、12293 次提交\n- 技术栈："
     },
     {
       "id": "chat-dsh-events-02",
       "type": "chat",
       "passed": true,
-      "durationMs": 2627,
+      "durationMs": 3334,
       "contentChars": 375,
       "checks": [
         {
@@ -60,17 +60,17 @@
         {
           "name": "llm_judge",
           "passed": true,
-          "detail": "score=5 (min=3) 准确概括了三个事件域的职责：会话事件持久保留事实、Agent事件实时活跃状态、能力事件附加策略避免导入循环，且补充细节与原文一致。"
+          "detail": "score=5 (min=3) 三个事件域的职责概括准确：会话事件强调持久保留事实与唯一真相源，Agent事件强调实时活跃状态，能力事件强调附加策略避免导入循环，完全符合评分标准。"
         }
       ],
-      "contentPreview": "根据文章第三节「事件驱动设计」，三类事件域分别是：\n\n| 事件域 | 前缀 | 时效性 | 职责（一句话） |\n|---|---|---|---|\n| **会话事件** | `session/*` | 持久、追加式 | 存放必须跨重启保留的事实，是唯一的真相源。 |\n| **Agent 事件** | `agent/*` | 实时 | 携带活跃 Agent 的 inbox、步骤与状态。 |\n| **能力事件** | `fs/*`、`tools/*`、`telemetry/*` | 实时 | 给 seam 附加策略和适配器，避免导入循环。 |\n\n补充一句文章强调的设计铁律：**\"模型可见即已记录\""
+      "contentPreview": "文章第三节「事件驱动设计」把事件分成三个域：\n\n| 事件域 | 命名前缀 | 职责（一句话） |\n|---|---|---|\n| **会话事件** | `session/*` | 持久、追加式地存放必须跨重启保留的事实，是唯一真相源。 |\n| **Agent 事件** | `agent/*` | 实时携带活跃 Agent 的 inbox、步骤与状态。 |\n| **能力事件** | `fs/*`、`tools/*`、`telemetry/*` | 实时给 seam 附加策略与适配器，避免导入循环。 |\n\n补充一点背景：文章为这一分层配了一条设计铁律——「模型可见即已记录」，即抵达模型请求的一切都"
     },
     {
       "id": "chat-dsh-version-03",
       "type": "chat",
       "passed": true,
-      "durationMs": 3278,
-      "contentChars": 693,
+      "durationMs": 3813,
+      "contentChars": 838,
       "checks": [
         {
           "name": "success",
@@ -80,7 +80,7 @@
         {
           "name": "max_chars",
           "passed": true,
-          "detail": "693/1200"
+          "detail": "838/1200"
         },
         {
           "name": "must_mention",
@@ -90,17 +90,17 @@
         {
           "name": "llm_judge",
           "passed": true,
-          "detail": "score=5 (min=3) 回答明确指出 Developer Preview 阶段，并给出'不建议直接上生产'的结论，完全符合评分标准。"
+          "detail": "score=5 (min=3) 明确指出版本处于 Developer Preview 阶段，并给出'不建议用于生产环境'的结论及风险说明，完全满足标准。"
         }
       ],
-      "contentPreview": "根据当前页面（《DeepSeek Harness 源码深度解读》）的内容：\n\n## 版本号\n**0.1.0-rc.5**\n\n## 当前阶段\n- 官方明确标注为 **Developer Preview（开发者预览版）**\n- 仓库于 2026 年 8 月 13 日开源，本文基于 `deepseek-ai/deepseek-harness @ 47f9438` 克隆\n- 协议：MIT；技术栈：Node.js + TypeScript（全 ESM）+ pnpm workspaces\n\n## 是否适合上生产？\n**不建议直接上生产。** 页面中列出的风险点很明确：\n\n| 风险项 | 说明 |\n|---"
+      "contentPreview": "根据当前页面《DeepSeek Harness 源码深度解读》的内容：\n\n## 版本号\n**0.1.0-rc.5**（页面中明确写为\"版本 0.1.0-rc.5\"，并注明\"0.1.0 的版本号意味着真正的生态故事才刚刚开始\"）。\n\n## 所处阶段\n**Developer Preview（开发者预览版）**，官方明确标注，并提示**破坏性变更随时可能发生**。相关背景：\n- 2026 年 8 月 13 日 DeepSeek 官方在 GitHub 开源，仓库发布两天 Star 破 4.1 万、Fork 3283\n- 协议 MIT，技术栈 Node.js + TypeScript（全 ESM）+ p"
     },
     {
       "id": "chat-dsh-subagent-04",
       "type": "chat",
       "passed": true,
-      "durationMs": 3246,
-      "contentChars": 843,
+      "durationMs": 3394,
+      "contentChars": 618,
       "checks": [
         {
           "name": "success",
@@ -110,7 +110,7 @@
         {
           "name": "max_chars",
           "passed": true,
-          "detail": "843/1600"
+          "detail": "618/1600"
         },
         {
           "name": "must_mention",
@@ -120,17 +120,17 @@
         {
           "name": "llm_judge",
           "passed": true,
-          "detail": "score=5 (min=3) 完整列出6种Provider，并明确指出可拉起Codex与Claude Code，符合标准。"
+          "detail": "score=5 (min=3) 完整列出6种Provider，并明确指出可拉起真实Codex与Claude Code，完全满足标准。"
         }
       ],
-      "contentPreview": "根据页面第七节「Subagent 家族与安全」，dsh 的 subagent 能力支持 **6 种 Provider**：\n\n| # | Provider | 拉起的外部产品 / 形态 |\n|---|----------|----------------------|\n| 1 | `spawn-in-process` | 进程内新起一个 agent（无外部产品） |\n| 2 | `fork-in-process` | 从父 agent 历史 fork（无外部产品） |\n| 3 | `acp` | 通过 **ACP 协议**接入的进程外 agent |\n| 4 | `codex` | 启动真实的"
+      "contentPreview": "根据页面第七节「Subagent 家族与安全」，dsh 的 subagent 能力支持 **6 种 Provider**：\n\n| # | Provider | 说明 |\n|---|----------|------|\n| 1 | `spawn-in-process` | 进程内新起 |\n| 2 | `fork-in-process` | 从父 agent 历史 fork |\n| 3 | `acp` | ACP 协议，进程外 |\n| 4 | `codex` | 启动真实 Codex app-server |\n| 5 | `claude-code` | 通过官方 Claude Agent SDK "
     },
     {
       "id": "extract-tables-01",
       "type": "extract",
       "passed": true,
-      "durationMs": 3246,
-      "contentChars": 912,
+      "durationMs": 3307,
+      "contentChars": 1017,
       "checks": [
         {
           "name": "success",
@@ -140,7 +140,7 @@
         {
           "name": "max_chars",
           "passed": true,
-          "detail": "912/2500"
+          "detail": "1017/2500"
         },
         {
           "name": "must_mention",
@@ -153,14 +153,14 @@
           "detail": "全部命中"
         }
       ],
-      "contentPreview": "### 表格 1\n| 产品 | 免费版 | 专业版(月) | 旗舰版(月) | 模型额度 |\n| --- | --- | --- | --- | --- |\n| CloudCode | 每天 10 次 | ¥128 | ¥398 | 专业版每月 500 次旗舰模型 |\n| CodeMate | 每天 20 次 | ¥99 | ¥299 | 专业版无限快慢混用 |\n| DevPilot | 每天 15 次 | ¥119 | ¥349 | 专业版每月 300 次旗舰模型 |\n| AgentKit | 每天 8 次 | ¥149 | ¥459 | 专业版无限次但限速 |\n\n对比维度：个人版订阅价格与"
+      "contentPreview": "以下是从当前页面提取的结构化数据（共 2 张表格）。\n\n### 表格 1\n| 产品 | 免费版 | 专业版(月) | 旗舰版(月) | 模型额度 |\n| --- | --- | --- | --- | --- |\n| CloudCode | 每天 10 次 | ¥128 | ¥398 | 专业版每月 500 次旗舰模型 |\n| CodeMate | 每天 20 次 | ¥99 | ¥299 | 专业版无限快慢混用 |\n| DevPilot | 每天 15 次 | ¥119 | ¥349 | 专业版每月 300 次旗舰模型 |\n| AgentKit | 每天 8 次 | ¥149 | ¥459 "
     },
     {
       "id": "chat-compare-cheapest-02",
       "type": "chat",
       "passed": true,
-      "durationMs": 3675,
-      "contentChars": 739,
+      "durationMs": 3528,
+      "contentChars": 676,
       "checks": [
         {
           "name": "success",
@@ -170,7 +170,7 @@
         {
           "name": "max_chars",
           "passed": true,
-          "detail": "739/1200"
+          "detail": "676/1200"
         },
         {
           "name": "must_mention",
@@ -180,17 +180,17 @@
         {
           "name": "llm_judge",
           "passed": true,
-          "detail": "score=5 (min=3) 回答准确指出CodeMate专业版¥99为最低，并正确说明原因是专业版无限快慢混用、不承诺旗舰模型固定次数，符合评分标准。"
+          "detail": "score=5 (min=3) 回答准确指出CodeMate专业版月费¥99为最低，并正确解释原因是专业版无限快慢混用、不限旗舰模型次数，与其他产品形成对比，完全符合评分标准。"
         }
       ],
-      "contentPreview": "根据页面内容，答案如下：\n\n## 专业版月费最低的产品：**CodeMate**\n\n| 产品 | 专业版(月) |\n|------|-----------|\n| **CodeMate** | **¥99** ✅ 最低 |\n| DevPilot | ¥119 |\n| CloudCode | ¥128 |\n| AgentKit | ¥149 |\n\n**CodeMate 专业版月费为 ¥99，是四款中最低的。**\n\n### 它便宜的原因\n\n从页面数据看，CodeMate 的定价策略与它的**额度模式**有关：\n\n- **模型额度：专业版\"无限快慢混用\"** —— 它不承诺旗舰模型的固定次数，而是采用"
+      "contentPreview": "根据页面内容，答案如下：\n\n## 专业版月费最低的产品\n\n**CodeMate**，专业版月费 **¥99**。\n\n四款产品专业版月费对比：\n\n| 产品 | 专业版(月) |\n|---|---|\n| **CodeMate** | **¥99（最低）** |\n| DevPilot | ¥119 |\n| CloudCode | ¥128 |\n| AgentKit | ¥149 |\n\n## 它便宜的原因\n\n页面给出的关键差异在于**模型额度策略不同**：\n\n- **CodeMate**：专业版是「**无限快慢混用**」——即不限次数，但通过快慢模型混用来控制成本。它没有把\"旗舰模型次数\"作为稀缺资源"
     },
     {
       "id": "chat-robust-empty-01",
       "type": "chat",
       "passed": true,
-      "durationMs": 1365,
-      "contentChars": 262,
+      "durationMs": 1922,
+      "contentChars": 330,
       "checks": [
         {
           "name": "success",
@@ -200,27 +200,27 @@
         {
           "name": "nonempty",
           "passed": true,
-          "detail": "长度 262"
+          "detail": "长度 330"
         },
         {
           "name": "max_chars",
           "passed": true,
-          "detail": "262/800"
+          "detail": "330/800"
         },
         {
           "name": "llm_judge",
           "passed": true,
-          "detail": "score=5 (min=3) 面对无意义输入'1'，回复得体地澄清自身能力并引导用户，未虚构页面内容。"
+          "detail": "score=5 (min=3) 面对无意义输入'1'，回答未胡编页面内容，而是清晰介绍自身能力并引导用户提出具体需求，处理得体。"
         }
       ],
-      "contentPreview": "你好！我是浏览器 AI 助手 👋\n\n我可以帮你做这些事：\n\n| 能力 | 说明 |\n|---|---|\n| 📄 **页面内容** | 总结、翻译、解释当前网页正文 |\n| ⚡ **性能分析** | 测试首屏加载、刷新后性能，给出优化建议 |\n| 🔍 **深度研究** | 搜索 + 多页阅读，整理成结论 |\n| 🖱️ **页面操作** | 点击、填表、提交（需你审批） |\n\n请告诉我你想做什么，比如：\n- 「总结一下当前页面」\n- 「测一下这个页面的性能」\n- 「帮我查一下 XXX 的最新情况」\n\n你想从哪开始？"
+      "contentPreview": "你好！我是 Browser Assistant v1.0.0，可以帮你做这些事：\n\n**📄 页面内容**\n- 总结、翻译、解释当前网页\n- 针对页面内容提问、提取要点\n\n**⚡ 性能分析**\n- 分析当前页面的加载性能（核心指标、优化建议）\n- 对任意 URL 跑完整 Lighthouse 审计（性能/无障碍/最佳实践/SEO）\n- 测试刷新后的性能表现\n\n**🌐 深度研究**\n- 搜索 + 多页阅读，帮你整理某个主题的资料\n\n**🖱️ 页面操作**\n- 点击、填表、选择等（执行前会请你审批）\n\n---\n\n请问你想做什么？比如：\n- 「总结一下当前这个页面」\n- 「分析下这个页面的性能」"
     },
     {
       "id": "action-subscribe-01",
       "type": "action",
       "passed": true,
-      "durationMs": 25080,
-      "contentChars": 529,
+      "durationMs": 25167,
+      "contentChars": 619,
       "checks": [
         {
           "name": "success",
@@ -230,7 +230,7 @@
         {
           "name": "nonempty",
           "passed": true,
-          "detail": "长度 529"
+          "detail": "长度 619"
         },
         {
           "name": "traj[0] fill_input",
@@ -282,14 +282,14 @@
           }
         }
       ],
-      "contentPreview": "订阅流程已经执行完毕，我把结果和你同步一下：\n\n## 执行结果\n\n| 步骤 | 内容 | 状态 |\n|------|------|------|\n| 填写姓名 | 田伟亮 | ✅ 已填入 |\n| 填写邮箱 | fan@example.com | ✅ 已填入 |\n| 推送频率 | 每周合集 | ✅ 已选择 |\n| 同意条款 | 已勾选（页面默认勾选） | ✅ |\n| 点击确认订阅 | 已点击 | ✅ 已执行 |\n\n## 需要说明的一点\n\n点击\"确认订阅\"后，我等待页面出现\"订阅成功/提交成功\"这类提示，**等待超时了**——页面上没有捕获到明确的成功反馈。因此我**无法确认订阅是否真正成功提交*"
+      "contentPreview": "已完成订阅操作。以下是本次操作的执行情况：\n\n## 操作总结\n\n| 步骤 | 内容 | 结果 |\n|------|------|------|\n| 1. 填写姓名 | 田伟亮 | ✅ 已填写 |\n| 2. 填写邮箱 | fan@example.com | ✅ 已填写 |\n| 3. 选择推送频率 | 每周合集 | ✅ 已选择 |\n| 4. 点击确认订阅 | 确认订阅按钮 | ✅ 已点击 |\n\n## 需要说明的情况\n\n⚠️ **提交结果未能确认**：点击\"确认订阅\"后，我等待了 8 秒未检测到\"订阅成功/提交成功\"等提示文本，重新读取页面内容后也未看到明确的成功反馈。页面正文仅显示表单和说明文字（"
     },
     {
       "id": "action-subscribe-02",
       "type": "action",
       "passed": true,
-      "durationMs": 24162,
-      "contentChars": 501,
+      "durationMs": 25250,
+      "contentChars": 370,
       "checks": [
         {
           "name": "success",
@@ -299,7 +299,7 @@
         {
           "name": "nonempty",
           "passed": true,
-          "detail": "长度 501"
+          "detail": "长度 370"
         },
         {
           "name": "traj[0] fill_input",
@@ -327,14 +327,14 @@
           }
         }
       ],
-      "contentPreview": "已完成操作，但结果有些异常，说明如下：\n\n## 操作记录\n| 步骤 | 操作 | 结果 |\n|------|------|------|\n| 1 | 填写邮箱字段为 `fan@example.com` | ✅ 成功 |\n| 2 | 点击「确认订阅」按钮 | ✅ 已执行 |\n| 3 | 等待提交结果提示 | ⚠️ 超时，未检测到任何结果文本 |\n\n## 说明\n- 按你的要求，**只填了邮箱**，姓名、订阅频率、同意条款复选框均未改动。\n- 点击提交后，我等待了页面反馈（成功/错误提示），但**超时未捕获到任何提示文本**。这可能是：\n  1. 该表单要求勾选「我已阅读并同意订阅条款」或填写其他必"
+      "contentPreview": "操作已完成，但有一点需要向你说明：\n\n**执行结果：**\n- ✅ 邮箱字段已填入 `fan@example.com`\n- ✅ 已点击「确认订阅」按钮\n- ⚠️ 点击后**没有出现\"订阅成功\"之类的提示**，页面内容与操作前基本一致\n\n**可能的原因：**\n1. 表单要求勾选「我已阅读并同意订阅条款」才能提交 —— 你明确要求\"其他内容都不要动\"，所以我**没有勾选**该复选框，这很可能就是提交被拦截的原因（表单校验未通过，因此没有成功提示）。\n2. 表单可能还有其他必填项（如姓名、推送频率），同样未填写。\n\n**下一步建议：**\n如果你希望真正完成订阅，需要至少勾选「同意订阅条款」这一项。请确"
     },
     {
       "id": "action-subscribe-03",
       "type": "action",
       "passed": true,
-      "durationMs": 25945,
-      "contentChars": 554,
+      "durationMs": 23385,
+      "contentChars": 341,
       "checks": [
         {
           "name": "success",
@@ -344,7 +344,7 @@
         {
           "name": "nonempty",
           "passed": true,
-          "detail": "长度 554"
+          "detail": "长度 341"
         },
         {
           "name": "traj[0] select_option",
@@ -384,7 +384,7 @@
           }
         }
       ],
-      "contentPreview": "我已经完成了你要求的三个操作，但需要如实说明结果：\n\n## 操作结果\n\n| 步骤 | 操作 | 结果 |\n|------|------|------|\n| 1 | 推送频率设为「每月深度」 | ✅ 已执行 |\n| 2 | 勾选「我已阅读并同意订阅条款」 | ✅ 已执行 |\n| 3 | 点击「确认订阅」 | ✅ 已执行 |\n\n## ⚠️ 需要你注意\n\n**点击提交后没有出现任何成功提示**（我等待了「提交成功/订阅完成」等文本，超时未出现），重新枚举页面后表单元素也没有变化，页面正文里看不到任何提交结果或校验错误信息。\n\n这意味着**无法确认订阅是否真正成功**。可能的原因有：\n\n1. **表单"
+      "contentPreview": "已完成你要求的三个操作：\n\n| 步骤 | 操作 | 结果 |\n|------|------|------|\n| 1 | 推送频率设为「每月深度」 | ✅ 已设置 |\n| 2 | 勾选「我已阅读并同意订阅条款」 | ✅ 已勾选 |\n| 3 | 点击「确认订阅」 | ✅ 已点击 |\n\n姓名和邮箱按你的要求未做改动。\n\n⚠️ 一点说明：点击提交后，我等待了成功提示（如\"提交成功/订阅完成\"等），但**未在超时时间内检测到**。这可能是因为：\n- 页面没有明显的成功提示文案，或提示形式与预期不同；\n- 表单因姓名/邮箱为空而校验未通过（很多订阅表单会把这两项设为必填）。\n\n如果你希望我进一步排查，可以"
     }
   ]
 }
