@@ -164,3 +164,6 @@ mcp-e2e-scope/
 .chrome-for-testing/
 .chrome-e2e-profile/
 .chrome-e2e-profile-cft/
+
+# 临时 e2e 调试脚本
+tmp-*.cjs
