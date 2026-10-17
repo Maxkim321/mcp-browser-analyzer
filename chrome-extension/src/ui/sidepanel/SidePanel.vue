@@ -2340,49 +2340,67 @@ const writeToolLabel = (tool) => {
 
 // P4 写操作链路转发：write_action（已审批）与 get_interactive_elements（只读枚举）
 // 走 background → content script，回包后按 requestId 回给服务端（与其他工具同构）
-const forwardWriteChain = (data) => {
-  chrome.runtime
-    .sendMessage({
-      type: data.type,
-      requestId: data.requestId,
-      action: data.action,
-      ref: data.ref, // P12a：元素引用身份（白名单漏加会被静默丢弃，回包只剩笼统 error）
-      value: data.value,
-      fields: data.fields, // P12b：fill_form 批量字段
-      texts: data.texts, // P12b：wait_for 候选文本
-      timeoutMs: data.timeoutMs,
-      maxElements: data.maxElements,
-    })
-    .then((response) => {
+// P12c 收尾：直发 tabs.sendMessage（与探针同路径，砍掉 runtime→background→tabs 中间跳）。
+// 此前经 background 中转的路径在 SW 唤醒/多上下文竞态下 flaky（"message port closed"
+// 连环失败的真凶）——直发路径在历次 e2e 与探针中百发百中
+const WRITE_CHAIN_TARGET_URL = 'https://www.zhipin.com/'
+const findContentTab = async () => {
+  const tabs = await chrome.tabs.query({ url: [`${WRITE_CHAIN_TARGET_URL}*`, 'http://www.zhipin.com/*'] })
+  if (tabs.length) return tabs[tabs.length - 1].id
+  const all = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })
+  if (!all.length) throw new Error('未找到可操作的内容页标签页')
+  return all[all.length - 1].id
+}
+
+const forwardWriteChain = async (data) => {
+  const resType =
+    data.type === 'write_action'
+      ? 'write_action_result'
+      : data.type === 'wait_for'
+        ? 'wait_for_result'
+        : 'interactive_elements'
+  const respondOk = (payload) => sendToolResponse(resType, data.requestId, payload, 'Write chain completed')
+  const respondErr = (err) => sendToolResponse(resType, data.requestId, { error: err }, err)
+  let target = null
+  try {
+    target = await findContentTab()
+    console.log('[forwardWriteChain] target tab:', target)
+    const sendOnce = (tid) =>
+      chrome.tabs.sendMessage(tid, {
+        type: data.type,
+        requestId: data.requestId,
+        action: data.action,
+        ref: data.ref, // P12a：元素引用身份
+        value: data.value,
+        fields: data.fields, // P12b：fill_form 批量字段
+        texts: data.texts, // P12b：wait_for 候选文本
+        timeoutMs: data.timeoutMs,
+        maxElements: data.maxElements,
+      })
+    try {
+      const response = await sendOnce(target)
       if (response?.success && response.payload) {
-        const resType =
-          data.type === 'write_action'
-            ? 'write_action_result'
-            : data.type === 'wait_for'
-              ? 'wait_for_result'
-              : 'interactive_elements'
-        sendToolResponse(resType, data.requestId, response.payload, 'Write chain completed')
+        respondOk(response.payload)
       } else {
-        const err = response?.error || `${data.type} failed`
-        const resType =
-          data.type === 'write_action'
-            ? 'write_action_result'
-            : data.type === 'wait_for'
-              ? 'wait_for_result'
-              : 'interactive_elements'
-        sendToolResponse(resType, data.requestId, { error: err }, err)
+        respondErr(response?.error || `${data.type} failed`)
       }
-    })
-    .catch((error) => {
-      console.error('Write chain forward failed:', error)
-      const resType =
-        data.type === 'write_action'
-          ? 'write_action_result'
-          : data.type === 'wait_for'
-            ? 'wait_for_result'
-            : 'interactive_elements'
-      sendToolResponse(resType, data.requestId, { error: error.message }, error.message)
-    })
+    } catch (e) {
+      // 通道未建立（页面早于扩展加载）→ 补注入后重试一次
+      if (!String(e.message).includes('Receiving end does not exist')) throw e
+      await chrome.scripting.executeScript({ target: { tabId: target }, files: ['dist/src/content-script/index.js'] })
+      const response = await sendOnce(target)
+      if (response?.success && response.payload) {
+        respondOk(response.payload)
+      } else {
+        respondErr(response?.error || `${data.type} failed`)
+      }
+    }
+  } catch (error) {
+    const detail = String(error?.message || error)
+    chrome.storage.local.set({ lastForwardError: { at: Date.now(), type: data.type, target, detail } }).catch(() => void 0)
+    console.error('[forwardWriteChain] failed:', detail, 'target:', target)
+    respondErr(detail)
+  }
 }
 
 // M1-F8 深度研究：以输入框内容为研究问题，显式触发深度研究工作流
