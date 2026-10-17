@@ -19,6 +19,10 @@ const dashboard = require('./dashboard.js')
 const MEMORY_ENABLED = process.env.MEMORY_ENABLED !== 'off'
 
 const connectionAgents = new Map()
+// P12c 收尾：最后活跃连接（user_prompt 到达即标记）——回合中通道重建（zhipin 页
+// reload/WS 重连）会让回合开始时固化的 connectionId 失效，工具调用据此回落到
+// 用户当前的真实会话，而不是撞死在断掉的旧通道上
+let lastActiveConnectionId = null
 
 // dph-A Turn/Step 可取消：每连接一个 AbortController，cancel_request 时 abort 当前 agent 任务
 const connectionAborts = new Map()
@@ -343,6 +347,7 @@ async function handleMessage(id, msg, agent) {
       manager.send(id, { type: 'pong' })
       break
     case 'user_prompt':
+      lastActiveConnectionId = id
       console.log('[Agent] Processing prompt:', msg.prompt)
       // 用量归因：本连接发起的所有 LLM 调用（含深度研究）计入该会话
       usageTracker.bindConnection(id)
@@ -627,6 +632,13 @@ async function runResearch(id, question, llmOverride = {}) {
 module.exports = {
   manager,
   wss,
+  getLastActiveConnectionId: () => {
+    if (lastActiveConnectionId !== null && manager.getIds().includes(lastActiveConnectionId)) {
+      return lastActiveConnectionId
+    }
+    const ids = manager.getIds()
+    return ids.length > 0 ? Math.max(...ids) : null
+  },
   send: (id, cmd) => manager.send(id, cmd),
   broadcast: (cmd) => manager.broadcast(cmd),
   getPerformance: (id) => manager.send(id, { type: 'get_performance' }),

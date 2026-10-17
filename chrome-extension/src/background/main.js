@@ -57,6 +57,14 @@ const getActiveTabId = async () => {
   if (!tab.url || tab.url.startsWith('edge://') || tab.url.startsWith('chrome://')) {
     throw new Error('Unsupported page: cannot inject into browser internal pages')
   }
+  // P12c：侧边栏本身以普通 tab 形态存在——active 是扩展页（无 content script）时，
+  // 回落到最近打开的 http(s) 内容页，否则消息会发给侧边栏自己导致 "port closed"
+  if (tab.url.startsWith('chrome-extension://')) {
+    const all = await c.tabs.query({ url: ['http://*/*', 'https://*/*'] })
+    const usable = all.filter((t) => t.id !== tab.id)
+    if (usable.length) return usable[usable.length - 1].id
+    throw new Error('No content page available (only extension pages open)')
+  }
   return tab.id
 }
 
@@ -229,16 +237,34 @@ const handleTextAction = (payload, sender) => {
 }
 
 // P4 写操作：content script 转发（枚举可交互元素 / 执行写动作），带补注入重试
+// P12c：粘性目标 tab——侧边栏本身是窗口里的一个普通 tab，当它处于前台时
+// getActiveTabId 会把消息发给侧边栏自己（无 content script → "message port closed"）。
+// 粘住"最后成功服务的 content tab"（即 agent 正在操作的岗位页），失败才回落 active tab
+let lastContentTabId = null
 const forwardToContentScriptWithRetry = async (message) => {
-  const tabId = await getActiveTabId()
-  try {
-    return await sendToContentScript(tabId, message)
-  } catch (error) {
-    const shouldRetryByInject = String(error?.message || '').includes('Receiving end does not exist')
-    if (!shouldRetryByInject) throw error
-    await ensureContentScriptInjected(tabId)
-    return sendToContentScript(tabId, message)
+  const tryTab = async (tabId) => {
+    try {
+      const r = await sendToContentScript(tabId, message)
+      lastContentTabId = tabId
+      return r
+    } catch (error) {
+      const shouldRetryByInject = String(error?.message || '').includes('Receiving end does not exist')
+      if (!shouldRetryByInject) throw error
+      await ensureContentScriptInjected(tabId)
+      const r2 = await sendToContentScript(tabId, message)
+      lastContentTabId = tabId
+      return r2
+    }
   }
+  if (lastContentTabId !== null) {
+    try {
+      return await tryTab(lastContentTabId)
+    } catch (error) {
+      console.log('[Write chain] sticky tab failed, falling back to active tab:', error?.message)
+    }
+  }
+  const tabId = await getActiveTabId()
+  return tryTab(tabId)
 }
 
 // 监听来自agent-server的消息

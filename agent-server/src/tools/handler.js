@@ -34,6 +34,15 @@ function resolveConnectionId(providedId, context = {}) {
   if (!Number.isInteger(normalized) || normalized <= 0) {
     throw new Error('Invalid connectionId')
   }
+  // P12c 收尾：回合中通道重建（zhipin 页 reload / WS 重连）会让回合开始时固化的
+  // connectionId 失效——回落到最新活跃连接（用户当前的真实侧边栏会话），
+  // 否则整个回合的所有工具调用都会撞死在断掉的旧通道上（真机实锤）
+  const activeIds = ws.manager ? ws.manager.getIds() : []
+  if (!activeIds.includes(normalized) && activeIds.length > 0) {
+    const latest = Math.max(...activeIds)
+    console.log(`[Handler] connectionId ${normalized} 已失效，回落到最新活跃连接 ${latest}`)
+    return latest
+  }
   return normalized
 }
 
@@ -845,6 +854,7 @@ module.exports = {
   handleToolCall,
   handlePluginResponse,
   setToolOverrides,
+  resolveConnectionId,
   registerToolHandler,
   traceManager,
 }

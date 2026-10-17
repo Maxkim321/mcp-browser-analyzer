@@ -148,6 +148,15 @@
       </div>
     </header>
 
+    <!-- P12c UX：执行中状态条——工具静默期（读页面/等加载）也能明确"agent 在干活"，
+         中间轮次文本只进执行轨迹，最终回复才落气泡，消除"结论一直在变"的观感 -->
+    <Transition name="exec-fade">
+      <div v-if="thinking" class="exec-status">
+        <span class="exec-spinner"></span>
+        <span class="exec-status-text">AI 正在执行 · {{ traceCurrentLabel || '思考中' }}</span>
+      </div>
+    </Transition>
+
     <!-- 会话历史下拉（F4 + F6：搜索/重命名） -->
     <div v-if="showHistoryList" class="history-panel">
       <div v-if="!sessionList.length" class="history-empty">暂无历史会话</div>
@@ -1124,6 +1133,7 @@ const completeKnowledge = async (kp) => {
 const {
   nodes: traceNodes,
   active: traceActive,
+  currentLabel: traceCurrentLabel,
   graph: traceGraph,
   begin: beginTrace,
   reset: resetTrace,
@@ -3423,6 +3433,49 @@ onUnmounted(() => {
 
 .knowledge-clear:hover {
   background: var(--danger-soft);
+}
+
+/* ===== P12c 执行中状态条 ===== */
+.exec-status {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-strong);
+  font-size: 11.5px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.15);
+}
+
+.exec-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--accent-border);
+  border-top-color: var(--accent-strong);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.exec-fade-enter-active,
+.exec-fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.exec-fade-enter-from,
+.exec-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-4px);
 }
 
 /* ===== P11 撤销删除轻提示（输入区上方，5 秒自动消失） ===== */
