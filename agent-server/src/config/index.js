@@ -42,7 +42,8 @@ const config = {
   },
 
   agent: {
-    maxIterations: 10,
+    // P12c：环境可配（复杂求职流程一次回合需要 15+ 轮：筛选/逐岗核验/沟通/常用语）
+    maxIterations: Number(process.env.AGENT_MAX_ITERATIONS) || 10,
     parallelToolCalls: 2,
     timeout: 60000,
     // 对话历史上限，避免长会话导致内存持续增长
