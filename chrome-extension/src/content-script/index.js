@@ -401,7 +401,9 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
   function isInteractiveCandidate(el) {
     const tag = el.tagName.toLowerCase()
     if (['a', 'button', 'input', 'select', 'textarea', 'summary'].includes(tag)) {
-      return tag !== 'a' || el.hasAttribute('href')
+      // <a> 无 href 时不再直接排除：Boss 的「立即沟通」是无 href 的 <a class="op-btn">（JS 绑定点击）——
+      // 落入 cursor:pointer 等后续判定（Boss 实测漏判根因）
+      return tag !== 'a' || el.hasAttribute('href') || getComputedStyle(el).cursor === 'pointer'
     }
     // li 文本候选（Boss 筛选下拉选项/岗位列表条目都是 li）：LLM 要"读"列表页，
     // 文本非空即可见即可枚举——maxElements 上限兜底噪声
@@ -438,18 +440,20 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
   }
 
   function collectInteractiveElements(maxElements) {
-    const out = []
+    const candidates = []
     const visit = (root, inShadow) => {
       for (const el of root.querySelectorAll('*')) {
-        if (out.length >= maxElements) return
         // open shadow root 递归：querySelectorAll 天然不进 shadow，这是旧版"看不见组件"的根因
         if (el.shadowRoot) visit(el.shadowRoot, true)
         if (!isInteractiveCandidate(el) || !isVisible(el)) continue
-        out.push(buildElementEntry(el, inShadow))
+        // 视口内优先：用户正在看的区域（详情面板等 DOM 尾部元素）不被列表页的长 DOM 挤掉
+        const rect = el.getBoundingClientRect()
+        candidates.push({ el, inShadow, inViewport: rect.top < innerHeight && rect.bottom > 0 })
       }
     }
     visit(document, false)
-    return out
+    candidates.sort((a, b) => (b.inViewport ? 1 : 0) - (a.inViewport ? 1 : 0))
+    return candidates.slice(0, maxElements).map((c) => buildElementEntry(c.el, c.inShadow))
   }
 
   /** 元素的可指纹描述（ref-store 指纹的原料，执行时现场重算比对） */
