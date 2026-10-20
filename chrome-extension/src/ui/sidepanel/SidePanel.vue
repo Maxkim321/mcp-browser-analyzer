@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-container" :data-theme="theme">
+  <div class="chat-container">
     <!-- 游戏风开屏：logo 演出 + 真实启动进度（挂载 → 会话恢复 → 服务连接） -->
     <Transition name="boot-fade">
       <div v-if="booting" class="boot-splash">
@@ -30,42 +30,6 @@
         </div>
       </div>
       <div class="header-actions">
-        <button
-          class="icon-btn"
-          :title="theme === 'dark' ? '切换到浅色' : '切换到深色'"
-          @click="toggleTheme"
-        >
-          <!-- 太阳 / 月亮随主题切换 -->
-          <svg
-            v-if="theme === 'dark'"
-            viewBox="0 0 24 24"
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <circle cx="12" cy="12" r="4" />
-            <path
-              d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41"
-            />
-          </svg>
-          <svg
-            v-else
-            viewBox="0 0 24 24"
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
-        </button>
         <button
           class="icon-btn"
           title="知识点"
@@ -149,11 +113,20 @@
     </header>
 
     <!-- P12c UX：执行中状态条——工具静默期（读页面/等加载）也能明确"agent 在干活"，
-         中间轮次文本只进执行轨迹，最终回复才落气泡，消除"结论一直在变"的观感 -->
+         中间轮次文本只进执行轨迹，最终回复才落气泡，消除"结论一直在变"的观感。
+         有后台回合（归属会话 ≠ 当前查看会话）时保持可见并标明归属，点击跳回 -->
     <Transition name="exec-fade">
-      <div v-if="thinking" class="exec-status">
+      <div
+        v-if="thinking || turnBackground"
+        class="exec-status"
+        :class="{ 'exec-bg': turnBackground }"
+        :title="turnBackground ? '点击回到该会话' : ''"
+        @click="bgTurns.length && switchSession(bgTurns[0].sessionId)"
+      >
         <span class="exec-spinner"></span>
-        <span class="exec-status-text">AI 正在执行 · {{ traceCurrentLabel || '思考中' }}</span>
+        <span class="exec-status-text">
+          {{ turnBackground ? bgStatusText : `AI 正在执行 · ${traceCurrentLabel || '思考中'}` }}
+        </span>
       </div>
     </Transition>
 
@@ -587,8 +560,13 @@
         </div>
       </div>
 
-      <!-- 思考中 / 实时执行轨迹（仅在流式回答尚未开始前展示） -->
-      <div v-if="(thinking || traceActive) && !streamingActive" class="message-item ai-message">
+      <!-- 思考中 / 实时执行轨迹（仅在流式回答尚未开始前展示）：
+           有后台回合时不展示（归约器里若是后台事件，轨迹属于别的会话）；
+           但当前会话自己的回合在跑（currentBusy）则正常展示 -->
+      <div
+        v-if="(thinking || traceActive) && !streamingActive && (!turnBackground || currentBusy)"
+        class="message-item ai-message"
+      >
         <div class="message-avatar"><span>AI</span></div>
         <div class="message-body">
           <div class="message-meta">
@@ -688,7 +666,7 @@
         <button
           class="send-button"
           @click="handleSendMessage"
-          :disabled="!inputText.trim() || thinking"
+          :disabled="!inputText.trim() || currentBusy"
           title="发送"
         >
           <svg
@@ -715,6 +693,14 @@
         <button class="undo-toast-btn" @click="undoLastAction">撤销</button>
       </div>
     </Transition>
+
+    <!-- 后台回合轻提示：切走的会话在后台完成回复/等待审批，点击跳回归属会话 -->
+    <Transition name="toast-fade">
+      <div v-if="turnToast" class="undo-toast turn-toast" @click="goTurnToast">
+        <span class="undo-toast-text">{{ turnToast.message }}</span>
+        <button v-if="turnToast.sessionId" class="undo-toast-btn">查看</button>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -737,6 +723,12 @@ import UsageBar from '@/components/UsageBar.vue'
 import CapabilitiesPanel from '@/components/CapabilitiesPanel.vue'
 import { trustedClick } from '@/background/trusted-input.js'
 import { useAgentTrace, TRACE_STATUS } from '@/composables/useAgentTrace'
+import {
+  createTurnRegistry,
+  appendTurnToken,
+  finalizeTurnMessages,
+  pickPersistable,
+} from '@/logic/turn-router.js'
 
 defineOptions({
   name: 'SidePanel',
@@ -769,6 +761,71 @@ const sessionId = ref('')
 const sessionList = ref([])
 const showHistoryList = ref(false)
 let saveTimer = null
+
+// ===== Turn 归属注册表（会话串台修复，纯逻辑见 logic/turn-router.js） =====
+// P15 服务端会话路由的对端：全部回合事件带 sessionId 回传，跨会话可并行。
+// 不属于当前查看会话的事件写进该会话的后台缓冲，回合结束落盘归属会话并提示；
+// 切回原会话时缓冲并回、流式继续。切换会话时服务端上下文用 restore_session
+// （store.replace 替换语义，幂等）恢复，运行中回合的会话跳过重放。
+const turnRegistry = createTurnRegistry()
+let lastLocalBegin = '' // 服务端未带 sessionId 时的兜底归属（旧服务端兼容）
+// 响应式镜像：进行中回合列表 [{sessionId,title}]（registry 是普通 Map，模板不追踪）
+const turnSessions = ref([])
+const syncTurnMirror = () => {
+  turnSessions.value = turnRegistry.busyIds().map((id) => ({
+    sessionId: id,
+    title: turnRegistry.record(id)?.title || '会话',
+  }))
+}
+// 后台回合 = 进行中回合里归属会话 ≠ 当前查看会话的那些
+const bgTurns = computed(() => turnSessions.value.filter((s) => s.sessionId !== sessionId.value))
+const turnBackground = computed(() => bgTurns.value.length > 0)
+// 当前查看会话自己有回合在跑（发送按钮禁用 + 同会话发送拦截）
+const currentBusy = computed(() => turnSessions.value.some((s) => s.sessionId === sessionId.value))
+const bgStatusText = computed(() =>
+  bgTurns.value.length === 1
+    ? `「${bgTurns.value[0].title}」后台回复中 · ${traceCurrentLabel.value || '思考中'}`
+    : `${bgTurns.value.length} 个会话后台回复中`
+)
+
+let turnToastTimer = null
+const turnToast = ref(null) // { message, sessionId } sessionId 非空则可点击跳转
+// 提示类 2.5s 自动消失（可点击跳过的场景信息不值得占屏 6s）；带跳转的完成/审批类 5s 给反应时间
+const showTurnToast = (message, gotoId = '') => {
+  turnToast.value = { message, sessionId: gotoId }
+  clearTimeout(turnToastTimer)
+  turnToastTimer = setTimeout(() => {
+    turnToast.value = null
+  }, gotoId ? 5000 : 2500)
+}
+
+const goTurnToast = () => {
+  const target = turnToast.value?.sessionId
+  turnToast.value = null
+  if (target) switchSession(target)
+}
+
+// 事件归属判定：服务端事件带 sessionId 为准；未带（旧服务端）回落到最近一次本地发起
+const turnOwnerOf = (data) => data.sessionId || lastLocalBegin || sessionId.value
+const isBgOwner = (owner) => !!owner && owner !== sessionId.value
+
+// 回合进行中禁止在本会话再发送（服务端会话内串行排队，客户端拦截给明确反馈）；
+// 其他会话不受影响——跨会话并行是 P15 的核心能力
+const blockIfTurnBusy = () => {
+  if (!turnRegistry.has(sessionId.value)) return false
+  showTurnToast('当前会话正在回复中，请等待完成')
+  return true
+}
+
+// 回合开始（sendPrompt 成功出站后调用）：标题取会话索引条目，新会话回落首条用户消息
+const beginTurn = () => {
+  const entry = sessionList.value.find((s) => s.id === sessionId.value)
+  const firstUserMsg = messages.value.find((m) => m.sender === 'user')
+  const title = entry?.title || (firstUserMsg?.content || '新对话').slice(0, 20)
+  turnRegistry.begin(sessionId.value, title)
+  lastLocalBegin = sessionId.value
+  syncTurnMirror()
+}
 
 // ===== 知识点卡片库（flashcard：收藏问题 + 异步补全答案 + 回顾） =====
 const showKnowledgePanel = ref(false)
@@ -835,6 +892,7 @@ const capabilityChips = computed(() => {
 const hasConversation = computed(() => messages.value.some((m) => !m.isGreeting))
 
 const sendCapabilityChip = async (chip) => {
+  if (blockIfTurnBusy()) return
   // 与快捷按钮同一套入场演出：先落一条用户消息再走 sendPrompt 通道
   messages.value.push({
     type: 'text',
@@ -869,18 +927,6 @@ const toggleCapabilitiesPanel = () => {
   showCapabilitiesPanel.value = !showCapabilitiesPanel.value
   // 每次打开都拉最新注册表：MCP server 可能刚被接入/下线
   if (showCapabilitiesPanel.value) requestCapabilities()
-}
-
-// ===== 主题（默认跟随系统、深色兜底，手动切换后持久化） =====
-const theme = ref('dark')
-const THEME_KEY = 'sidepanel-theme'
-const toggleTheme = () => {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  try {
-    localStorage.setItem(THEME_KEY, theme.value)
-  } catch {
-    /* storage 不可用时主题仅本次生效 */
-  }
 }
 
 // ===== 开屏（游戏风启动进度，进度条对接真实初始化事件） =====
@@ -1093,6 +1139,7 @@ const saveAiAnswerAsKnowledge = async (msg, ev) => {
 const KNOWLEDGE_COMPLETE_TIMEOUT = 90000
 const completeKnowledge = async (kp) => {
   if (!kp || kp.status !== 'pending' || completingId.value) return
+  if (blockIfTurnBusy()) return
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
     alert('请先启动 agent 服务（pnpm run agent-server）再补全答案')
     return
@@ -1319,6 +1366,8 @@ const sendPrompt = async (prompt, action) => {
       sessionId: sessionId.value,
     })
   )
+  // 回合归属绑定：本回合的一切事件归发起时的会话（切走后走后台缓冲）
+  beginTurn()
   return true
 }
 
@@ -1424,13 +1473,92 @@ const buildOpenAIHistory = (msgs) => {
   return merged
 }
 
-// 重放持久化历史给服务端：每次 WS 重连服务端都是全新 Agent（内存历史为空），重放总是安全
-const replayHistoryToServer = () => {
+// P15：把会话持久化历史重放到服务端对应会话的 Agent。
+// 服务端 restore 是替换语义（store.replace，幂等）——无需先 clear_history；
+// 运行中回合的会话跳过重放：其上下文正被运行中回合使用，重放会与之竞争
+// （服务端该会话 Agent 的历史已包含回合内容，本就正确）
+const restoreSessionToServer = (id) => {
+  if (turnRegistry.has(id)) return
   if (!websocket || websocket.readyState !== WebSocket.OPEN) return
   const history = buildOpenAIHistory(messages.value)
   if (!history.length) return
-  console.log('[Session] Replaying history to server:', history.length)
-  websocket.send(JSON.stringify({ type: 'restore_session', history }))
+  console.log('[Session] Restoring history to server session:', id, history.length)
+  websocket.send(JSON.stringify({ type: 'restore_session', sessionId: id, history }))
+}
+
+// 后台回合落盘：把定格后的回合消息合并进归属会话的存储并刷新索引条目
+// （回答不丢，回到该会话可见；会话已被删除则不复活索引）
+const persistTurnToSession = async (id, turnMsgs) => {
+  const stored = (await loadSessionMessages(id)).filter((m) => !m.streaming)
+  const merged = [...stored, ...pickPersistable(turnMsgs)]
+  await chrome.storage.local.set({ [`ba_session_${id}`]: { id, messages: merged } })
+  const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
+  if (!sessions.some((s) => s.id === id)) return
+  const prev = sessions.find((s) => s.id === id)
+  const entry = { ...prev, updatedAt: Date.now(), msgCount: merged.length }
+  const next = [entry, ...sessions.filter((s) => s.id !== id)].slice(0, MAX_SESSIONS)
+  sessionList.value = next
+  await chrome.storage.local.set({ [SESSION_INDEX_KEY]: next })
+}
+
+// 知识点补全收尾：把答案写回对应卡片并标记 done（前台/后台回合共用）
+const finalizeKnowledgeCompletion = async (data, finalContent) => {
+  if (!completingId.value) return
+  const doneId = completingId.value
+  completingId.value = ''
+  clearTimeout(completingTimer)
+  if (data.success && finalContent) {
+    failedKpId.value = ''
+    await updateKnowledgePoint(doneId, {
+      answer: finalContent.slice(0, 2000),
+      status: 'done',
+    })
+  } else {
+    // P11：失败不再静默——卡片留 pending，详情态提示"可重试"
+    failedKpId.value = doneId
+  }
+  await loadKnowledge()
+}
+
+// 后台回合收尾（事件归属会话 ≠ 当前查看会话）：定格缓冲 → 落盘归属会话 → 提示
+// P15：服务端每会话独立 Agent，回合结束后该会话上下文本就正确，无需再重放同步
+const handleBackgroundResponse = async (data, owner) => {
+  const finished = turnRegistry.end(owner)
+  syncTurnMirror()
+  if (!finished) return
+  const traceStatus = data.success
+    ? TRACE_STATUS.SUCCESS
+    : data.error === 'cancelled'
+      ? TRACE_STATUS.CANCELLED
+      : TRACE_STATUS.FAILED
+  completeTrace(traceStatus)
+  const msgs = finalizeTurnMessages(finished.buffer, data)
+  // 轨迹随最终消息持久化（与前台 finishTrace 同口径，回到该会话可回看）
+  const lastAi = [...msgs].reverse().find((m) => m.type === 'text' && m.sender === 'ai')
+  if (lastAi) {
+    if (traceNodes.value.length) lastAi.trace = snapshotTrace()
+    if (traceGraph.value.length) lastAi.traceGraph = snapshotTraceGraph()
+  }
+  resetTrace()
+  const finalContent = lastAi?.content || ''
+  // F5-2 文章索引与补全等后置逻辑不依赖当前视图会话，后台完成同样生效
+  if (data.success && lastSentAction === 'summarize' && finalContent) {
+    recordArticleIndex(finalContent)
+  }
+  await finalizeKnowledgeCompletion(data, finalContent)
+  lastSentAction = ''
+  if (!finished.discarded) {
+    await persistTurnToSession(owner, msgs)
+    const stopped = data.error === 'cancelled'
+    showTurnToast(
+      stopped
+        ? `「${finished.title}」后台回答已停止`
+        : data.success
+          ? `「${finished.title}」已在后台完成回复，点击查看`
+          : `「${finished.title}」后台回复失败，点击查看`,
+      owner
+    )
+  }
 }
 
 // 打开侧边栏时恢复最近会话（记住的 sessionId 优先，否则取最近一个）
@@ -1453,22 +1581,30 @@ const switchSession = async (id) => {
     showHistoryList.value = false
     return
   }
+  // 回合进行中切走：回合消息抽离进缓冲（切回时并回），事件改走后台缓冲
+  if (turnRegistry.has(sessionId.value)) {
+    turnRegistry.detach(sessionId.value, messages.value)
+  }
   await flushSession()
   sessionId.value = id
   messages.value = (await loadSessionMessages(id)).filter((m) => !m.streaming)
+  // 切回回合归属会话：缓冲并回，流式/审批卡恢复实时直写与交互
+  if (turnRegistry.has(id)) {
+    turnRegistry.attach(id, messages.value)
+  }
   pendingSelection.value = ''
   showHistoryList.value = false
   autoFollow.value = true
   await chrome.storage.local.set({ ba_current_session: id })
-  // 服务端内存 Agent 还挂着旧会话：先清空再重放新会话历史
-  if (websocket && websocket.readyState === WebSocket.OPEN) {
-    websocket.send(JSON.stringify({ type: 'clear_history' }))
-  }
-  replayHistoryToServer()
+  // P15：恢复目标会话在服务端的上下文（会话级替换，幂等；运行中回合的会话内部跳过）
+  restoreSessionToServer(id)
 }
 
 // 新建会话
 const startNewSession = async () => {
+  if (turnRegistry.has(sessionId.value)) {
+    turnRegistry.detach(sessionId.value, messages.value)
+  }
   await flushSession()
   sessionId.value = createSessionId()
   messages.value = []
@@ -1476,8 +1612,10 @@ const startNewSession = async () => {
   showHistoryList.value = false
   await chrome.storage.local.set({ ba_current_session: sessionId.value })
   await flushSession() // 建立新会话占位，保证索引立即可见
-  if (websocket && websocket.readyState === WebSocket.OPEN) {
-    websocket.send(JSON.stringify({ type: 'clear_history' }))
+  if (turnRegistry.busyIds().length > 0) {
+    // 串台修复的核心场景：回答不再串进新会话，而是在原会话后台跑完后提示。
+    // 新会话 id 在服务端还没有任何上下文，无需 clear
+    showTurnToast('已新建会话，后台回合完成后会自动送达原会话', turnRegistry.busyIds()[0])
   }
   nextTick(() => inputRef.value?.focus())
 }
@@ -1485,8 +1623,15 @@ const startNewSession = async () => {
 // 删除单个会话
 // 注意：删除当前会话时不能走 flushSession()（会把已删 id 的索引/消息重新写回 storage），必须手动切换
 const deleteSession = async (id) => {
-  if (id === sessionId.value && websocket && websocket.readyState === WebSocket.OPEN) {
-    websocket.send(JSON.stringify({ type: 'clear_history' }))
+  if (turnRegistry.has(id)) {
+    // 删除正在回复的会话 = 放弃该回合：精确停掉该会话任务，收尾不落盘不提示
+    turnRegistry.discard(id)
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      websocket.send(JSON.stringify({ type: 'cancel_request', sessionId: id }))
+    }
+  } else if (id === sessionId.value && websocket && websocket.readyState === WebSocket.OPEN) {
+    // 同步清掉服务端该会话的上下文（会话级 clear）
+    websocket.send(JSON.stringify({ type: 'clear_history', sessionId: id }))
   }
   const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
   const next = sessions.filter((s) => s.id !== id)
@@ -1501,7 +1646,7 @@ const deleteSession = async (id) => {
       messages.value = (await loadSessionMessages(next[0].id)).filter((m) => !m.streaming)
       pendingSelection.value = ''
       await chrome.storage.local.set({ ba_current_session: next[0].id })
-      replayHistoryToServer()
+      restoreSessionToServer(next[0].id)
     } else {
       // 全部删空：新建空会话
       sessionId.value = createSessionId()
@@ -1515,6 +1660,15 @@ const deleteSession = async (id) => {
 
 // 清空全部会话
 const clearAllSessions = async () => {
+  const running = turnRegistry.busyIds()
+  if (running.length > 0) {
+    // 有运行中回合等同删除其归属会话：放弃全部回合（不落盘），停掉该连接所有任务
+    running.forEach((sid) => turnRegistry.discard(sid))
+    syncTurnMirror()
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      websocket.send(JSON.stringify({ type: 'cancel_request' }))
+    }
+  }
   const { [SESSION_INDEX_KEY]: sessions = [] } = await chrome.storage.local.get(SESSION_INDEX_KEY)
   await chrome.storage.local.remove(sessions.map((s) => `ba_session_${s.id}`))
   await chrome.storage.local.remove(SESSION_INDEX_KEY)
@@ -1524,9 +1678,6 @@ const clearAllSessions = async () => {
   pendingSelection.value = ''
   showHistoryList.value = false
   await chrome.storage.local.set({ ba_current_session: sessionId.value })
-  if (websocket && websocket.readyState === WebSocket.OPEN) {
-    websocket.send(JSON.stringify({ type: 'clear_history' }))
-  }
 }
 
 const toggleHistoryList = () => {
@@ -1648,6 +1799,20 @@ const getActiveTab = async () => {
   return tabs[0]
 }
 
+// P16：回合工作 tab——服务端为每个会话记忆"该回合最近触碰的 tab"，工具命令带
+// tabId 提示；有效则粘住（用户切窗口/多会话并行都不串页），无效或缺失回落 activeTab
+const resolveWorkingTab = async (hintTabId) => {
+  if (Number.isFinite(hintTabId)) {
+    try {
+      const tab = await chrome.tabs.get(hintTabId)
+      if (tab && /^https?:/i.test(tab.url || '')) return tab
+    } catch (e) {
+      // 提示 tab 已关闭：回落 activeTab
+    }
+  }
+  return getActiveTab()
+}
+
 const waitForTabLoad = async (tabId, timeoutMs = 30000) => {
   const existingTab = await chrome.tabs.get(tabId)
   if (existingTab?.status === 'complete') {
@@ -1691,13 +1856,16 @@ const waitForTabLoad = async (tabId, timeoutMs = 30000) => {
 }
 
 // dph-A 可取消：点击停止 → 通知服务端 abort 当前 agent 任务（fetch abort，立即生效）
+// P15：带 sessionId 精确停当前会话的回合（跨会话并行下不能误伤后台回合）
 const cancelAgentTask = () => {
   if (!websocket || websocket.readyState !== WebSocket.OPEN) return
-  websocket.send(JSON.stringify({ type: 'cancel_request' }))
+  websocket.send(JSON.stringify({ type: 'cancel_request', sessionId: sessionId.value }))
   messages.value.push({
     type: 'text',
     sender: 'user',
     content: '停止生成',
+    // 本地回显标记：不参与回合边界判定（turn-router 找回合触发消息时跳过）
+    isLocalNotice: true,
     timestamp: Date.now(),
   })
   persistSession()
@@ -1756,8 +1924,9 @@ const connectWebSocket = () => {
 
     websocket.onopen = () => {
       updateConnectionStatus('connected')
-      // F4：每次重连服务端都是全新 Agent（内存历史为空），重放持久化历史重建上下文
-      replayHistoryToServer()
+      // F4 + P15：重连后服务端全新 Agent（内存历史为空），把当前会话持久化历史
+      // 重放到对应会话的 Agent（替换语义，幂等）
+      restoreSessionToServer(sessionId.value)
       // P10 能力可见性：连接建立即拉能力清单；若 MCP 注册尚未完成，
       // 服务端注册结束时会广播 capabilities 补推，两条通道互为兜底
       requestCapabilities()
@@ -1782,7 +1951,15 @@ const connectWebSocket = () => {
             // 流式增量：打字机效果
             // 注意：必须从 messages.value 取元素（reactive proxy）再修改，
             // 不能持有外部普通对象引用直接改（不触发 Vue 响应式更新）
-            thinking.value = false
+            const tokenOwner = turnOwnerOf(data)
+            if (!isBgOwner(tokenOwner)) thinking.value = false
+            if (isBgOwner(tokenOwner)) {
+              // 后台回合：增量写进该会话的缓冲（普通对象，不进当前查看会话的消息数组），
+              // 回合结束落盘归属会话；用户切回时缓冲并回恢复实时直写
+              const rec = turnRegistry.record(tokenOwner) || turnRegistry.begin(tokenOwner)
+              appendTurnToken(rec.buffer, data.content)
+              break
+            }
             const lastMsg = findStreamingMessage()
             if (lastMsg) {
               lastMsg.content += data.content
@@ -1799,7 +1976,13 @@ const connectWebSocket = () => {
           }
 
           case 'agent_response': {
-            thinking.value = false
+            const responseOwner = turnOwnerOf(data)
+            if (isBgOwner(responseOwner)) thinking.value = false
+            // 回合已切后台：走后台收尾（定格缓冲→落盘归属会话→提示），不进当前会话
+            if (isBgOwner(responseOwner)) {
+              await handleBackgroundResponse(data, responseOwner)
+              break
+            }
             // 用户主动停止时，正在 running 的节点要落 cancelled，
             // 否则轨迹会永久停在转圈状态，看起来像卡死
             const traceStatus = data.success
@@ -1847,47 +2030,56 @@ const connectWebSocket = () => {
               recordArticleIndex(finalContent)
             }
             // 知识点补全：agent_response 收尾时把答案写回对应卡片并标记 done
-            if (completingId.value) {
-              const doneId = completingId.value
-              completingId.value = ''
-              clearTimeout(completingTimer)
-              if (data.success && finalContent) {
-                failedKpId.value = ''
-                await updateKnowledgePoint(doneId, {
-                  answer: finalContent.slice(0, 2000),
-                  status: 'done',
-                })
-              } else {
-                // P11：失败不再静默——卡片留 pending，详情态提示"可重试"
-                failedKpId.value = doneId
-              }
-              await loadKnowledge()
-            }
+            await finalizeKnowledgeCompletion(data, finalContent)
             lastSentAction = ''
             persistSession()
+            // 回合结束：移除该会话的归属记录（此后本会话可再发送）
+            turnRegistry.end(responseOwner)
+            syncTurnMirror()
             break
           }
 
-          case 'performance_data':
+          case 'performance_data': {
+            const perfOwner = turnOwnerOf(data)
             thinking.value = false
-            messages.value.push({
+            const perfCard = {
               type: 'performance',
               sender: 'ai',
               data: data.payload,
               timestamp: Date.now(),
-            })
-            persistSession()
+            }
+            if (isBgOwner(perfOwner)) {
+              const rec = turnRegistry.record(perfOwner) || turnRegistry.begin(perfOwner)
+              rec.buffer.push(perfCard)
+            } else {
+              messages.value.push(perfCard)
+              persistSession()
+            }
             break
+          }
 
-          case 'thinking':
+          case 'thinking': {
+            const stepOwner = turnOwnerOf(data)
+            // 后台回合不在当前会话冒"思考中"气泡（状态条已标明后台归属）；
+            // 轨迹归约器同一时刻只服务一个回合：前台回合占用时后台回合不碰
+            if (isBgOwner(stepOwner)) {
+              if (!turnRegistry.has(sessionId.value)) beginTrace()
+              break
+            }
             thinking.value = true
             compressNoticedThisTurn = false
             beginTrace()
             break
+          }
 
           // dph-A Turn/Step 执行模型：Agent 每完成一个 Step（推理/工具执行）推送事件，
           // 前端归约成轨迹节点而非单帧覆盖，用户可看到完整执行过程
-          case 'agent_step':
+          case 'agent_step': {
+            const stepOwner = turnOwnerOf(data)
+            // 轨迹归约器被前台回合占用时，后台回合的 step 只进缓冲不进全局轨迹
+            if (isBgOwner(stepOwner) && turnRegistry.has(sessionId.value)) {
+              break
+            }
             applyTraceStep(data)
             // 压缩真实发生时在对话流里冒一条提示（含视图 token 前后值），每回合最多一条
             if (data.phase === 'compress' && data.compressed > 0 && !compressNoticedThisTurn) {
@@ -1896,15 +2088,22 @@ const connectWebSocket = () => {
                 Number.isFinite(data.tokensBefore) && Number.isFinite(data.tokensAfter)
                   ? `，视图 token ${data.tokensBefore} → ${data.tokensAfter}`
                   : ''
-              messages.value.push({
+              const notice = {
                 type: 'compress_notice',
                 sender: 'ai',
                 content: `📦 上下文已压缩：${data.compressed} 条早期消息转为摘要${saved}`,
                 timestamp: Date.now(),
-              })
-              persistSession()
+              }
+              if (isBgOwner(stepOwner)) {
+                const rec = turnRegistry.record(stepOwner) || turnRegistry.begin(stepOwner)
+                rec.buffer.push(notice)
+              } else {
+                messages.value.push(notice)
+                persistSession()
+              }
             }
             break
+          }
 
           case 'cancel_ack':
             // 取消已受理，等待 agent_response(已停止) 收尾
@@ -1913,15 +2112,23 @@ const connectWebSocket = () => {
           // M1-F8 深度研究：进度推送 → 归约进执行轨迹
           // 原实现把每条进度当消息 push，几十条进度会把对话流冲掉，
           // 且失败步骤需要靠 sticky 标记硬留痕；改由轨迹层做分层与状态标记
-          case 'workflow_progress':
+          case 'workflow_progress': {
+            const wfOwner = turnOwnerOf(data)
+            if (isBgOwner(wfOwner)) {
+              if (!turnRegistry.has(sessionId.value)) thinking.value = false
+              if (!turnRegistry.has(sessionId.value)) applyTraceWorkflow(data)
+              break
+            }
             thinking.value = false
             applyTraceWorkflow(data)
             break
+          }
 
           // M1-F8 深度研究：HITL 询问（暂停等待用户答复）——evidence 是"为什么打断"的证据
-          case 'workflow_ask':
+          case 'workflow_ask': {
+            const askOwner = turnOwnerOf(data)
             thinking.value = false
-            messages.value.push({
+            const askCard = {
               type: 'workflow_ask',
               sender: 'ai',
               taskId: data.taskId,
@@ -1932,14 +2139,26 @@ const connectWebSocket = () => {
               answer: '',
               customText: '',
               timestamp: Date.now(),
-            })
-            persistSession()
+            }
+            if (isBgOwner(askOwner)) {
+              const rec = turnRegistry.record(askOwner) || turnRegistry.begin(askOwner)
+              rec.buffer.push(askCard)
+              showTurnToast(
+                `「${rec.title || '后台会话'}」深度研究需要你的确认，点击处理`,
+                askOwner
+              )
+            } else {
+              messages.value.push(askCard)
+              persistSession()
+            }
             break
+          }
 
           // P4 分级权限 HITL：写操作审批请求（卡片展示工具/目标/值，等用户放行或拒绝）
-          case 'write_approval':
+          case 'write_approval': {
+            const approvalOwner = turnOwnerOf(data)
             thinking.value = false
-            messages.value.push({
+            const approvalCard = {
               type: 'write_approval',
               sender: 'ai',
               requestId: data.requestId,
@@ -1949,9 +2168,18 @@ const connectWebSocket = () => {
               pending: true,
               approved: false,
               timestamp: Date.now(),
-            })
-            scrollToBottom()
+            }
+            if (isBgOwner(approvalOwner)) {
+              // 审批卡不落盘（瞬态消息），进缓冲等切回后可交互；必须提示，否则回合会一直等
+              const rec = turnRegistry.record(approvalOwner) || turnRegistry.begin(approvalOwner)
+              rec.buffer.push(approvalCard)
+              showTurnToast(`「${rec.title || '后台会话'}」等待你审批写操作，点击处理`, approvalOwner)
+            } else {
+              messages.value.push(approvalCard)
+              scrollToBottom()
+            }
             break
+          }
 
           // P4 写操作链路：审批通过后真实执行 / 只读枚举可交互元素，经 background 到 content script
           case 'write_action':
@@ -2053,6 +2281,7 @@ const connectWebSocket = () => {
               .sendMessage({
                 type: 'get_performance',
                 requestId: data.requestId,
+                tabId: data.tabId,
               })
               .then((response) => {
                 console.log('Performance data received:', response)
@@ -2094,6 +2323,7 @@ const connectWebSocket = () => {
                 type: 'get_page_content',
                 requestId: data.requestId,
                 maxChars: data.maxChars,
+                tabId: data.tabId,
               })
               .then((response) => {
                 console.log('Page content received:', response)
@@ -2131,7 +2361,7 @@ const connectWebSocket = () => {
           case 'navigate_to':
             ;(async () => {
               try {
-                const tab = await getActiveTab()
+                const tab = await resolveWorkingTab(data.tabId)
                 const updatedTab = await chrome.tabs.update(tab.id, { url: data.url })
                 const loadedTab = await waitForTabLoad(updatedTab.id, 60000)
                 sendToolResponse(
@@ -2161,7 +2391,7 @@ const connectWebSocket = () => {
           case 'reload_page':
             ;(async () => {
               try {
-                const tab = await getActiveTab()
+                const tab = await resolveWorkingTab(data.tabId)
                 await chrome.tabs.reload(tab.id, { bypassCache: !!data.ignoreCache })
                 sendToolResponse(
                   'reload_result',
@@ -2189,7 +2419,7 @@ const connectWebSocket = () => {
           case 'wait_for_load':
             ;(async () => {
               try {
-                const tab = await getActiveTab()
+                const tab = await resolveWorkingTab(data.tabId)
                 const loadedTab = await waitForTabLoad(tab.id, data.timeout || 30000)
                 sendToolResponse(
                   'wait_for_load_result',
@@ -2231,6 +2461,11 @@ const connectWebSocket = () => {
     websocket.onclose = () => {
       console.log('WebSocket closed')
       updateConnectionStatus('disconnected')
+      // 断连即全部回合死亡（服务端对未完成任务 abort）：清空归属注册表，
+      // 避免发送被永久阻塞
+      turnRegistry.reset()
+      syncTurnMirror()
+      thinking.value = false
       scheduleReconnect()
     }
   } catch (error) {
@@ -2253,7 +2488,7 @@ const scheduleReconnect = () => {
 
 // 发送消息
 const handleSendMessage = async () => {
-  if (!inputText.value.trim() || thinking.value) {
+  if (!inputText.value.trim() || blockIfTurnBusy()) {
     return
   }
 
@@ -2344,7 +2579,16 @@ const writeToolLabel = (tool) => {
 // 此前经 background 中转的路径在 SW 唤醒/多上下文竞态下 flaky（"message port closed"
 // 连环失败的真凶）——直发路径在历次 e2e 与探针中百发百中
 const WRITE_CHAIN_TARGET_URL = 'https://www.zhipin.com/'
-const findContentTab = async () => {
+const findContentTab = async (hintTabId) => {
+  // P16：工作 tab 提示优先（该回合最近触碰的 tab；有效则粘住，多会话并行不互抢）
+  if (Number.isFinite(hintTabId)) {
+    try {
+      const tab = await chrome.tabs.get(hintTabId)
+      if (tab && /^https?:/i.test(tab.url || '')) return tab.id
+    } catch (e) {
+      // 提示 tab 已关闭：回落常规解析
+    }
+  }
   const tabs = await chrome.tabs.query({ url: [`${WRITE_CHAIN_TARGET_URL}*`, 'http://www.zhipin.com/*'] })
   if (tabs.length) return tabs[tabs.length - 1].id
   const all = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })
@@ -2361,51 +2605,82 @@ const forwardWriteChain = async (data) => {
         : 'interactive_elements'
   const respondOk = (payload) => sendToolResponse(resType, data.requestId, payload, 'Write chain completed')
   const respondErr = (err) => sendToolResponse(resType, data.requestId, { error: err }, err)
-  let target = null
-  try {
-    target = await findContentTab()
-    console.log('[forwardWriteChain] target tab:', target)
-    const sendOnce = (tid) =>
-      chrome.tabs.sendMessage(tid, {
-        type: data.type,
-        requestId: data.requestId,
-        action: data.action,
-        ref: data.ref, // P12a：元素引用身份
-        value: data.value,
-        fields: data.fields, // P12b：fill_form 批量字段
-        texts: data.texts, // P12b：wait_for 候选文本
-        timeoutMs: data.timeoutMs,
-        maxElements: data.maxElements,
-      })
+  const isWrite = data.type === 'write_action'
+  // P13 自动投递：agent 一条龙要连续调用 15-20 轮工具，点击引发的页面跳转会让
+  // 下一次调用撞上"旧 content script 已死、新文档还没注入完"的窗口——单次发送
+  // 必然偶发 "Receiving end does not exist" / "message port closed"。
+  // 修复：瞬态通道错误按退避重试（400ms/800ms/1600ms），每轮重新解析目标 tab。
+  // 分类重试边界：
+  // - 读操作（枚举/wait_for）：三种瞬态错误都安全重试；
+  // - 写操作：仅"消息未送达"（Receiving end does not exist）可重试；
+  //   "回包丢失"（message port closed）说明消息已送达、动作可能已执行——重发有
+  //   双击/双填风险，转自纠话术让 LLM 重新枚举确认页面状态后再决定
+  let lastDetail = `${data.type} failed`
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    if (attempt > 1) await new Promise((r) => setTimeout(r, 400 * 2 ** (attempt - 2)))
+    let target = null
     try {
-      const response = await sendOnce(target)
-      if (response?.success && response.payload) {
-        respondOk(response.payload)
-      } else {
-        respondErr(response?.error || `${data.type} failed`)
+      target = await findContentTab(data.tabId)
+      let response
+      try {
+        response = await sendWriteMessage(target, data)
+      } catch (e) {
+        const msg = String(e?.message || e)
+        if (!msg.includes('Receiving end does not exist')) throw e
+        lastDetail = msg
+        // 通道未建立（页面早于扩展加载/点击跳转后新文档）→ 补注入后重发
+        // （content script 有幂等守卫，重复注入不会产生双监听器）
+        await chrome.scripting.executeScript({ target: { tabId: target }, files: ['dist/src/content-script/index.js'] })
+        response = await sendWriteMessage(target, data)
       }
-    } catch (e) {
-      // 通道未建立（页面早于扩展加载）→ 补注入后重试一次
-      if (!String(e.message).includes('Receiving end does not exist')) throw e
-      await chrome.scripting.executeScript({ target: { tabId: target }, files: ['dist/src/content-script/index.js'] })
-      const response = await sendOnce(target)
       if (response?.success && response.payload) {
-        respondOk(response.payload)
-      } else {
-        respondErr(response?.error || `${data.type} failed`)
+        // P16：标注实际执行的 tabId，服务端回捕为该会话的工作 tab
+        respondOk({ ...response.payload, tabId: target })
+        return
       }
+      // 页面业务错误（ref 失效、元素不可见等）：与通道无关，直接回传给 LLM 自纠
+      lastDetail = response?.error || `${data.type} failed`
+      respondErr(lastDetail)
+      return
+    } catch (error) {
+      lastDetail = String(error?.message || error)
+      const notDelivered = lastDetail.includes('Receiving end does not exist')
+      const responseLost = lastDetail.includes('message port closed')
+      const transient =
+        notDelivered ||
+        responseLost ||
+        lastDetail.includes('Frame with ID') ||
+        lastDetail.includes('cannot be scripted') ||
+        lastDetail.includes('discarded')
+      if (!transient) break
+      if (isWrite && responseLost) {
+        lastDetail = '写操作已下发但回包丢失（页面可能已跳转），无法确认是否生效。请先重新枚举页面元素确认当前状态，再决定是否重试该操作'
+        break
+      }
+      // 读操作或"未送达"：退避后重试
     }
-  } catch (error) {
-    const detail = String(error?.message || error)
-    chrome.storage.local.set({ lastForwardError: { at: Date.now(), type: data.type, target, detail } }).catch(() => void 0)
-    console.error('[forwardWriteChain] failed:', detail, 'target:', target)
-    respondErr(detail)
   }
+  chrome.storage.local.set({ lastForwardError: { at: Date.now(), type: data.type, target: null, detail: lastDetail } }).catch(() => void 0)
+  console.error('[forwardWriteChain] failed:', lastDetail)
+  respondErr(lastDetail)
 }
+
+const sendWriteMessage = (tid, data) =>
+  chrome.tabs.sendMessage(tid, {
+    type: data.type,
+    requestId: data.requestId,
+    action: data.action,
+    ref: data.ref, // P12a：元素引用身份
+    value: data.value,
+    fields: data.fields, // P12b：fill_form 批量字段
+    texts: data.texts, // P12b：wait_for 候选文本
+    timeoutMs: data.timeoutMs,
+    maxElements: data.maxElements,
+  })
 
 // M1-F8 深度研究：以输入框内容为研究问题，显式触发深度研究工作流
 const handleResearch = async () => {
-  if (thinking.value) return
+  if (blockIfTurnBusy()) return
   const text = inputText.value.trim()
   if (!text) return
 
@@ -2436,7 +2711,7 @@ const handleResearch = async () => {
 
 // 总结本页：携带 action 触发专用总结提示词
 const handleSummarize = async () => {
-  if (thinking.value) {
+  if (blockIfTurnBusy()) {
     return
   }
 
@@ -2464,7 +2739,7 @@ const handleSummarize = async () => {
 
 // 提取表格/列表：F7 结构化提取，action 触发 EXTRACT_PROMPT
 const handleExtract = async () => {
-  if (thinking.value) {
+  if (blockIfTurnBusy()) {
     return
   }
 
@@ -2520,6 +2795,8 @@ const handleTextAction = async (payload) => {
     return
   }
 
+  if (blockIfTurnBusy()) return
+
   messages.value.push({
     type: 'selection',
     sender: 'user',
@@ -2560,35 +2837,9 @@ const onRuntimeMessage = (request, sender, sendResponse) => {
   }
   // P12c 可信输入：SidePanel 常驻不睡且持 chrome.debugger（SW 消息路由竞态的绕行方案），
   // content script 解析 ref 后把视口坐标 + 自身 tabId 发来，这里发真实受信点击
-  if (request.type === 'trusted_click') {
-    ;(async () => {
-      try {
-        // SidePanel 的 currentWindow 就是它所在的 Boss 窗口，active tab 即目标页
-        const [active] = await chrome.tabs.query({ active: true, currentWindow: true })
-        if (!active?.id) throw new Error('无法定位当前标签页')
-        const response = await trustedClick(active.id, request.x, request.y)
-        sendResponse(response)
-      } catch (error) {
-        sendResponse({ ok: false, error: error.message })
-      }
-    })()
-    return true // 异步响应：保持消息通道开放
-  }
 }
 
 onMounted(async () => {
-  // 主题恢复：上次手动选的主题优先；没有历史偏好时跟随系统，
-  // 让 app 底色与浏览器原生侧边栏标题栏同色，避免撞色出"边框感"
-  try {
-    const savedTheme = localStorage.getItem(THEME_KEY)
-    if (savedTheme === 'light' || savedTheme === 'dark') {
-      theme.value = savedTheme
-    } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-      theme.value = 'light'
-    }
-  } catch {
-    /* ignore */
-  }
 
   // 开屏：步骤 1（UI 挂载）完成；4s 硬兜底，任何异常都不会把用户关在开屏里
   advanceBoot(1)
@@ -2632,67 +2883,15 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 字体：ui-ux-pro-max skill「Developer Mono」字配——代码/数据用 JetBrains Mono，
+   在线加载失败回落系统 mono 栈（CSP 仅限 script，style 引入不受限） */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
 /* ===== 设计令牌 =====
- * 深色为默认主题（.chat-container 自身），[data-theme='light'] 整套覆盖为浅色。
+ * 浅色为唯一主题（2026-10-20 移除暗色：使用频率低，双主题配色维护易出 BUG）。
  * 命名按语义不按色相：调主题只改这里，其余 1400 行样式全部引用 var()。
  */
 .chat-container {
-  /* 面板底色分层：bg（页面）→ surface（区块）→ raised（浮层卡片） */
-  --bg: #0a101e;
-  --surface: #101a2d;
-  --surface-2: #0d1526;
-  --surface-raised: #17233c;
-  --overlay-rgb: 16, 26, 45;
-  --border: #22304d;
-  --border-strong: #33425f;
-  /* 文字层级 */
-  --text-1: #e2e8f0;
-  --text-2: #94a3b8;
-  --text-3: #7c8aa5;
-  --text-muted: #64748b;
-  /* 阴影/叠印用基色 */
-  --ink-rgb: 0, 0, 0;
-  --muted-rgb: 100, 116, 139;
-  /* 强调色（indigo）：按钮底用 accent，暗色下提亮一档保证对比 */
-  --accent: #6366f1;
-  --accent-strong: #4f46e5;
-  --accent-bright: #818cf8;
-  --accent-rgb: 129, 140, 248;
-  --accent-soft: rgba(99, 102, 241, 0.16);
-  --accent-border: rgba(129, 140, 248, 0.45);
-  --accent-ink: #0a101e;
-  --on-accent: #ffffff;
-  /* 代码块/知识面板：双主题都保持深色底（内容一致性） */
-  --code-bg: #0a0f1a;
-  --code-text: #e2e8f0;
-  /* 语义色 */
-  --info: #60a5fa;
-  --info-strong: #3b82f6;
-  --info-soft: rgba(59, 130, 246, 0.14);
-  --info-border: rgba(96, 165, 250, 0.4);
-  --info-rgb: 59, 130, 246;
-  --success: #34d399;
-  --success-strong: #10b981;
-  --success-deep: #6ee7b7;
-  --success-soft: rgba(16, 185, 129, 0.13);
-  --success-border: rgba(52, 211, 153, 0.45);
-  --success-rgb: 16, 185, 129;
-  --danger: #f87171;
-  --danger-strong: #ef4444;
-  --danger-deep: #fca5a5;
-  --danger-soft: rgba(220, 38, 38, 0.16);
-  --danger-border: rgba(248, 113, 113, 0.45);
-  --warn: #fbbf24;
-  --warn-strong: #f59e0b;
-  --warn-deep: #fcd34d;
-  --warn-soft: rgba(217, 119, 6, 0.16);
-  --warn-border: rgba(251, 191, 36, 0.45);
-  /* 动效节奏：交互反馈 150ms / 内容切换 300ms */
-  --speed-fast: 0.15s;
-  --speed-normal: 0.3s;
-}
-
-.chat-container[data-theme='light'] {
+  /* 面板底色分层：bg（页面）→ surface（区块）→ raised（浮层卡片）*/
   --bg: #f8fafc;
   --surface: #f1f5f9;
   --surface-2: #eef2f7;
@@ -2736,6 +2935,11 @@ onUnmounted(() => {
   --warn-deep: #b45309;
   --warn-soft: #fffbeb;
   --warn-border: #fde68a;
+  /* AI-Native UI 设计变量（同暗色块，亮色主题共用） */
+  --message-gap: 16px;
+  --typing-dot-size: 8px;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --on-accent: #ffffff;
 }
 
 /* ===== 基础 ===== */
@@ -3483,6 +3687,11 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
+/* 后台回合：状态条可点击跳回归属会话 */
+.exec-status.exec-bg {
+  cursor: pointer;
+}
+
 .exec-fade-enter-active,
 .exec-fade-leave-active {
   transition:
@@ -3537,6 +3746,11 @@ onUnmounted(() => {
   background: var(--accent-border);
 }
 
+/* 后台回合提示：整条可点击跳回 */
+.turn-toast {
+  cursor: pointer;
+}
+
 .toast-fade-enter-active,
 .toast-fade-leave-active {
   transition:
@@ -3559,7 +3773,7 @@ onUnmounted(() => {
   padding: 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--message-gap);
   overscroll-behavior: contain;
 }
 
@@ -3760,6 +3974,12 @@ onUnmounted(() => {
   box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.2);
 }
 
+/* AI-Native：AI 气泡左侧 accent 竖线（context card 样式），与用户气泡的渐变底
+   形成"谁在说话"的强区分；用户气泡走上面的渐变覆盖不受影响 */
+.message-item.ai-message .message-bubble {
+  border-left: 2px solid var(--accent-border);
+}
+
 /* ===== Markdown 渲染内容（v-html 插入，需 :deep 生效） ===== */
 .markdown-content :deep(h1),
 .markdown-content :deep(h2),
@@ -3808,7 +4028,7 @@ onUnmounted(() => {
 }
 
 .markdown-content :deep(code) {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   padding: 1px 5px;
   background: rgba(var(--ink-rgb), 0.06);
@@ -3845,7 +4065,7 @@ onUnmounted(() => {
 }
 
 .markdown-content :deep(.code-lang) {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-family: var(--font-mono);
   text-transform: lowercase;
 }
 
@@ -4056,7 +4276,7 @@ onUnmounted(() => {
   border-radius: 8px;
   background: var(--info-soft);
   color: var(--info-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
 }
 
@@ -4205,8 +4425,8 @@ onUnmounted(() => {
 }
 
 .thinking-dot {
-  width: 6px;
-  height: 6px;
+  width: var(--typing-dot-size);
+  height: var(--typing-dot-size);
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent-bright) 0%, var(--accent) 100%);
   animation: thinkingAnimation 1.4s infinite ease-in-out both;

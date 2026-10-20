@@ -72,40 +72,53 @@ class HistoryStore {
    * @param {Function} [opts.summarize] - 摘要函数 (text) => Promise<string>（rolling-summary 必需）
    * @param {string} [opts.strategy] - 临时覆盖构造时的策略（基准对比用）
    * @param {number} [opts.tokenBudget] - 临时覆盖预算
-   * @returns {Promise<{messages: Array, compressed: number, strategy: string, cached: boolean}>}
+   * @returns {Promise<{messages: Array, compressed: number, strategy: string, cached: boolean, anchor: string|null}>}
    */
   async deriveView({ summarize, strategy, tokenBudget } = {}) {
     const s = STRATEGIES.includes(strategy) ? strategy : this.strategy
     const budget = Number.isFinite(tokenBudget) ? tokenBudget : this.tokenBudget
 
     if (s === 'no-compress' || !budget) {
-      return { messages: [...this.raw], compressed: 0, strategy: s, cached: false }
+      return { messages: [...this.raw], compressed: 0, strategy: s, cached: false, anchor: null }
     }
 
     const count = findCompressCount(this.raw, budget)
     if (count === null) {
-      return { messages: [...this.raw], compressed: 0, strategy: s, cached: false }
+      return { messages: [...this.raw], compressed: 0, strategy: s, cached: false, anchor: null }
     }
 
+    // P13 任务锚定：当前任务 = 最后一条 user 消息。若它落在被压缩/丢弃的前缀里，
+    // 把原文从摘要中"捞出"原样回插（摘要有损，任务被摘要化后 agent 会在长流程中段
+    // 偏离目标——自动投递 15-20 轮工具调用必触发）；任务消息很小，全文保留几乎零成本。
+    // 任务已留在尾部时改用末尾锚点重申（对抗注意力稀释）。两者互斥，避免任务文本
+    // 在视图里出现两遍
+    const taskIdx = this.lastUserIndex()
+
     if (s === 'truncate') {
-      // 对照策略：无摘要直接丢最老的（保真度基准的基线）
-      return { messages: this.raw.slice(count), compressed: count, strategy: s, cached: false }
+      // 对照策略：无摘要直接丢最老的（保真度基准的基线）；任务保持与 rolling-summary
+      // 同等强度（回插/锚点），策略对比时"摘要 vs 直接丢"的变量才被隔离
+      const pinned = taskIdx >= 0 && taskIdx < count ? { ...this.raw[taskIdx] } : null
+      const anchor = pinned ? null : this.taskAnchor()
+      const messages = [...(pinned ? [pinned] : []), ...this.raw.slice(count)]
+      if (anchor) messages.push({ role: 'user', content: anchor })
+      return { messages, compressed: count, strategy: s, cached: false, anchor }
     }
 
     // rolling-summary（默认）
     if (this._cache && count <= this._cache.prefixLen) {
-      // 缓存命中：raw 只追加，已压缩前缀覆盖当前边界 → 直接复用摘要
-      return {
-        messages: [this._cache.summaryMsg, ...this.raw.slice(this._cache.prefixLen)],
-        compressed: 0,
-        strategy: s,
-        cached: true,
-      }
+      // 缓存命中：raw 只追加，已压缩前缀覆盖当前边界 → 直接复用摘要；
+      // 回插/锚点按缓存前缀边界重新计算（任务落在缓存前缀内同样要捞回）
+      const p = this._cache.prefixLen
+      const pinned = taskIdx >= 0 && taskIdx < p ? { ...this.raw[taskIdx] } : null
+      const anchor = pinned ? null : this.taskAnchor()
+      const messages = [this._cache.summaryMsg, ...(pinned ? [pinned] : []), ...this.raw.slice(p)]
+      if (anchor) messages.push({ role: 'user', content: anchor })
+      return { messages, compressed: 0, strategy: s, cached: true, anchor }
     }
 
     if (!summarize) {
       // 没有摘要函数时降级为不压缩，不影响主流程
-      return { messages: [...this.raw], compressed: 0, strategy: s, cached: false }
+      return { messages: [...this.raw], compressed: 0, strategy: s, cached: false, anchor: null }
     }
 
     const summary = await summarize(serializeMessages(this.raw.slice(0, count)))
@@ -114,12 +127,36 @@ class HistoryStore {
       content: `【早期对话摘要】（以下是较早轮次的压缩摘要，仅供背景参考；回答请以最近对话为准）\n${summary}`,
     }
     this._cache = { prefixLen: count, summaryMsg }
-    return {
-      messages: [summaryMsg, ...this.raw.slice(count)],
-      compressed: count,
-      strategy: s,
-      cached: false,
+    const pinned = taskIdx >= 0 && taskIdx < count ? { ...this.raw[taskIdx] } : null
+    const anchor = pinned ? null : this.taskAnchor()
+    const messages = [summaryMsg, ...(pinned ? [pinned] : []), ...this.raw.slice(count)]
+    if (anchor) messages.push({ role: 'user', content: anchor })
+    return { messages, compressed: count, strategy: s, cached: false, anchor }
+  }
+
+  /** 最后一条 user 消息的下标（找不到返回 -1） */
+  lastUserIndex() {
+    for (let i = this.raw.length - 1; i >= 0; i--) {
+      if (this.raw[i] && this.raw[i].role === 'user') return i
     }
+    return -1
+  }
+
+  /**
+   * P13 任务锚点文本：取最后一条 user 消息（当前任务）截断重述。
+   * 仅在压缩前缀存在时由 deriveView 返回，调用方附加到视图末尾
+   */
+  taskAnchor() {
+    for (let i = this.raw.length - 1; i >= 0; i--) {
+      const m = this.raw[i]
+      if (m && m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
+        return (
+          `【任务锚点·自动注入】当前任务目标：${m.content.trim().slice(0, 500)}\n` +
+          '请始终对齐该目标执行：已完成的步骤不要重复执行；任务已全部完成时直接输出最终结论，不要继续调用工具。'
+        )
+      }
+    }
+    return null
   }
 }
 

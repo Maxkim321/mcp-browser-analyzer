@@ -9,6 +9,12 @@ import { createRefStore } from './ref-store.js'
 import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
 
 (function() {
+  // P13：幂等守卫——写链路重试会对同一文档手动 executeScript 补注入，重复注入
+  // 会注册重复监听器导致写动作双执行。守卫与 refStore 同在隔离世界，重注入时
+  // 直接短路返回，原实例的 ref 与监听器原样保留（ref 跨重注入不失效）
+  if (window.__MCP_CONTENT_SCRIPT_ACTIVE__) return
+  window.__MCP_CONTENT_SCRIPT_ACTIVE__ = true
+
   let latestLcp = 0
 
   // P12a：写操作 ref 存储——元素身份发放与执行前校验（页面导航随脚本重置）
@@ -755,18 +761,25 @@ import { playActionOverlay, settleActionOverlay } from './action-overlay.js'
         // 点击要求元素在当前视口内——视口外直接报错让 LLM 先滚动
         if (!ref) throw new Error('trusted_click 需要 ref 参数')
         if (!isVisible(el)) throw new Error('元素不可见（display:none/visibility:hidden 或零尺寸）')
-        const rectNow = el.getBoundingClientRect()
+        // 岗位卡片等复合元素：优先找内部 <a href> 标题链接的坐标（Boss 卡片点击绑定在标题上）
+        const titleLink = el.tagName === 'A' && el.hasAttribute('href') ? el : el.querySelector('a[href]')
+        const clickTarget = titleLink || el
+        clickTarget.scrollIntoView({ block: 'center' })
+        const rectNow = clickTarget.getBoundingClientRect()
         if (rectNow.top < 0 || rectNow.bottom > innerHeight || rectNow.left < 0 || rectNow.right > innerWidth) {
           throw new Error('元素不在当前视口内，无法可信点击（请先滚动页面到可见位置，再重新枚举）')
         }
         const rect = rectNow
         const cx = Math.round(rect.left + rect.width / 2)
         const cy = Math.round(rect.top + rect.height / 2)
-        await playActionOverlay(el, 'click', label)
-        // P12c 路由：可信点击经 SidePanel 通道处理（SidePanel 常驻不睡、持 chrome.debugger）；
-        // content script 没有 chrome.tabs——tabId 由 SidePanel 端查当前窗口 active tab
-        const resp = await chrome.runtime.sendMessage({ type: 'trusted_click', x: cx, y: cy })
-        if (!resp?.ok) throw new Error(`可信点击失败: ${resp?.error || '未知错误'}`)
+        await playActionOverlay(clickTarget, 'click', label)
+        // P12c 收尾：直接 await runtime.sendMessage 响应（background handler 用 sendResponse
+        // 回传结果——最简单可靠的通道，无竞态）。8s 超时兜底
+        const tcResp = await Promise.race([
+          chrome.runtime.sendMessage({ type: 'trusted_click', x: cx, y: cy }).catch(() => ({ ok: false, error: 'channel closed' })),
+          new Promise((r) => setTimeout(r, 8000)).then(() => ({ ok: false, error: 'trusted_click 响应超时（8s）' })),
+        ])
+        if (!tcResp?.ok) throw new Error(`可信点击失败: ${tcResp?.error || '响应超时'}`)
         result = { ok: true, info: `已可信点击 ${label}（CDP 真实输入，isTrusted:true，坐标 ${cx},${cy}）` }
         break
       }

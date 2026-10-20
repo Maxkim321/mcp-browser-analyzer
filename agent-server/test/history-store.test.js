@@ -114,3 +114,89 @@ test('trimRaw: 头部裁剪对齐 tool 组并使缓存失效', async () => {
   assert.notStrictEqual(store.raw[0] && store.raw[0].role, 'tool', 'raw 头部不能是孤儿 tool')
   assert.strictEqual(store._cache, null, 'raw 前缀变化后缓存必须失效')
 })
+
+// ---- P13 任务锚定：压缩不得弄丢当前任务（自动投递长流程的实测故障）----
+
+test('P13 锚定回插：任务被卷进压缩前缀时原文回插视图（首次长流程场景）', async () => {
+  // 模拟自动投递：任务消息在前，后续全是快照类大 tool 消息（压缩边界必然越过任务）
+  const snapshot = (i) => `第${i}屏元素快照 ` + '元'.repeat(150)
+  const raw = [{ role: 'user', content: '搜索前端岗位并自动投递27届应届生岗位，遇到App引导必须停止' }]
+  for (let i = 1; i <= 5; i++) {
+    raw.push({ ...toolCallMsg, tool_calls: [{ ...toolCallMsg.tool_calls[0], id: `c${i}` }] })
+    raw.push({ role: 'tool', tool_call_id: `c${i}`, content: snapshot(i) })
+  }
+  const store = new HistoryStore({ strategy: 'rolling-summary', tokenBudget: 120 })
+  store.replace(raw)
+  const { messages, compressed, anchor } = await store.deriveView({ summarize: async (t) => `摘要(${t.length})` })
+  assert.ok(compressed > 0, '快照超预算应触发压缩')
+  assert.strictEqual(messages[0].role, 'system')
+  // 任务原文必须完整保留在视图里（不能只活在有损摘要中），且紧跟摘要之后
+  assert.ok(messages[1].role === 'user' && messages[1].content.includes('27届应届生'), '任务原文应回插在摘要之后')
+  // 回插与锚点互斥：任务已原文在场，不再发锚点
+  assert.strictEqual(anchor, null)
+  // raw 只追加不改写
+  assert.strictEqual(store.raw.length, 11)
+})
+
+test('P13 任务锚点：任务留在尾部时视图末尾收到锚点（多轮场景）', async () => {
+  const raw = [
+    { role: 'user', content: '旧轮次问题 ' + '旧'.repeat(100) },
+    toolCallMsg,
+    { role: 'tool', tool_call_id: 'c1', content: '果'.repeat(100) },
+    { role: 'assistant', content: '答'.repeat(100) },
+    { role: 'user', content: '继续投递下一个岗位' },
+    { role: 'assistant', content: 'a' },
+  ]
+  const store = new HistoryStore({ strategy: 'rolling-summary', tokenBudget: 60 })
+  store.replace(raw)
+  const { messages, compressed, anchor } = await store.deriveView({ summarize: async () => '摘要' })
+  assert.ok(compressed > 0)
+  assert.ok(typeof anchor === 'string' && anchor.includes('继续投递下一个岗位'), '任务在尾部时应发锚点重申')
+  const last = messages[messages.length - 1]
+  assert.strictEqual(last.role, 'user')
+  assert.ok(last.content.includes('任务锚点'), '锚点应是视图末尾一条 user 消息')
+  // 任务原文本身也还在视图尾部（锚点是重申，不是替代）
+  assert.ok(messages.some((m) => m.role === 'user' && m.content === '继续投递下一个岗位'))
+})
+
+test('P13 锚定回插：缓存命中路径同样捞回缓存前缀内的任务（纯 tool 轮次）', async () => {
+  // 自动投递的真实形态：任务之后全是 tool 循环、没有新 user 消息——
+  // 任务始终是最后一条 user 消息且落在缓存前缀内，缓存命中也必须把它捞回
+  const long = (ch) => ch.repeat(80)
+  const seeded = [
+    { role: 'user', content: '闲聊 ' + long('旧') },
+    { role: 'assistant', content: long('复') },
+    { role: 'user', content: '自动投递27届应届生岗位 ' + long('背') },
+    toolCallMsg,
+    { role: 'tool', tool_call_id: 'c1', content: long('果') },
+    { role: 'assistant', content: 'a' },
+  ]
+  const store = new HistoryStore({ strategy: 'rolling-summary', tokenBudget: 100 })
+  store.replace(seeded)
+  const first = await store.deriveView({ summarize: async () => '摘要1' })
+  assert.ok(first.compressed > 0)
+  assert.ok(first.messages.some((m) => m.role === 'user' && m.content.includes('27届应届生')), '任务在压缩前缀内应被回插')
+
+  // 追加一组小体积 tool 循环（不推远压缩边界 → 缓存命中）
+  store.append(
+    { ...toolCallMsg, tool_calls: [{ ...toolCallMsg.tool_calls[0], id: 'c2' }] },
+    { role: 'tool', tool_call_id: 'c2', content: 'x' }
+  )
+  const second = await store.deriveView({ summarize: async () => '摘要2' })
+  assert.strictEqual(second.cached, true, '边界未越过缓存前缀应命中缓存')
+  assert.ok(second.messages.some((m) => m.role === 'user' && m.content.includes('27届应届生')), '缓存命中路径同样回插任务')
+  // tool 组原子性不受回插影响
+  for (let i = 1; i < second.messages.length; i++) {
+    if (second.messages[i].role === 'tool') {
+      const prev = second.messages[i - 1]
+      assert.ok(prev.role === 'assistant' && Array.isArray(prev.tool_calls))
+    }
+  }
+})
+
+test('P13：未触发压缩时无锚点（不额外注入）', async () => {
+  const store = new HistoryStore({ strategy: 'rolling-summary', tokenBudget: 10000 })
+  store.replace(seededHistory())
+  const { anchor } = await store.deriveView({ summarize: async () => '不该被调用' })
+  assert.strictEqual(anchor, null)
+})

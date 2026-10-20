@@ -1,4 +1,5 @@
 const c = globalThis.chrome
+import { trustedClick } from './trusted-input.js'
 
 // 侧边栏配置
 if (c && c.sidePanel) {
@@ -68,10 +69,28 @@ const getActiveTabId = async () => {
   return tab.id
 }
 
-const getPerformanceWithRetry = async (requestId) => {
-  const tabId = await getActiveTabId()
+// P16：回合工作 tab 提示优先——有效 http(s) tab 直接用（多会话并行/用户切窗不串页），
+// 缺失或已失效回落 activeTab 语义（回合首读由 activeTab 定锚，随后被服务端记住）
+const resolveInjectableTabId = async (preferredTabId) => {
+  if (Number.isFinite(preferredTabId)) {
+    try {
+      const tab = await c.tabs.get(preferredTabId)
+      if (tab && /^https?:/i.test(tab.url || '')) return tab.id
+    } catch (e) {
+      // 提示 tab 已关闭：回落 activeTab
+    }
+  }
+  return getActiveTabId()
+}
+
+// P16：把实际使用的 tabId 标进回包 payload（服务端据此回捕工作 tab）
+const tagTabId = (response, tabId) =>
+  response && response.payload ? { ...response, payload: { ...response.payload, tabId } } : response
+
+const getPerformanceWithRetry = async (requestId, preferredTabId) => {
+  const tabId = await resolveInjectableTabId(preferredTabId)
   try {
-    return await sendToContentScript(tabId, { type: 'get_performance', requestId })
+    return tagTabId(await sendToContentScript(tabId, { type: 'get_performance', requestId }), tabId)
   } catch (error) {
     const message = String(error?.message || '')
     const shouldRetryByInject = message.includes('Receiving end does not exist')
@@ -79,14 +98,14 @@ const getPerformanceWithRetry = async (requestId) => {
       throw error
     }
     await ensureContentScriptInjected(tabId)
-    return sendToContentScript(tabId, { type: 'get_performance', requestId })
+    return tagTabId(await sendToContentScript(tabId, { type: 'get_performance', requestId }), tabId)
   }
 }
 
-const getPageContentWithRetry = async (requestId, maxChars) => {
-  const tabId = await getActiveTabId()
+const getPageContentWithRetry = async (requestId, maxChars, preferredTabId) => {
+  const tabId = await resolveInjectableTabId(preferredTabId)
   try {
-    return await sendToContentScript(tabId, { type: 'get_page_content', requestId, maxChars })
+    return tagTabId(await sendToContentScript(tabId, { type: 'get_page_content', requestId, maxChars }), tabId)
   } catch (error) {
     const message = String(error?.message || '')
     const shouldRetryByInject = message.includes('Receiving end does not exist')
@@ -94,7 +113,7 @@ const getPageContentWithRetry = async (requestId, maxChars) => {
       throw error
     }
     await ensureContentScriptInjected(tabId)
-    return sendToContentScript(tabId, { type: 'get_page_content', requestId, maxChars })
+    return tagTabId(await sendToContentScript(tabId, { type: 'get_page_content', requestId, maxChars }), tabId)
   }
 }
 
@@ -288,8 +307,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true
   }
 
+  if (request.type === 'trusted_click') {
+    // P12c 收尾：trusted_click 在 SW 处理（chrome.debugger 只在 SW/扩展页可用）。
+    // content script 发消息时 sender.tab 可用，不需要 SidePanel 中转。
+    // 响应经 tabs.sendMessage 推回 content script（不依赖 runtime 响应通道——
+    // SW 唤醒/多上下文竞态下 sendResponse 会丢）
+    const tabId = sender.tab?.id
+    if (!tabId) {
+      sendResponse({ ok: false, error: '缺少 sender.tab' })
+      return true
+    }
+    console.log('[trusted_click] SW handling, tab:', tabId, 'coords:', request.x, request.y)
+    const pushResult = (payload) => {
+      chrome.tabs.sendMessage(tabId, { type: 'trusted_click_result', requestId: request.requestId, payload }).catch(() => void 0)
+    }
+    trustedClick(tabId, request.x, request.y)
+      .then((response) => {
+        console.log('[trusted_click] done:', JSON.stringify(response))
+        pushResult(response)
+        sendResponse(response)
+      })
+      .catch((error) => {
+        console.error('[trusted_click] SW error:', error && (error.stack || error.message))
+        const errPayload = { ok: false, error: String(error?.message || error || 'unknown') }
+        pushResult(errPayload)
+        sendResponse(errPayload)
+      })
+    return true
+  }
+
   if (request.type === 'get_performance') {
-    getPerformanceWithRetry(request.requestId)
+    getPerformanceWithRetry(request.requestId, request.tabId)
       .then(response => {
         console.log('Background received performance data:', response)
         sendResponse(response)
@@ -306,7 +354,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'get_page_content') {
-    getPageContentWithRetry(request.requestId, request.maxChars)
+    getPageContentWithRetry(request.requestId, request.maxChars, request.tabId)
       .then(response => {
         console.log('Background received page content:', response)
         sendResponse(response)

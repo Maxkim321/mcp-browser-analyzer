@@ -154,7 +154,7 @@ class Agent {
       // dph-C 上下文压缩：派生视图按策略生成（raw 只追加不改写，见 history-store.js）。
       // 摘要由 LLM 生成（非流式、light 档），失败降级为不压缩，不影响主流程。
       // 压缩真实发生时：Step 事件带 token 前后值（前端提示条），并落 trace-log（可观测）
-      const { messages: view, compressed } = await this.deriveView()
+      const { messages: view, compressed, anchor } = await this.deriveView()
       if (compressed > 0) {
         const tokensBefore = estimateMessagesTokens(this.store.raw)
         const tokensAfter = estimateMessagesTokens(view)
@@ -171,11 +171,14 @@ class Agent {
           `[Agent] Context derived (${this.config.compressStrategy}): ${compressed} old messages → summary (${tokensBefore} → ${tokensAfter} tokens)`
         )
       }
+      // P13 任务锚点：压缩前缀出现后，任务原文距当前注意力隔了整段历史——把锚点
+      // 附加到视图末尾（只改视图不改 raw），对抗长流程中段的注意力稀释/目标偏离
+      const callMessages = anchor ? [...view, { role: 'user', content: anchor }] : view
 
       // 流式调用：工具轮 content 为空（不触发 onToken），最终文本轮实时推送增量
       // agent 归属标签：子 agent 的 usage 台账借此与主会话区分（per-worker 分账）
       const response = await this.llm.chatStream(
-        view,
+        callMessages,
         toolDefs,
         options.systemPrompt,
         options.onToken,
@@ -225,10 +228,11 @@ class Agent {
     // 兜底收敛：达到最大轮次后，禁用工具再请求一次，让模型直接输出最终结论
     // 避免”数据已采集成功但最后卡在工具循环”导致整体失败
     try {
-      const { messages: fallbackView } = await this.deriveView()
+      const { messages: fallbackView, anchor: fallbackAnchor } = await this.deriveView()
       const forcedFinalResponse = await this.llm.chatStream(
         [
           ...fallbackView,
+          ...(fallbackAnchor ? [{ role: 'user', content: fallbackAnchor }] : []),
           {
             role: 'user',
             content:

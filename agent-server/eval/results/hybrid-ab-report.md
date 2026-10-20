@@ -1,6 +1,6 @@
 # 混合检索三路对照评测
 
-- 时间：2026-09-28T03:53:05.072Z
+- 时间：2026-09-28T04:12:38.031Z
 - 设计：regression 集（原 12 case，关键词重合型）验证不回退；semantic 集（12 条同义改写/
   跨语言/意图型对抗 query + 4 张词面陷阱卡）验证补盲区；判分确定性（期望卡进 top-3），零 LLM 成本
 - embedding：方舟 doubao-embedding-vision（2048 维），查询向量三模式共享缓存
@@ -11,10 +11,10 @@
 |---|---|---|---|---|
 | regression（关键词主场） | recall@3 | **100%** | 100% | **100%** |
 | regression（关键词主场） | recall@1 | 100% | 100% | 100% |
-| regression（关键词主场） | 时延 | 1ms | 190ms | 2ms |
+| regression（关键词主场） | 时延 | 1ms | 204ms | 1ms |
 | semantic（语义对抗） | recall@3 | **40%** | 100% | **100%** |
 | semantic（语义对抗） | recall@1 | 33% | 87% | 80% |
-| semantic（语义对抗） | 时延 | 1ms | 192ms | 3ms |
+| semantic（语义对抗） | 时延 | 1ms | 193ms | 1ms |
 
 ## semantic 集逐 case 明细（双通道救援视图）
 

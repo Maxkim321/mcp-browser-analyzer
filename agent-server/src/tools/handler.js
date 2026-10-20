@@ -10,6 +10,17 @@ const pendingRequests = new Map()
 
 let ws = null
 
+// P16 并行安全：跨会话写互斥 + 会话工作 tab 粘性（冲突面分析见两模块头注释）
+const { createWriteMutex } = require('./write-mutex.js')
+const { createWorkingTabRegistry } = require('./working-tabs.js')
+const writeMutex = createWriteMutex({})
+const workingTabs = createWorkingTabRegistry({})
+const sessionKeyOf = (connectionId, context) => `${connectionId}:${context?.sessionId || ''}`
+const hintTabIdOf = (connectionId, context) => workingTabs.get(sessionKeyOf(connectionId, context))
+// 写动作/页面变更跨会话互斥（读操作无状态可并行）；等待超时抛可自纠错误
+const withWriteLock = (fn) => (args, traceId, context) =>
+  writeMutex.runExclusive(() => fn(args, traceId, context))
+
 /**
  * 初始化 WebSocket 模块引用
  * 用于解决循环依赖问题，避免在模块加载时直接 require ws-server
@@ -193,10 +204,13 @@ async function handleGetPerformance(args, traceId, context = {}) {
       reject,
       timeout,
       traceId,
+      // P16：回捕工作 tab（结果 payload 带 tabId 时更新该会话的工作 tab）
+      sessionKey: sessionKeyOf(connectionId, context),
+      captureTabId: true,
     })
 
     traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'get_performance' })
-    const sendSuccess = ws.send(connectionId, { type: 'get_performance', requestId })
+    const sendSuccess = ws.send(connectionId, { type: 'get_performance', requestId, tabId: hintTabIdOf(connectionId, context) })
 
     // 连接不可用时立即失败，避免无意义等待到超时
     if (!sendSuccess) {
@@ -256,10 +270,13 @@ async function handleNavigateTo(args, traceId, context = {}) {
       reject,
       timeout,
       traceId,
+      // P16：回捕工作 tab（结果 payload 带 tabId 时更新该会话的工作 tab）
+      sessionKey: sessionKeyOf(connectionId, context),
+      captureTabId: true,
     })
 
     traceManager.addEvent(traceId, 'navigate', { connectionId, url })
-    const sendSuccess = ws.send(connectionId, { type: 'navigate_to', requestId, url })
+    const sendSuccess = ws.send(connectionId, { type: 'navigate_to', requestId, url, tabId: hintTabIdOf(connectionId, context) })
 
     if (!sendSuccess) {
       clearTimeout(timeout)
@@ -296,10 +313,13 @@ async function handleReloadPage(args, traceId, context = {}) {
       reject,
       timeout,
       traceId,
+      // P16：回捕工作 tab（结果 payload 带 tabId 时更新该会话的工作 tab）
+      sessionKey: sessionKeyOf(connectionId, context),
+      captureTabId: true,
     })
 
     traceManager.addEvent(traceId, 'reload', { connectionId, ignoreCache })
-    const sendSuccess = ws.send(connectionId, { type: 'reload_page', requestId, ignoreCache })
+    const sendSuccess = ws.send(connectionId, { type: 'reload_page', requestId, ignoreCache, tabId: hintTabIdOf(connectionId, context) })
 
     if (!sendSuccess) {
       clearTimeout(timeout)
@@ -336,10 +356,12 @@ async function handleWaitForLoad(args, traceId, context = {}) {
       reject,
       timeout: timeoutTimer,
       traceId,
+      sessionKey: sessionKeyOf(connectionId, context),
+      captureTabId: true,
     })
 
     traceManager.addEvent(traceId, 'wait_for_load', { connectionId, timeout })
-    const sendSuccess = ws.send(connectionId, { type: 'wait_for_load', requestId, timeout })
+    const sendSuccess = ws.send(connectionId, { type: 'wait_for_load', requestId, timeout, tabId: hintTabIdOf(connectionId, context) })
 
     if (!sendSuccess) {
       clearTimeout(timeoutTimer)
@@ -449,10 +471,13 @@ async function handleGetPageContent(args, traceId, context = {}) {
       reject,
       timeout,
       traceId,
+      // P16：回捕工作 tab（结果 payload 带 tabId 时更新该会话的工作 tab）
+      sessionKey: sessionKeyOf(connectionId, context),
+      captureTabId: true,
     })
 
     traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'get_page_content', maxChars })
-    const sendSuccess = ws.send(connectionId, { type: 'get_page_content', requestId, maxChars })
+    const sendSuccess = ws.send(connectionId, { type: 'get_page_content', requestId, maxChars, tabId: hintTabIdOf(connectionId, context) })
 
     if (!sendSuccess) {
       clearTimeout(timeout)
@@ -573,7 +598,7 @@ async function handleWriteAction(action, args, traceId, context = {}) {
       reject(new Error(`Write action timeout: ${action}`))
     }, 30000)
 
-    pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
+    pendingRequests.set(requestId, { resolve, reject, timeout, traceId, sessionKey: sessionKeyOf(connectionId, context), captureTabId: true })
 
     traceManager.addEvent(traceId, 'write_action', {
       connectionId,
@@ -589,6 +614,7 @@ async function handleWriteAction(action, args, traceId, context = {}) {
       ref,
       value,
       fields,
+      tabId: hintTabIdOf(connectionId, context),
     })
 
     if (!sendSuccess) {
@@ -619,13 +645,14 @@ async function handleGetInteractiveElements(args, traceId, context = {}) {
       reject(new Error('Get interactive elements timeout'))
     }, 30000)
 
-    pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
+    pendingRequests.set(requestId, { resolve, reject, timeout, traceId, sessionKey: sessionKeyOf(connectionId, context), captureTabId: true })
 
     traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'get_interactive_elements' })
     const sendSuccess = ws.send(connectionId, {
       type: 'get_interactive_elements',
       requestId,
       maxElements,
+      tabId: hintTabIdOf(connectionId, context),
     })
 
     if (!sendSuccess) {
@@ -638,8 +665,9 @@ async function handleGetInteractiveElements(args, traceId, context = {}) {
 }
 
 const toolHandlers = {
-  navigate_to: handleNavigateTo,
-  reload_page: handleReloadPage,
+  // navigate/reload 属页面变更，与写动作同锁互斥——跨会话并行时不能同时改同一批 tab
+  navigate_to: withWriteLock(handleNavigateTo),
+  reload_page: withWriteLock(handleReloadPage),
   wait_for_load: handleWaitForLoad,
   list_connections: handleListConnections,
   get_browser_performance: handleGetPerformance,
@@ -650,11 +678,35 @@ const toolHandlers = {
   broadcast_message: handleBroadcastMessage,
   todo_write: handleTodoWrite,
   get_interactive_elements: handleGetInteractiveElements,
-  click_element: (args, traceId, context) => handleWriteAction('click', args, traceId, context),
-  fill_input: (args, traceId, context) => handleWriteAction('fill', args, traceId, context),
-  select_option: (args, traceId, context) => handleWriteAction('select', args, traceId, context),
-  fill_form: (args, traceId, context) => handleWriteAction('fill_form', args, traceId, context),
-  trusted_click: (args, traceId, context) => handleWriteAction('trusted_click', args, traceId, context),
+  click_element: withWriteLock((args, traceId, context) =>
+    handleWriteAction('click', args, traceId, context)
+  ),
+  fill_input: withWriteLock((args, traceId, context) =>
+    handleWriteAction('fill', args, traceId, context)
+  ),
+  select_option: withWriteLock((args, traceId, context) =>
+    handleWriteAction('select', args, traceId, context)
+  ),
+  fill_form: withWriteLock((args, traceId, context) =>
+    handleWriteAction('fill_form', args, traceId, context)
+  ),
+  // trusted_click 走 CDP 可信输入（全局 debugger），同样进写锁
+  trusted_click: withWriteLock(async (args) => {
+    // P12c 收尾：CDP 直连通道——server 直接发真实鼠标事件到 Chrome，
+    // 完全绕过扩展消息系统（无 SW 唤醒竞态、无多上下文路由、无端口丢失）
+    const { cdpTrustedClick, cdpEvaluate } = require('./trusted-cdp.js')
+    try {
+      const searchText = args.description || '立即沟通'
+      const findExpr = "(() => { const el = [...document.querySelectorAll('a,button,span,div')].filter((x) => (x.innerText || '').trim().includes('" + searchText.replace(/'/g, "\\'") + "') && x.getBoundingClientRect().width > 0).pop(); if (!el) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }) })()"
+      const locJson = await cdpEvaluate(findExpr)
+      if (!locJson) throw new Error('CDP 未找到目标元素: ' + searchText)
+      const pos = JSON.parse(locJson)
+      await cdpTrustedClick(pos.x, pos.y)
+      return { content: [{ type: 'text', text: JSON.stringify({ ok: true, info: '已通过 CDP 可信点击 ' + searchText + '（isTrusted:true）' }) }] }
+    } catch (e) {
+      return { content: [{ type: 'text', text: JSON.stringify({ ok: false, error: 'CDP 可信点击失败: ' + e.message }) }] }
+    }
+  }),
   wait_for: handleWaitFor,
 }
 
@@ -676,13 +728,14 @@ async function handleWaitFor(args, traceId, context = {}) {
       reject(new Error('wait_for timeout'))
     }, timeoutMs + 10000)
 
-    pendingRequests.set(requestId, { resolve, reject, timeout, traceId })
+    pendingRequests.set(requestId, { resolve, reject, timeout, traceId, sessionKey: sessionKeyOf(connectionId, context), captureTabId: true })
 
     traceManager.addEvent(traceId, 'send_command', { connectionId, type: 'wait_for', texts, timeoutMs })
     const sendSuccess = ws.send(connectionId, {
       type: 'wait_for',
       requestId,
       texts,
+      tabId: hintTabIdOf(connectionId, context),
       timeoutMs,
     })
 
@@ -795,6 +848,11 @@ function handlePluginResponse(connectionId, msg) {
     if (pending) {
       clearTimeout(pending.timeout)
       pendingRequests.delete(msg.requestId)
+      // P16 回捕：tab 绑定类工具的结果携带 tabId → 更新该会话的工作 tab
+      // （回合的连续操作从此粘在同一个 tab 上，用户切窗口不串页）
+      if (pending.captureTabId && pending.sessionKey && msg.payload && Number.isFinite(msg.payload.tabId)) {
+        workingTabs.capture(pending.sessionKey, msg.payload.tabId)
+      }
 
       // 插件明确报错时必须 reject：否则失败会被伪装成"成功但没内容"，
       // 上层（深度研究）无法区分"页面没正文"和"抓取压根失败"，最终报出无来源空报告
@@ -857,4 +915,8 @@ module.exports = {
   resolveConnectionId,
   registerToolHandler,
   traceManager,
+  // P16 并行安全：回合结束/连接关闭时清理会话工作 tab
+  clearWorkingTab: (connectionId, sessionId) =>
+    workingTabs.clear(`${connectionId}:${sessionId || ''}`),
+  clearWorkingTabsForConnection: (connectionId) => workingTabs.clearConnection(connectionId),
 }

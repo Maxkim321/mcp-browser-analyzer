@@ -1,6 +1,6 @@
 {
   "set": "semantic",
-  "ranAt": "2026-09-28T03:53:02.085Z",
+  "ranAt": "2026-09-28T04:12:35.097Z",
   "corpusSize": 18,
   "modes": {
     "bm25": {
@@ -15,7 +15,7 @@
             "bm25": 1,
             "vector": null
           },
-          "latencyMs": 2,
+          "latencyMs": 1,
           "topUrls": [
             "perf-first-paint",
             "seo-trap"
@@ -28,7 +28,7 @@
           "rank": null,
           "score": null,
           "channels": null,
-          "latencyMs": 0,
+          "latencyMs": 1,
           "topUrls": [
             "vmodel-trap",
             "seo-trap"
@@ -53,7 +53,7 @@
           "rank": null,
           "score": null,
           "channels": null,
-          "latencyMs": 1,
+          "latencyMs": 0,
           "topUrls": [
             "gameloop-trap"
           ]
@@ -79,7 +79,7 @@
           "rank": null,
           "score": null,
           "channels": null,
-          "latencyMs": 1,
+          "latencyMs": 0,
           "topUrls": [
             "tokens",
             "vue-reactive",
@@ -110,7 +110,7 @@
             "bm25": 2,
             "vector": null
           },
-          "latencyMs": 0,
+          "latencyMs": 1,
           "topUrls": [
             "event-loop",
             "idb-quota"
@@ -123,7 +123,7 @@
           "rank": null,
           "score": null,
           "channels": null,
-          "latencyMs": 1,
+          "latencyMs": 0,
           "topUrls": [
             "watermark",
             "perf-first-paint"
@@ -139,7 +139,7 @@
             "bm25": 1,
             "vector": null
           },
-          "latencyMs": 0,
+          "latencyMs": 1,
           "topUrls": [
             "debounce",
             "ai-tools-trap"
@@ -152,7 +152,7 @@
           "rank": null,
           "score": null,
           "channels": null,
-          "latencyMs": 1,
+          "latencyMs": 0,
           "topUrls": [
             "idb-quota",
             "upload"
@@ -165,7 +165,7 @@
           "rank": null,
           "score": null,
           "channels": null,
-          "latencyMs": 0,
+          "latencyMs": 1,
           "topUrls": [
             "seo-trap",
             "perf-first-paint"
@@ -198,7 +198,7 @@
             "bm25": 1,
             "vector": null
           },
-          "latencyMs": 1,
+          "latencyMs": 0,
           "topUrls": [
             "idb-quota"
           ]
@@ -232,12 +232,12 @@
           "kind": "paraphrase",
           "hit": true,
           "rank": 1,
-          "score": 0.5365,
+          "score": 0.5395,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 157,
+          "latencyMs": 177,
           "topUrls": [
             "perf-first-paint",
             "seo-trap",
@@ -249,12 +249,12 @@
           "kind": "paraphrase",
           "hit": true,
           "rank": 2,
-          "score": 0.5176,
+          "score": 0.5208,
           "channels": {
             "bm25": null,
             "vector": 2
           },
-          "latencyMs": 151,
+          "latencyMs": 290,
           "topUrls": [
             "vmodel-trap",
             "vue-reactive",
@@ -266,12 +266,12 @@
           "kind": "cross-lang",
           "hit": true,
           "rank": 1,
-          "score": 0.5379,
+          "score": 0.5381,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 229,
+          "latencyMs": 283,
           "topUrls": [
             "h2-hol",
             "perf-first-paint",
@@ -283,12 +283,12 @@
           "kind": "cross-lang",
           "hit": true,
           "rank": 1,
-          "score": 0.6546,
+          "score": 0.6588,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 145,
+          "latencyMs": 224,
           "topUrls": [
             "event-loop",
             "css-contain",
@@ -300,12 +300,12 @@
           "kind": "intent",
           "hit": true,
           "rank": 2,
-          "score": 0.5726,
+          "score": 0.5755,
           "channels": {
             "bm25": null,
             "vector": 2
           },
-          "latencyMs": 267,
+          "latencyMs": 145,
           "topUrls": [
             "monitor-trap",
             "sentry",
@@ -317,12 +317,12 @@
           "kind": "paraphrase",
           "hit": true,
           "rank": 1,
-          "score": 0.5386,
+          "score": 0.5412,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 216,
+          "latencyMs": 179,
           "topUrls": [
             "upload",
             "idb-quota",
@@ -334,12 +334,12 @@
           "kind": "cross-lang",
           "hit": true,
           "rank": 1,
-          "score": 0.6265,
+          "score": 0.6259,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 201,
+          "latencyMs": 213,
           "topUrls": [
             "css-contain",
             "perf-first-paint",
@@ -351,12 +351,12 @@
           "kind": "paraphrase",
           "hit": true,
           "rank": 1,
-          "score": 0.5128,
+          "score": 0.5088,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 191,
+          "latencyMs": 165,
           "topUrls": [
             "idb-quota",
             "event-loop",
@@ -368,12 +368,12 @@
           "kind": "paraphrase",
           "hit": true,
           "rank": 1,
-          "score": 0.6334,
+          "score": 0.6311,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 155,
+          "latencyMs": 228,
           "topUrls": [
             "ws-heartbeat",
             "upload",
@@ -385,12 +385,12 @@
           "kind": "cross-lang",
           "hit": true,
           "rank": 1,
-          "score": 0.7713,
+          "score": 0.7685,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 165,
+          "latencyMs": 135,
           "topUrls": [
             "debounce",
             "vmodel-trap",
@@ -402,12 +402,12 @@
           "kind": "intent",
           "hit": true,
           "rank": 1,
-          "score": 0.4361,
+          "score": 0.436,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 231,
+          "latencyMs": 138,
           "topUrls": [
             "tokens",
             "css-contain",
@@ -419,12 +419,12 @@
           "kind": "paraphrase",
           "hit": true,
           "rank": 1,
-          "score": 0.4971,
+          "score": 0.5022,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 175,
+          "latencyMs": 224,
           "topUrls": [
             "watermark",
             "vmodel-trap",
@@ -436,12 +436,12 @@
           "kind": "holdout-paraphrase",
           "hit": true,
           "rank": 1,
-          "score": 0.603,
+          "score": 0.6087,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 226,
+          "latencyMs": 156,
           "topUrls": [
             "perf-first-paint",
             "monitor-trap",
@@ -453,12 +453,12 @@
           "kind": "holdout-intent",
           "hit": true,
           "rank": 1,
-          "score": 0.5948,
+          "score": 0.5971,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 159,
+          "latencyMs": 141,
           "topUrls": [
             "idb-quota",
             "upload",
@@ -470,12 +470,12 @@
           "kind": "holdout-intent",
           "hit": true,
           "rank": 1,
-          "score": 0.599,
+          "score": 0.5963,
           "channels": {
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 217,
+          "latencyMs": 190,
           "topUrls": [
             "ws-heartbeat",
             "vue-reactive",
@@ -485,7 +485,7 @@
       ],
       "recallAt3": 1,
       "recallAt1": 0.867,
-      "avgLatencyMs": 192
+      "avgLatencyMs": 193
     },
     "hybrid": {
       "rows": [
@@ -499,7 +499,7 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 4,
+          "latencyMs": 3,
           "topUrls": [
             "perf-first-paint",
             "seo-trap",
@@ -516,7 +516,7 @@
             "bm25": null,
             "vector": 2
           },
-          "latencyMs": 3,
+          "latencyMs": 1,
           "topUrls": [
             "vmodel-trap",
             "vue-reactive",
@@ -533,7 +533,7 @@
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 4,
+          "latencyMs": 1,
           "topUrls": [
             "h2-hol",
             "perf-first-paint",
@@ -550,7 +550,7 @@
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 3,
+          "latencyMs": 2,
           "topUrls": [
             "event-loop",
             "css-contain",
@@ -567,7 +567,7 @@
             "bm25": null,
             "vector": 2
           },
-          "latencyMs": 3,
+          "latencyMs": 1,
           "topUrls": [
             "monitor-trap",
             "sentry",
@@ -584,7 +584,7 @@
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 2,
+          "latencyMs": 1,
           "topUrls": [
             "idb-quota",
             "upload",
@@ -601,7 +601,7 @@
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 3,
+          "latencyMs": 1,
           "topUrls": [
             "css-contain",
             "perf-first-paint",
@@ -618,7 +618,7 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 3,
+          "latencyMs": 1,
           "topUrls": [
             "idb-quota",
             "event-loop",
@@ -635,7 +635,7 @@
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 3,
+          "latencyMs": 1,
           "topUrls": [
             "ws-heartbeat",
             "upload",
@@ -652,7 +652,7 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 3,
+          "latencyMs": 1,
           "topUrls": [
             "debounce",
             "vmodel-trap",
@@ -686,7 +686,7 @@
             "bm25": null,
             "vector": 1
           },
-          "latencyMs": 2,
+          "latencyMs": 1,
           "topUrls": [
             "watermark",
             "vmodel-trap",
@@ -703,7 +703,7 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 3,
+          "latencyMs": 0,
           "topUrls": [
             "perf-first-paint",
             "monitor-trap",
@@ -720,7 +720,7 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 2,
+          "latencyMs": 1,
           "topUrls": [
             "idb-quota",
             "upload",
@@ -737,7 +737,7 @@
             "bm25": 1,
             "vector": 1
           },
-          "latencyMs": 3,
+          "latencyMs": 1,
           "topUrls": [
             "ws-heartbeat",
             "vue-reactive",
@@ -747,7 +747,7 @@
       ],
       "recallAt3": 1,
       "recallAt1": 0.8,
-      "avgLatencyMs": 3
+      "avgLatencyMs": 1
     }
   }
 }

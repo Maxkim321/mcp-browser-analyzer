@@ -7,6 +7,7 @@ const { Agent } = require('../core/agent.js')
 const { LLMClient } = require('../core/llm.js')
 const { ResearchWorkflow } = require('../core/workflow.js')
 const { createPermissionCheck } = require('../core/approval.js')
+const { createConnectionSessions } = require('./session-registry.js')
 const config = require('../config/index.js')
 const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
 const { appendPageContext, appendPrefs } = require('../core/prompt-context.js')
@@ -18,21 +19,23 @@ const dashboard = require('./dashboard.js')
 // P3 浏览记忆开关（MEMORY_ENABLED=off 可关闭，默认开启）
 const MEMORY_ENABLED = process.env.MEMORY_ENABLED !== 'off'
 
-const connectionAgents = new Map()
+// P15 会话路由：连接Id → 会话注册表（每会话一个 Agent，上下文隔离；
+// 会话内回合串行排队、跨会话并行；见 session-registry.js）
+const connectionSessions = new Map()
 // P12c 收尾：最后活跃连接（user_prompt 到达即标记）——回合中通道重建（zhipin 页
 // reload/WS 重连）会让回合开始时固化的 connectionId 失效，工具调用据此回落到
 // 用户当前的真实会话，而不是撞死在断掉的旧通道上
 let lastActiveConnectionId = null
 
-// dph-A Turn/Step 可取消：每连接一个 AbortController，cancel_request 时 abort 当前 agent 任务
-const connectionAborts = new Map()
-
-// 深度研究（M1-F8）：每连接只允许一个工作流运行（防止并发烧 token）
+// 深度研究（M1-F8）：会话级运行标记（`${connectionId}:${sessionId}`）——
+// 同会话只允许一个工作流，跨会话可并行
 const activeWorkflows = new Map()
-// HITL 等待答复：connectionId → { resolve, timer }
+// HITL 等待答复：`${connectionId}:${sessionId}` → { resolve, timer }
 const pendingWorkflowAsks = new Map()
 // P4 写操作审批等待：approvalId → { resolve, timer, cleanup }
 const pendingWriteApprovals = new Map()
+
+const workflowKeyOf = (id, sessionId) => `${id}:${sessionId || ''}`
 
 /**
  * P4 分级权限 HITL：写操作审批往返
@@ -238,8 +241,10 @@ server.listen(config.server.port, () => {
  */
 wss.on('connection', (ws) => {
   const connectionId = manager.add(ws)
-  const agent = new Agent()
-  connectionAgents.set(connectionId, agent)
+  // P15 会话路由：连接持有会话注册表（每会话一个 Agent，上下文隔离），
+  // 不再是单 Agent 全会话轮流共用
+  const sessions = createConnectionSessions({ createAgent: () => new Agent() })
+  connectionSessions.set(connectionId, sessions)
 
   /**
    * 接收并处理客户端消息
@@ -248,7 +253,7 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(data.toString())
       console.log(`[Receive] From ${connectionId}:`, redactForLog(msg))
-      await handleMessage(connectionId, msg, agent)
+      await handleMessage(connectionId, msg, sessions)
     } catch (err) {
       console.error('[Error] Parse message:', err)
     }
@@ -259,23 +264,16 @@ wss.on('connection', (ws) => {
    */
   ws.on('close', () => {
     manager.remove(connectionId)
-    connectionAgents.delete(connectionId)
-    // dph-A 取消：连接断开即终止未完成的 agent 任务（避免孤儿 fetch 空耗 token）
-    const abort = connectionAborts.get(connectionId)
-    if (abort) {
-      abort.abort()
-      connectionAborts.delete(connectionId)
-    }
+    // P15：连接内全部会话 Agent 随连接销毁（运行中回合的 abort 由 dispose 完成，
+    // 避免孤儿 fetch 空耗 token）
+    sessions.dispose()
+    connectionSessions.delete(connectionId)
+    // P16：清理该连接全部会话的工作 tab 记录
+    toolHandler.clearWorkingTabsForConnection(connectionId)
     // P4 分级权限：审批人下线，等待中的写操作审批全部拒绝
     denyPendingApprovals(connectionId)
-    // 清理该连接的深度研究资源（工作流标记 + HITL 等待）
-    activeWorkflows.delete(connectionId)
-    const pendingAsk = pendingWorkflowAsks.get(connectionId)
-    if (pendingAsk) {
-      clearTimeout(pendingAsk.timer)
-      pendingWorkflowAsks.delete(connectionId)
-      pendingAsk.resolve({ cancel: true, text: '' })
-    }
+    // 清理该连接的深度研究资源（会话级工作流标记 + HITL 等待）
+    cleanupConnectionWorkflows(connectionId)
   })
 
   /**
@@ -284,22 +282,31 @@ wss.on('connection', (ws) => {
   ws.on('error', (err) => {
     console.error('[Error] Connection:', err)
     manager.remove(connectionId)
-    connectionAgents.delete(connectionId)
-    const abort = connectionAborts.get(connectionId)
-    if (abort) {
-      abort.abort()
-      connectionAborts.delete(connectionId)
-    }
+    sessions.dispose()
+    connectionSessions.delete(connectionId)
+    toolHandler.clearWorkingTabsForConnection(connectionId)
     denyPendingApprovals(connectionId)
-    activeWorkflows.delete(connectionId)
-    const pendingAsk = pendingWorkflowAsks.get(connectionId)
-    if (pendingAsk) {
-      clearTimeout(pendingAsk.timer)
-      pendingWorkflowAsks.delete(connectionId)
-      pendingAsk.resolve({ cancel: true, text: '' })
-    }
+    cleanupConnectionWorkflows(connectionId)
   })
 })
+
+/**
+ * 连接断开/出错时：清理该连接全部会话的深度研究资源
+ * （会话级 key 为 `${connectionId}:${sessionId}`，按前缀匹配）
+ */
+function cleanupConnectionWorkflows(connectionId) {
+  const prefix = `${connectionId}:`
+  for (const key of Array.from(activeWorkflows.keys())) {
+    if (key.startsWith(prefix)) activeWorkflows.delete(key)
+  }
+  for (const key of Array.from(pendingWorkflowAsks.keys())) {
+    if (!key.startsWith(prefix)) continue
+    const pendingAsk = pendingWorkflowAsks.get(key)
+    clearTimeout(pendingAsk.timer)
+    pendingWorkflowAsks.delete(key)
+    pendingAsk.resolve({ cancel: true, text: '' })
+  }
+}
 
 /**
  * 连接断开/出错时：该连接所有等待中的写操作审批一律拒绝（审批人已不在线）
@@ -315,13 +322,148 @@ function denyPendingApprovals(id) {
 }
 
 /**
+ * 执行一个回合（P15 会话路由）：从 user_prompt 入队后真正跑的部分。
+ * 每个回合绑定 sessionId——上下文取该会话自己的 Agent，全部事件带 sessionId
+ * 回传（前端据此把事件路由回发起会话，切走后进后台缓冲）
+ * @param {number} id - 连接 ID
+ * @param {object} msg - user_prompt 消息
+ * @param {ReturnType<createConnectionSessions>} sessions - 会话注册表
+ * @param {string} sessionId - 归属会话
+ */
+async function runTurn(id, msg, sessions, sessionId) {
+  try {
+    const agent = sessions.getOrCreate(sessionId)
+    // 插件配置页下发的模型配置：校验后覆盖服务端 .env 默认值（空字段仍用服务端默认）
+    // 注意在执行时（而非入队时）应用——排队等到的回合用最新配置
+    agent.llm.applyConfig(sanitizeLLMConfig(msg.llmConfig))
+    // M1-F8 深度研究占用中：同会话拒绝普通提问（跨会话不受影响）
+    if (activeWorkflows.has(workflowKeyOf(id, sessionId))) {
+      manager.send(id, {
+        type: 'agent_response',
+        success: false,
+        content: '深度研究正在进行中，请等待其完成后再提问。',
+        sessionId,
+      })
+      return
+    }
+    // dph-B 事件溯源：同一会话崩溃/重启后，Agent 内存为空时用事件日志投影重建上下文（断点续跑）
+    if (sessionId && agent.isEmptyHistory()) {
+      const events = eventLog.getEvents(sessionId)
+      if (events.length > 0) {
+        const count = agent.restoreHistory(eventLog.projectToHistory(events))
+        console.log(`[EventLog] Rebuilt ${count} messages from events for session ${sessionId}`)
+      }
+    }
+    manager.send(id, { type: 'thinking', sessionId })
+    // 固定动作（总结/翻译/解释等）使用专用提示词驱动结构化输出
+    // F1 轻量 pageContext + F5 偏好：仅普通对话注入（固定动作的 prompt 是严格模板，塞上下文会破坏结构化输出）
+    let systemPrompt = msg.action ? ACTION_PROMPTS[msg.action] : SYSTEM_PROMPT
+    if (!msg.action && msg.pageContext) {
+      systemPrompt = appendPageContext(systemPrompt, msg.pageContext)
+    }
+    if (!msg.action && msg.prefs) {
+      systemPrompt = appendPrefs(systemPrompt, msg.prefs)
+    }
+    // P3 浏览记忆：提问时检索相关旧卡片注入上下文（固定动作不注入，避免破坏结构化模板）
+    // P8：recallForPrompt 改为 async（混合检索需查询向量化）
+    let memoryRefs = []
+    if (!msg.action && MEMORY_ENABLED) {
+      const recalled = await memoryWire.recallForPrompt(msg.prompt, msg.pageContext)
+      if (recalled) {
+        systemPrompt = `${systemPrompt}\n\n${recalled.block}`
+        memoryRefs = recalled.refs
+        console.log(`[Memory] Recalled ${recalled.refs.length} cards for prompt`)
+      }
+    }
+    // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
+    // onToken：LLM 文本增量实时分片推送（流式输出），最终结果仍由 agent_response 兜底
+    // dph-A：AbortController 支持用户取消；onStep 把 Turn 内每个 Step（推理/工具）事件下发前端
+    // P15：controller 按会话注册——cancel_request(sessionId) 精确停这一回合
+    const controller = new AbortController()
+    sessions.registerTurn(sessionId, controller)
+    // P4 分级权限：为本次任务构造写操作审批闭包
+    // （读操作零打断；写操作逐次审批；预算/dry-run/审计口径见 approval.js）
+    const permissionCheck = createPermissionCheck({
+      requestApproval: ({ toolName, args, taint }) =>
+        requestWriteApproval(id, toolName, args, controller.signal, taint),
+      writeBudget: config.agent.maxWriteActions,
+      dryRun: config.agent.writeDryRun,
+      sessionId,
+    })
+    // dph-B：记录本次用户提问事件（append-only）
+    if (sessionId)
+      eventLog.appendEvent(sessionId, 'user', String(msg.prompt || '').trim(), {
+        action: msg.action,
+      })
+    try {
+      const result = await agent.process(msg.prompt, {
+        connectionId: id,
+        sessionId,
+        systemPrompt,
+        signal: controller.signal,
+        permissionCheck,
+        // P11：知识点补全是纯对话 action——空数组白名单 = 工具硬闸，
+        // LLM 侧不再携带 15 个工具定义（省 token，也杜绝补全误触发浏览器操作）
+        tools: msg.action === 'knowledge_complete' ? [] : undefined,
+        onToken: (chunk) => manager.send(id, { type: 'token', content: chunk, sessionId }),
+        onStep: (stepInfo) => manager.send(id, { type: 'agent_step', ...stepInfo, sessionId }),
+      })
+      manager.send(id, {
+        type: 'agent_response',
+        success: result.success,
+        content: result.content,
+        error: result.error,
+        memory_refs: memoryRefs.length > 0 ? memoryRefs : undefined,
+        // 档位 badge：本条回答实际生效的档位/模型（路由决策从黑盒变可见）
+        meta: result.meta,
+        sessionId,
+      })
+      pushUsageSummary(id)
+      // dph-B：记录回答事件（仅成功且有内容时，append-only）
+      if (sessionId && result.success && result.content) {
+        eventLog.appendEvent(sessionId, 'assistant', String(result.content).trim())
+      }
+      // P3 浏览记忆：成功回答 + 页面上下文 → 写卡片（跨页面记忆的数据来源）
+      if (result.success && result.content && MEMORY_ENABLED) {
+        const card = memoryWire.rememberFromResult(msg.pageContext, result.content)
+        if (card) console.log(`[Memory] Card saved: ${card.title.slice(0, 40)}`)
+      }
+    } finally {
+      sessions.releaseTurn(sessionId)
+      // P16：回合结束清除该会话的工作 tab（下个回合重新解析，避免粘到已过期页面）
+      toolHandler.clearWorkingTab(id, sessionId)
+    }
+  } catch (error) {
+    // dph-A 可取消：用户主动取消/连接断开导致的 abort，回复"已停止"，不当作系统错误
+    if (error?.code === 'ABORTED' || error?.name === 'AbortError') {
+      manager.send(id, {
+        type: 'agent_response',
+        success: false,
+        content: '已停止本次回答。',
+        error: 'cancelled',
+        sessionId,
+      })
+    } else {
+      console.error('[Agent] Error:', error)
+      manager.send(id, {
+        type: 'agent_response',
+        success: false,
+        content: '抱歉，处理你的请求时出错了。',
+        error: error.message,
+        sessionId,
+      })
+    }
+  }
+}
+
+/**
  * 处理客户端消息
  * 根据消息类型分发到不同的处理逻辑
  * @param {number} id - 连接 ID
  * @param {object} msg - 消息对象
- * @param {Agent} agent - 该连接的 Agent 实例
+ * @param {ReturnType<createConnectionSessions>} sessions - 该连接的会话注册表
  */
-async function handleMessage(id, msg, agent) {
+async function handleMessage(id, msg, sessions) {
   // P4 写操作审批答复：必须先于 requestId 分支处理（答复也带 requestId，
   // 落到 toolHandler 会查不到 pending 而被静默丢弃，审批方将一直挂到超时）
   if (msg.type === 'write_approval_answer') {
@@ -346,134 +488,30 @@ async function handleMessage(id, msg, agent) {
     case 'ping':
       manager.send(id, { type: 'pong' })
       break
-    case 'user_prompt':
+    case 'user_prompt': {
       lastActiveConnectionId = id
       console.log('[Agent] Processing prompt:', msg.prompt)
       // 用量归因：本连接发起的所有 LLM 调用（含深度研究）计入该会话
       usageTracker.bindConnection(id)
-      try {
-        // 插件配置页下发的模型配置：校验后覆盖服务端 .env 默认值（空字段仍用服务端默认）
-        const llmOverride = sanitizeLLMConfig(msg.llmConfig)
-        agent.llm.applyConfig(llmOverride)
-        // M1-F8 深度研究：仅显式 action 触发（关键词自动路由 isResearchPrompt 已移除，
-        // 误判率高且打断正常对话；自动意图路由待 LLM 分类器方案）
-        const isResearch = msg.action === 'research'
-        if (isResearch) {
-          await runResearch(id, msg.prompt, llmOverride)
-          break
-        }
-        if (activeWorkflows.has(id)) {
-          manager.send(id, {
-            type: 'agent_response',
-            success: false,
-            content: '深度研究正在进行中，请等待其完成后再提问。',
-          })
-          break
-        }
-        // dph-B 事件溯源：同一会话崩溃/重启后，Agent 内存为空时用事件日志投影重建上下文（断点续跑）
-        const sessionId = String(msg.sessionId || '')
-        if (sessionId && agent.isEmptyHistory()) {
-          const events = eventLog.getEvents(sessionId)
-          if (events.length > 0) {
-            const count = agent.restoreHistory(eventLog.projectToHistory(events))
-            console.log(`[EventLog] Rebuilt ${count} messages from events for session ${sessionId}`)
-          }
-        }
-        manager.send(id, { type: 'thinking' })
-        // 固定动作（总结/翻译/解释等）使用专用提示词驱动结构化输出
-        // F1 轻量 pageContext + F5 偏好：仅普通对话注入（固定动作的 prompt 是严格模板，塞上下文会破坏结构化输出）
-        let systemPrompt = msg.action ? ACTION_PROMPTS[msg.action] : SYSTEM_PROMPT
-        if (!msg.action && msg.pageContext) {
-          systemPrompt = appendPageContext(systemPrompt, msg.pageContext)
-        }
-        if (!msg.action && msg.prefs) {
-          systemPrompt = appendPrefs(systemPrompt, msg.prefs)
-        }
-        // P3 浏览记忆：提问时检索相关旧卡片注入上下文（固定动作不注入，避免破坏结构化模板）
-        // P8：recallForPrompt 改为 async（混合检索需查询向量化）
-        let memoryRefs = []
-        if (!msg.action && MEMORY_ENABLED) {
-          const recalled = await memoryWire.recallForPrompt(msg.prompt, msg.pageContext)
-          if (recalled) {
-            systemPrompt = `${systemPrompt}\n\n${recalled.block}`
-            memoryRefs = recalled.refs
-            console.log(`[Memory] Recalled ${recalled.refs.length} cards for prompt`)
-          }
-        }
-        // 将当前连接上下文透传给 Agent，工具调用可优先使用当前会话连接
-        // onToken：LLM 文本增量实时分片推送（流式输出），最终结果仍由 agent_response 兜底
-        // dph-A：AbortController 支持用户取消；onStep 把 Turn 内每个 Step（推理/工具）事件下发前端
-        const controller = new AbortController()
-        connectionAborts.set(id, controller)
-        // P4 分级权限：为本次任务构造写操作审批闭包
-        // （读操作零打断；写操作逐次审批；预算/dry-run/审计口径见 approval.js）
-        const permissionCheck = createPermissionCheck({
-          requestApproval: ({ toolName, args, taint }) =>
-            requestWriteApproval(id, toolName, args, controller.signal, taint),
-          writeBudget: config.agent.maxWriteActions,
-          dryRun: config.agent.writeDryRun,
+      // P15 会话路由：回合按 sessionId 入队——会话内串行（同会话连发不交叉），
+      // 跨会话并行（各自独立的 Agent 上下文）
+      const sessionId = String(msg.sessionId || '')
+      const enqueued = sessions.enqueueTurn(sessionId, () =>
+        msg.action === 'research'
+          ? runResearch(id, msg.prompt, sanitizeLLMConfig(msg.llmConfig), sessionId, sessions)
+          : runTurn(id, msg, sessions, sessionId)
+      )
+      if (!enqueued.ok) {
+        manager.send(id, {
+          type: 'agent_response',
+          success: false,
+          content: '该会话已有回合在执行或排队中，请等待完成后再提问。',
+          error: 'session_busy',
           sessionId,
         })
-        // dph-B：记录本次用户提问事件（append-only）
-        if (sessionId)
-          eventLog.appendEvent(sessionId, 'user', String(msg.prompt || '').trim(), {
-            action: msg.action,
-          })
-        try {
-          const result = await agent.process(msg.prompt, {
-            connectionId: id,
-            sessionId,
-            systemPrompt,
-            signal: controller.signal,
-            permissionCheck,
-            // P11：知识点补全是纯对话 action——空数组白名单 = 工具硬闸，
-            // LLM 侧不再携带 15 个工具定义（省 token，也杜绝补全误触发浏览器操作）
-            tools: msg.action === 'knowledge_complete' ? [] : undefined,
-            onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
-            onStep: (stepInfo) => manager.send(id, { type: 'agent_step', ...stepInfo }),
-          })
-          manager.send(id, {
-            type: 'agent_response',
-            success: result.success,
-            content: result.content,
-            error: result.error,
-            memory_refs: memoryRefs.length > 0 ? memoryRefs : undefined,
-            // 档位 badge：本条回答实际生效的档位/模型（路由决策从黑盒变可见）
-            meta: result.meta,
-          })
-          pushUsageSummary(id)
-          // dph-B：记录回答事件（仅成功且有内容时，append-only）
-          if (sessionId && result.success && result.content) {
-            eventLog.appendEvent(sessionId, 'assistant', String(result.content).trim())
-          }
-          // P3 浏览记忆：成功回答 + 页面上下文 → 写卡片（跨页面记忆的数据来源）
-          if (result.success && result.content && MEMORY_ENABLED) {
-            const card = memoryWire.rememberFromResult(msg.pageContext, result.content)
-            if (card) console.log(`[Memory] Card saved: ${card.title.slice(0, 40)}`)
-          }
-        } finally {
-          connectionAborts.delete(id)
-        }
-      } catch (error) {
-        // dph-A 可取消：用户主动取消/连接断开导致的 abort，回复"已停止"，不当作系统错误
-        if (error?.code === 'ABORTED' || error?.name === 'AbortError') {
-          manager.send(id, {
-            type: 'agent_response',
-            success: false,
-            content: '已停止本次回答。',
-            error: 'cancelled',
-          })
-        } else {
-          console.error('[Agent] Error:', error)
-          manager.send(id, {
-            type: 'agent_response',
-            success: false,
-            content: '抱歉，处理你的请求时出错了。',
-            error: error.message,
-          })
-        }
       }
       break
+    }
     case 'workflow_answer':
       // M1-F8 HITL：用户对 workflow_ask 的答复（继续/停止/自定义方向）
       {
@@ -489,26 +527,32 @@ async function handleMessage(id, msg, agent) {
       }
       break
     case 'cancel_request':
-      // dph-A 可取消：前端点击"停止"时中止当前 agent 任务（fetch abort）
+      // dph-A + P15 可取消：带 sessionId 精确取消该会话的回合；不带则取消该连接全部
+      // （旧客户端兼容）——跨会话并行后"停止"必须指明停谁
       {
-        const abort = connectionAborts.get(id)
-        if (abort) {
-          abort.abort()
-          connectionAborts.delete(id)
-        }
-        manager.send(id, { type: 'cancel_ack' })
+        const sid = String(msg.sessionId || '')
+        const stopped = sid ? sessions.abortTurn(sid) : sessions.abortAllTurns().length > 0
+        if (stopped) console.log(`[Agent] Cancel requested: session ${sid || '(all)'}`)
+        manager.send(id, { type: 'cancel_ack', sessionId: sid || undefined })
       }
       break
     case 'clear_history':
-      agent.clearHistory()
-      manager.send(id, { type: 'history_cleared' })
+      // P15：带 sessionId 清该会话上下文（删除会话时同步服务端）；不带则清全部（旧语义兜底）
+      {
+        const sid = String(msg.sessionId || '')
+        if (sid) sessions.clearSession(sid)
+        else sessions.clearAll()
+        manager.send(id, { type: 'history_cleared', sessionId: sid || undefined })
+      }
       break
     case 'restore_session':
-      // F4 会话持久化：插件把 chrome.storage.local 持久化的历史重放过来，
-      // 重建新连接 Agent 的上下文（每次重连服务端都是全新 Agent，重放总是安全）
+      // F4 会话持久化 + P15 会话路由：把持久化历史重放到指定会话的 Agent。
+      // store.replace 是替换语义——幂等，无需先 clear_history（切换会话即恢复该会话上下文）；
+      // 运行中回合的会话由客户端负责跳过重放（重放会与运行中回合的上下文竞争）
       {
-        const count = agent.restoreHistory(msg.history)
-        manager.send(id, { type: 'history_restored', count })
+        const sid = String(msg.sessionId || '')
+        const count = sessions.restoreSession(sid, msg.history)
+        manager.send(id, { type: 'history_restored', count, sessionId: sid })
       }
       break
     case 'list_capabilities':
@@ -518,9 +562,10 @@ async function handleMessage(id, msg, agent) {
       break
     default:
       console.warn(`[Message] Unknown message type from ${id}:`, msg.type)
+      // 不能回 agent_response——前端把它当"回合结束"处理，版本偏差下会把
+      // 正在后台运行的回合误收尾。协议不匹配用独立类型表达（前端仅告警）
       manager.send(id, {
-        type: 'agent_response',
-        success: false,
+        type: 'unsupported',
         content: '不支持的消息类型，请检查客户端协议。',
       })
       break
@@ -536,13 +581,17 @@ async function handleMessage(id, msg, agent) {
  * @param {number} id - 连接 ID
  * @param {string} question - 研究问题
  * @param {object} [llmOverride] - 插件配置页下发的模型配置（已校验）
+ * @param {string} sessionId - 归属会话（P15：深度研究会话隔离，事件带 sessionId）
+ * @param {ReturnType<createConnectionSessions>} [sessions] - 会话注册表（回合取消注册）
  */
-async function runResearch(id, question, llmOverride = {}) {
-  if (activeWorkflows.has(id)) {
+async function runResearch(id, question, llmOverride = {}, sessionId = '', sessions = null) {
+  const wfKey = workflowKeyOf(id, sessionId)
+  if (activeWorkflows.has(wfKey)) {
     manager.send(id, {
       type: 'agent_response',
       success: false,
       content: '深度研究正在进行中，请等待其完成后再提问。',
+      sessionId,
     })
     return
   }
@@ -556,35 +605,37 @@ async function runResearch(id, question, llmOverride = {}) {
     routingMode: config.research.routing,
     workerMaxSteps: config.research.workerMaxSteps,
   })
-  activeWorkflows.set(id, workflow)
+  activeWorkflows.set(wfKey, workflow)
 
   // dph-A 可取消：深度研究也注册 AbortController，cancel_request 才能中止整个工作流
-  // （此前这里没注册，导致点"停止"时 connectionAborts 取不到 controller，取消空转）
+  // （此前这里没注册，导致点"停止"时取不到 controller，取消空转）；P15 按会话注册
   const controller = new AbortController()
-  connectionAborts.set(id, controller)
+  if (sessions) sessions.registerTurn(sessionId, controller)
 
   // sendAsk 透传打断证据（kind/topic/attempts/预算），前端 HITL 卡片据此展示"为什么打断"
   const sendAsk = (askQuestion, options, evidence) =>
     new Promise((resolve) => {
       const timer = setTimeout(() => {
-        pendingWorkflowAsks.delete(id)
+        pendingWorkflowAsks.delete(wfKey)
         resolve({ cancel: false, text: '继续研究', timeout: true })
       }, 120000) // HITL 超时兜底：用户不答复 2 分钟后默认继续，不挂死工作流
-      pendingWorkflowAsks.set(id, { resolve, timer })
+      pendingWorkflowAsks.set(wfKey, { resolve, timer })
       manager.send(id, {
         type: 'workflow_ask',
         question: askQuestion,
         options: options || ['继续研究', '停止研究'],
         evidence,
+        sessionId,
       })
     })
 
   try {
     const result = await workflow.start(question, {
       connectionId: id,
-      onProgress: (progress) => manager.send(id, { type: 'workflow_progress', ...progress }),
+      onProgress: (progress) =>
+        manager.send(id, { type: 'workflow_progress', ...progress, sessionId }),
       onAsk: sendAsk,
-      onToken: (chunk) => manager.send(id, { type: 'token', content: chunk }),
+      onToken: (chunk) => manager.send(id, { type: 'token', content: chunk, sessionId }),
       signal: controller.signal,
     })
     manager.send(id, {
@@ -592,6 +643,7 @@ async function runResearch(id, question, llmOverride = {}) {
       success: result.success,
       content: result.content,
       error: result.error,
+      sessionId,
     })
     // 研究结束：清理 checkpoint，避免重复恢复
     workflow.clearCheckpoint(result.state?.taskId)
@@ -604,6 +656,7 @@ async function runResearch(id, question, llmOverride = {}) {
         success: false,
         content: '已停止本次回答。',
         error: 'cancelled',
+        sessionId,
       })
     } else {
       console.error('[Workflow] Error:', error)
@@ -612,15 +665,16 @@ async function runResearch(id, question, llmOverride = {}) {
         success: false,
         content: '深度研究执行出错。',
         error: error.message,
+        sessionId,
       })
     }
   } finally {
-    connectionAborts.delete(id)
-    activeWorkflows.delete(id)
-    const pendingAsk = pendingWorkflowAsks.get(id)
+    if (sessions) sessions.releaseTurn(sessionId)
+    activeWorkflows.delete(wfKey)
+    const pendingAsk = pendingWorkflowAsks.get(wfKey)
     if (pendingAsk) {
       clearTimeout(pendingAsk.timer)
-      pendingWorkflowAsks.delete(id)
+      pendingWorkflowAsks.delete(wfKey)
     }
   }
 }
