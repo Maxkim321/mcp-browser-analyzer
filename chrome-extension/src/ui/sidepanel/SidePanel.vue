@@ -415,6 +415,11 @@
             :graph="traceGraph"
             :active="traceActive"
           />
+          <!-- dph-A 可取消：流式阶段同样提供停止入口——此前停止按钮只在"轨迹气泡"
+               （!streamingActive）里，答案开始流式后全 UI 无处可点，回合无法中途打断 -->
+          <button v-if="msg.streaming" class="stop-btn" @click="cancelAgentTask">
+            ⏹ 停止生成
+          </button>
           <!-- P3 浏览记忆：本次回答参考了记忆库中的旧页面；悬浮展示"为什么命中"（BM25 分数 + 命中词） -->
           <div v-if="msg.memoryRefs && msg.memoryRefs.length" class="memory-refs">
             <span class="memory-refs-label"
