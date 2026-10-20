@@ -5,6 +5,7 @@ import {
   appendTurnToken,
   finalizeTurnMessages,
   pickPersistable,
+  insertBeforeStreaming,
 } from '../src/logic/turn-router.js'
 
 /**
@@ -180,4 +181,23 @@ test('detach/attach/end：无记录的会话调用是空操作', () => {
   reg.attach('nope', messages)
   assert.equal(messages.length, 2)
   assert.equal(reg.end('nope'), null)
+})
+
+test('insertBeforeStreaming：卡片插到流式气泡之前（时间线顺序=审批在结论上方）', () => {
+  const msgs = [userMsg('测试填表'), aiMsg('推理中…', { streaming: true })]
+  insertBeforeStreaming(msgs, { type: 'write_approval', requestId: 'r1' })
+  assert.equal(msgs.length, 3)
+  assert.equal(msgs[1].type, 'write_approval')
+  assert.equal(msgs[2].streaming, true, '流式气泡仍在卡片之后继续生长')
+  // 同回合第二张卡：继续插在气泡前、第一张卡后（保持发生顺序）
+  insertBeforeStreaming(msgs, { type: 'write_approval', requestId: 'r2' })
+  assert.equal(msgs[1].requestId, 'r1')
+  assert.equal(msgs[2].requestId, 'r2')
+})
+
+test('insertBeforeStreaming：无流式气泡时按到达顺序追加', () => {
+  const msgs = [userMsg('问题')]
+  insertBeforeStreaming(msgs, { type: 'workflow_ask' })
+  assert.equal(msgs.length, 2)
+  assert.equal(msgs[1].type, 'workflow_ask')
 })

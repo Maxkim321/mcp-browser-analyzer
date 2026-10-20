@@ -728,6 +728,7 @@ import {
   appendTurnToken,
   finalizeTurnMessages,
   pickPersistable,
+  insertBeforeStreaming,
 } from '@/logic/turn-router.js'
 
 defineOptions({
@@ -2142,13 +2143,13 @@ const connectWebSocket = () => {
             }
             if (isBgOwner(askOwner)) {
               const rec = turnRegistry.record(askOwner) || turnRegistry.begin(askOwner)
-              rec.buffer.push(askCard)
+              insertBeforeStreaming(rec.buffer, askCard)
               showTurnToast(
                 `「${rec.title || '后台会话'}」深度研究需要你的确认，点击处理`,
                 askOwner
               )
             } else {
-              messages.value.push(askCard)
+              insertBeforeStreaming(messages.value, askCard)
               persistSession()
             }
             break
@@ -2172,10 +2173,10 @@ const connectWebSocket = () => {
             if (isBgOwner(approvalOwner)) {
               // 审批卡不落盘（瞬态消息），进缓冲等切回后可交互；必须提示，否则回合会一直等
               const rec = turnRegistry.record(approvalOwner) || turnRegistry.begin(approvalOwner)
-              rec.buffer.push(approvalCard)
+              insertBeforeStreaming(rec.buffer, approvalCard)
               showTurnToast(`「${rec.title || '后台会话'}」等待你审批写操作，点击处理`, approvalOwner)
             } else {
-              messages.value.push(approvalCard)
+              insertBeforeStreaming(messages.value, approvalCard)
               scrollToBottom()
             }
             break

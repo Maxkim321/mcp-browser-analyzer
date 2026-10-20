@@ -77,6 +77,23 @@ export function createTurnRegistry() {
 }
 
 /**
+ * HITL 卡片插入（审批卡/深度研究询问）：按时间线插到"正在流式的气泡"之前——
+ * 卡片发生在回合中段，而最终结论复用同一个流式气泡继续生长，若 push 到末尾
+ * 会让结论排在审批卡上方（时间线颠倒）。无流式气泡时按到达顺序追加。
+ * 业界同构：Claude Code 权限提示内联于时间线发生点、ChatGPT 工具 chip 按序嵌入。
+ */
+export function insertBeforeStreaming(list, card) {
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i] && list[i].streaming) {
+      list.splice(i, 0, card)
+      return card
+    }
+  }
+  list.push(card)
+  return card
+}
+
+/**
  * 后台回合的 token 增量：追加到缓冲末尾的流式消息（无则创建一条）
  * 缓冲消息是普通对象（后台不渲染、无响应式需求），切回前台并入 messages 后
  * 由调用方走 reactive 代理直写路径
