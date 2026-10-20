@@ -95,9 +95,13 @@ const props = defineProps({
   nodes: { type: Array, default: () => [] },
   graph: { type: Array, default: () => [] },
   active: { type: Boolean, default: false },
+  // 答案开始流式后置 true：实时轨迹自动收起成一行摘要（过程让位给结论），
+  // 用户手动展开后不强制收回（仅在 false→true 跳变时收起一次）
+  forceCollapsed: { type: Boolean, default: false },
 })
 
-const expanded = ref(true)
+// 展开初始值跟随挂载形态：实时轨迹（active）展开，历史快照（inactive）折叠
+const expanded = ref(props.active)
 
 // 执行结束后自动折叠，避免长轨迹淹没最终回答
 watch(
@@ -105,6 +109,14 @@ watch(
   (isActive, wasActive) => {
     if (isActive) expanded.value = true
     else if (wasActive) expanded.value = false
+  }
+)
+
+// 答案开始输出（forceCollapsed false→true）时收起一次实时轨迹
+watch(
+  () => props.forceCollapsed,
+  (v, was) => {
+    if (v && !was) expanded.value = false
   }
 )
 
@@ -142,7 +154,7 @@ const currentLabel = computed(() => {
 })
 
 const summaryLabel = computed(() =>
-  props.graph.length ? `执行轨迹 · ${props.graph.length} 节点` : `执行轨迹 · ${props.nodes.length} 步`
+  props.graph.length ? `思考过程 · ${props.graph.length} 节点` : `思考过程 · ${props.nodes.length} 步`
 )
 
 const elapsed = computed(() => {

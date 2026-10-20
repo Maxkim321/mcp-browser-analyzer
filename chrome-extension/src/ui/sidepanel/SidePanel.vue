@@ -408,12 +408,15 @@
             :nodes="msg.trace"
             :graph="msg.traceGraph"
           />
-          <!-- Agent 执行轨迹（当前流式回答，实时追踪） -->
+          <!-- Agent 执行轨迹（当前流式回答，实时追踪）。
+               答案文本一开始输出就自动收起成一行摘要：过程让位给结论（DeepSeek
+               "思考过程"同款模式），点击可展开看实时步骤；纯工具阶段保持展开 -->
           <AgentTrace
             v-if="msg.streaming && traceNodes.length"
             :nodes="traceNodes"
             :graph="traceGraph"
             :active="traceActive"
+            :force-collapsed="msg.streaming && !!msg.content"
           />
           <!-- dph-A 可取消：流式阶段同样提供停止入口——此前停止按钮只在"轨迹气泡"
                （!streamingActive）里，答案开始流式后全 UI 无处可点，回合无法中途打断 -->
