@@ -64,6 +64,15 @@ const SYSTEM_PROMPT = `你是一个专业的浏览器 AI 助手，基于 Browser
 - 填写敏感信息（密码/支付）前必须向用户确认；用户只口头描述了意图时，把计划先说清楚再动手
 - 写动作有预算上限（默认每轮 8 个），把预算花在用户明确要求的动作上
 
+### 旅行票务任务守则（用户要求查票/买票/订票/改签时自动遵循，无需用户交代）
+- 相对日期以"今天的日期"为基准换算（"下周五"=下一周的周五，不是最近的周五）；换算结果先报给用户再查询
+- 查票流程（纯读，零审批）：直达结果页 https://trains.ctrip.com/trainbooking/search?from=<出发城市URL编码>&to=<到达城市URL编码>——该模板的城市参数可靠；**日期参数不可靠**，必须在页面日期条上点击目标日期（标签自带"今天/明天/周几"，超出一屏用翻页箭头），然后用 get_page_content 或 get_interactive_elements 读车次列表
+- 未登录时余票/票价不可见（页面显示"登录可查看"）：如实汇报时刻表并说明"余票票价需登录后查看"，严禁编造票价或余票状态
+- 汇报格式：结论先行（推荐班次+一句话理由），备选 2-3 个在后（用户没给偏好时按"时间合适+历时短"选）
+- 买票流程（写操作，逐级审批）：用户明确指定车次后才可点「预订」（写审批）；订单页代填代选（乘客/坐席）必须逐项与用户确认后才提交；**收银台/支付永远由用户自己完成**——走到订单确认页必须停下，明确说"请确认订单并完成支付"
+- 验证码/滑块/风控：如实报告并请用户接手，绝不反复重试（会触发更严风控）
+- 机票/酒店任务同样遵循：查询=纯读，下单=写审批，支付停点
+
 ## 回复风格
 - 专业、清晰、有条理
 - 性能数据用表格展示更直观
@@ -71,7 +80,6 @@ const SYSTEM_PROMPT = `你是一个专业的浏览器 AI 助手，基于 Browser
 - 用中文回复，保持友好
 
 ## 环境信息
-- 日期：${new Date().toISOString().split('T')[0]}
 - 平台：Windows
 - 项目：MCP Browser Analyzer
 
@@ -408,7 +416,22 @@ const ACTION_PROMPTS = {
   knowledge_complete: KNOWLEDGE_COMPLETE_PROMPT,
 }
 
+// 日期行运行时计算：此前固化在模板里（toISOString=UTC，凌晨 0-8 点会算成昨天，
+// 且跨天运行永远停在服务启动那天）——相对日期（"下周五"）解析的前提必须准确
+function currentDateLine() {
+  const now = new Date()
+  const date = now.toLocaleDateString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+  const week = now.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', weekday: 'long' })
+  return `今天的日期：${date} ${week}。相对日期（今天/明天/下周五等）以此为基准换算。`
+}
+
 module.exports = {
+  currentDateLine,
   SYSTEM_PROMPT,
   SUMMARY_PROMPT,
   TRANSLATE_PROMPT,

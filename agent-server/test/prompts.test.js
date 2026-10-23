@@ -31,3 +31,15 @@ test('P11: knowledge_complete 提示词锁住关键约束（直接作答、不�
   assert.match(p, /结论先行/, '答案风格约束要写死在提示词里')
   assert.match(p, /不调用任何工具/, '与 ws-server 的 tools:[] 硬闸双保险')
 })
+
+test('P16: 旅行票务守则锁红线（支付停点 + 日期条规则 + 日期行运行时计算）', () => {
+  const {
+    SYSTEM_PROMPT,
+    currentDateLine,
+  } = require('../src/config/prompts.js')
+  assert.ok(SYSTEM_PROMPT.includes('收银台/支付永远由用户自己完成'), '买票红线必须在守则里')
+  assert.ok(SYSTEM_PROMPT.includes('日期参数不可靠'), '日期条点击规则必须在守则里')
+  assert.ok(!SYSTEM_PROMPT.includes('toISOString'), '模板不得固化日期（UTC+跨天双 bug）')
+  const line = currentDateLine()
+  assert.ok(/今天的日期：\d{4}年\d{1,2}月\d{1,2}日 星期/.test(line), '日期行运行时生成且带星期: ' + line)
+})

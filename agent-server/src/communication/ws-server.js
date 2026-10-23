@@ -9,7 +9,11 @@ const { ResearchWorkflow } = require('../core/workflow.js')
 const { createPermissionCheck } = require('../core/approval.js')
 const { createConnectionSessions } = require('./session-registry.js')
 const config = require('../config/index.js')
-const { ACTION_PROMPTS, SYSTEM_PROMPT } = require('../config/prompts.js')
+const {
+  ACTION_PROMPTS,
+  SYSTEM_PROMPT,
+  currentDateLine,
+} = require('../config/prompts.js')
 const { appendPageContext, appendPrefs } = require('../core/prompt-context.js')
 const eventLog = require('../core/event-log.js')
 const memoryWire = require('../memory/wire.js')
@@ -363,6 +367,12 @@ async function runTurn(id, msg, sessions, sessionId) {
     }
     if (!msg.action && msg.prefs) {
       systemPrompt = appendPrefs(systemPrompt, msg.prefs)
+    }
+    if (!msg.action) {
+      // 相对日期（"下周五"）解析的基准：运行时计算（东八区+星期），非启动时固化
+      systemPrompt = `${systemPrompt}
+
+${currentDateLine()}`
     }
     // P3 浏览记忆：提问时检索相关旧卡片注入上下文（固定动作不注入，避免破坏结构化模板）
     // P8：recallForPrompt 改为 async（混合检索需查询向量化）
