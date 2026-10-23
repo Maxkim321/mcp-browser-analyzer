@@ -529,6 +529,12 @@
               </div>
             </div>
             <div v-if="msg.pending" class="workflow-ask-actions">
+              <!-- P16.1 审批记忆：sudo 缓存模式——读流程里反复点击（日期条/翻页/筛选）
+                   不必每次打断，用户主动勾选后同会话同工具自动放行（写预算+审计兜底） -->
+              <label class="approval-remember">
+                <input type="checkbox" v-model="msg.rememberChecked" />
+                本会话内该工具自动放行，不再询问
+              </label>
               <button class="workflow-ask-btn primary" @click="answerWriteApproval(msg, true)">
                 允许执行
               </button>
@@ -2176,6 +2182,7 @@ const connectWebSocket = () => {
               taint: Array.isArray(data.taint) ? data.taint : [],
               pending: true,
               approved: false,
+              rememberChecked: false,
               timestamp: Date.now(),
             }
             if (isBgOwner(approvalOwner)) {
@@ -2567,6 +2574,7 @@ const answerWriteApproval = (msg, approved) => {
       type: 'write_approval_answer',
       requestId: msg.requestId,
       approved,
+      remember: approved ? msg.rememberChecked === true : false,
       note: approved ? undefined : '用户在侧边栏拒绝了该写操作',
     })
   )
@@ -4296,6 +4304,22 @@ onUnmounted(() => {
   gap: 2px;
   padding: 4px 0;
   border-top: 1px dashed var(--border);
+}
+
+/* P16.1 审批记忆勾选框：弱化视觉，不抢主操作 */
+.approval-remember {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.approval-remember input {
+  accent-color: var(--accent);
 }
 
 .workflow-ask-actions {

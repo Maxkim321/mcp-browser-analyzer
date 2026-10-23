@@ -18,6 +18,7 @@ const { appendPageContext, appendPrefs } = require('../core/prompt-context.js')
 const eventLog = require('../core/event-log.js')
 const memoryWire = require('../memory/wire.js')
 const usageTracker = require('../core/usage-tracker.js')
+const traceLog = require('../core/trace-log.js')
 const dashboard = require('./dashboard.js')
 
 // P3 浏览记忆开关（MEMORY_ENABLED=off 可关闭，默认开启）
@@ -395,7 +396,7 @@ ${currentDateLine()}`
     // （读操作零打断；写操作逐次审批；预算/dry-run/审计口径见 approval.js）
     const permissionCheck = createPermissionCheck({
       requestApproval: ({ toolName, args, taint }) =>
-        requestWriteApproval(id, toolName, args, controller.signal, taint),
+        requestWriteApproval(id, toolName, args, controller.signal, taint, sessionId),
       writeBudget: config.agent.maxWriteActions,
       dryRun: config.agent.writeDryRun,
       sessionId,
