@@ -46,7 +46,18 @@ function topK(query, { k = 3, excludeUrl } = {}) {
   const cards = store.readAll()
   if (cards.length === 0 || !query) return []
 
-  const docs = cards.map((card) => ({ card, tokens: docTokens(card) }))
+  // 版本去重（P17 程序记忆依赖）：同 URL+同标题的追加式更新（如操作手册的
+  // 自沉淀→自更新）只保留最新一条——store 注释承诺的"检索取最新"在此实现，
+  // 否则新旧两版会同时被召回、旧手册带偏上下文
+  const latest = new Map()
+  for (const c of cards) {
+    const key = (c.url || '') + '|' + (c.title || '')
+    const prev = latest.get(key)
+    if (!prev || String(c.ts || '') >= String(prev.ts || '')) latest.set(key, c)
+  }
+  const deduped = [...latest.values()]
+
+  const docs = deduped.map((card) => ({ card, tokens: docTokens(card) }))
   const N = docs.length
   const avgLen = docs.reduce((s, d) => s + d.tokens.length, 0) / N || 1
 

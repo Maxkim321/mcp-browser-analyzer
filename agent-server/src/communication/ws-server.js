@@ -390,6 +390,8 @@ ${currentDateLine()}`
     // onToken：LLM 文本增量实时分片推送（流式输出），最终结果仍由 agent_response 兜底
     // dph-A：AbortController 支持用户取消；onStep 把 Turn 内每个 Step（推理/工具）事件下发前端
     // P15：controller 按会话注册——cancel_request(sessionId) 精确停这一回合
+    // P17 程序记忆：收集本回合 Step 事件，成功后蒸馏成"操作手册"卡
+    const turnSteps = []
     const controller = new AbortController()
     sessions.registerTurn(sessionId, controller)
     // P4 分级权限：为本次任务构造写操作审批闭包
@@ -417,7 +419,10 @@ ${currentDateLine()}`
         // LLM 侧不再携带 15 个工具定义（省 token，也杜绝补全误触发浏览器操作）
         tools: msg.action === 'knowledge_complete' ? [] : undefined,
         onToken: (chunk) => manager.send(id, { type: 'token', content: chunk, sessionId }),
-        onStep: (stepInfo) => manager.send(id, { type: 'agent_step', ...stepInfo, sessionId }),
+        onStep: (stepInfo) => {
+          turnSteps.push(stepInfo)
+          manager.send(id, { type: 'agent_step', ...stepInfo, sessionId })
+        },
       })
       manager.send(id, {
         type: 'agent_response',
@@ -438,6 +443,23 @@ ${currentDateLine()}`
       if (result.success && result.content && MEMORY_ENABLED) {
         const card = memoryWire.rememberFromResult(msg.pageContext, result.content)
         if (card) console.log(`[Memory] Card saved: ${card.title.slice(0, 40)}`)
+      }
+      // P17 程序记忆：多步任务成功 → 工具轨迹蒸馏成"操作手册"卡（fire-and-forget，
+      // 失败只告警；同站点再次成功运行会更新同一本手册——store 版本化语义）
+      if (result.success && result.content && MEMORY_ENABLED && !msg.action) {
+        void memoryWire
+          .distillPlaybook(
+            {
+              prompt: msg.prompt,
+              answer: result.content,
+              steps: turnSteps,
+              pageContext: msg.pageContext,
+            },
+            agent.llm
+          )
+          .then((pb) => {
+            if (pb) console.log(`[Memory] Playbook saved: ${pb.title.slice(0, 40)}`)
+          })
       }
     } finally {
       sessions.releaseTurn(sessionId)
