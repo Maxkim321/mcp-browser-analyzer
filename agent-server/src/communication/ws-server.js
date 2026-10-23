@@ -39,6 +39,14 @@ const activeWorkflows = new Map()
 const pendingWorkflowAsks = new Map()
 // P4 写操作审批等待：approvalId → { resolve, timer, cleanup }
 const pendingWriteApprovals = new Map()
+// P16.1 approval memory (sudo-cache): user checks "auto-approve writes this
+// session" on an approval card -> later write approvals in the same
+// connection+session are granted without asking (key: connId:sessionId).
+// Session-wide scope on purpose: the agent alternates between
+// click_element / trusted_click strategies (sites block synthetic clicks),
+// per-tool memory can never keep up. Backstops: write budget, audit trail,
+// dry-run, stop button; cleared on disconnect.
+const sessionAutoApprovals = new Set()
 
 const workflowKeyOf = (id, sessionId) => `${id}:${sessionId || ''}`
 
@@ -53,7 +61,19 @@ const workflowKeyOf = (id, sessionId) => `${id}:${sessionId || ''}`
  * @param {Array} [taint] - P7 注入染色证据（本轮检出的可疑来源，卡片据此亮警告）
  * @returns {Promise<{approved:boolean,note?:string,timeout?:boolean}>}
  */
-function requestWriteApproval(id, toolName, args, signal, taint = []) {
+function requestWriteApproval(id, toolName, args, signal, taint = [], sessionId = '') {
+  // approval memory hit: user opted in for this session -> grant + audit
+  const autoKey = `${id}:${sessionId || ''}`
+  if (sessionAutoApprovals.has(autoKey)) {
+    traceLog.record({
+      type: 'write_approval_result',
+      sessionId: sessionId || null,
+      tool: toolName,
+      approved: true,
+      note: 'session auto-approve (user opted in)',
+    })
+    return Promise.resolve({ approved: true, auto: true })
+  }
   return new Promise((resolve) => {
     const approvalId = uuidv4()
     const settle = (result) => {
@@ -68,13 +88,14 @@ function requestWriteApproval(id, toolName, args, signal, taint = []) {
       if (signal.aborted) return settle({ approved: false, note: '任务已取消' })
       signal.addEventListener('abort', onAbort, { once: true })
     }
-    pendingWriteApprovals.set(approvalId, { resolve: settle, connectionId: id })
+    pendingWriteApprovals.set(approvalId, { resolve: settle, connectionId: id, autoKey })
     const sent = manager.send(id, {
       type: 'write_approval',
       requestId: approvalId,
       tool: toolName,
       args,
       taint: Array.isArray(taint) ? taint : [],
+      canRemember: true,
     })
     // 连接不可用：没有审批人，直接拒绝（不留 120s 空等）
     if (!sent) settle({ approved: false, note: '侧边栏连接不可用，无法请求审批' })
@@ -290,6 +311,9 @@ wss.on('connection', (ws) => {
     sessions.dispose()
     connectionSessions.delete(connectionId)
     toolHandler.clearWorkingTabsForConnection(connectionId)
+    for (const key of Array.from(sessionAutoApprovals)) {
+      if (key.startsWith(`${connectionId}:`)) sessionAutoApprovals.delete(key)
+    }
     denyPendingApprovals(connectionId)
     cleanupConnectionWorkflows(connectionId)
   })
@@ -502,6 +526,11 @@ async function handleMessage(id, msg, sessions) {
   if (msg.type === 'write_approval_answer') {
     const pending = pendingWriteApprovals.get(msg.requestId)
     if (pending) {
+      // P16.1 approval memory: user opted in and granted -> register cache
+      if (pending.autoKey && msg.remember === true && msg.approved === true) {
+        sessionAutoApprovals.add(pending.autoKey)
+        console.log(`[Approval] Session auto-approve enabled: ${pending.autoKey}`)
+      }
       pending.resolve({
         approved: msg.approved === true,
         note: msg.approved ? undefined : String(msg.note || '用户拒绝了该写操作'),

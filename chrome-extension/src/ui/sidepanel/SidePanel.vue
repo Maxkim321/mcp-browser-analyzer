@@ -530,10 +530,11 @@
             </div>
             <div v-if="msg.pending" class="workflow-ask-actions">
               <!-- P16.1 审批记忆：sudo 缓存模式——读流程里反复点击（日期条/翻页/筛选）
-                   不必每次打断，用户主动勾选后同会话同工具自动放行（写预算+审计兜底） -->
+                   不必每次打断；作用域=会话级全部写操作（agent 会在 click/trusted_click
+                   间切换策略，按工具记忆追不上），写预算+审计+停止按钮兜底 -->
               <label class="approval-remember">
                 <input type="checkbox" v-model="msg.rememberChecked" />
-                本会话内该工具自动放行，不再询问
+                本会话内写操作自动放行，不再询问
               </label>
               <button class="workflow-ask-btn primary" @click="answerWriteApproval(msg, true)">
                 允许执行
